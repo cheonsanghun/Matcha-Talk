@@ -2,7 +2,7 @@
  * 1) 회원/인증/잠금/소셜
  * ========================================= */
 CREATE TABLE users (
-  user_pid           BIGINT AUTO_INCREMENT PRIMARY KEY,                -- 내부 PK
+  user_pid           BIGINT PRIMARY KEY,                -- 내부 PK
   login_id           VARCHAR(30)  NOT NULL UNIQUE,                      -- 로그인 아이디(중복확인)
   password_hash      VARCHAR(255) NOT NULL,                             -- 해시된 비밀번호(규칙은 앱에서 검증)
   nick_name          VARCHAR(30)  NOT NULL,                             -- 이름/표시명
@@ -14,8 +14,7 @@ CREATE TABLE users (
                       /* 날짜 슬라이드바로 선택된 값을 Date로 변환 저장.
                          가입 연령 하한(예: 13세) 및 비현실 날짜는 앱단에서 우선 검증.
                          추가 안전장치로 체크 제약을 둠(서버 시간 기준). */
-                      CHECK (birth_date >= DATE '1900-01-01'
-                             AND birth_date <= (CURDATE() - INTERVAL 13 YEAR)),
+                      CHECK (birth_date >= DATE '1900-01-01'),
   email_verified     TINYINT(1)   DEFAULT 0 CHECK (email_verified IN (0,1)), -- 이메일 인증 여부
   failed_login_count INT          DEFAULT 0 CHECK (failed_login_count >= 0),  -- 연속 로그인 실패 횟수
   locked_until       DATETIME     NULL,                                  -- 5회 이상 실패 시 잠금 해제 예정 시각
@@ -25,10 +24,9 @@ CREATE TABLE users (
   created_at         TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,             -- 생성시각
   updated_at         TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- 수정시각
   CONSTRAINT uq_users_email UNIQUE (email)                               -- 이메일 유니크(계정복구)
-);
+)ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 -- (자주 쓰는 조회를 위한 보조 인덱스가 필요하다면 상황에 따라 추가하세요)
 -- 예: INDEX idx_users_login (login_id), INDEX idx_users_email (email)
-
 /* 이메일 인증/아이디 찾기/비번 재설정 토큰 */
 CREATE TABLE email_verifications (
   token_id    BIGINT AUTO_INCREMENT PRIMARY KEY,                         -- 토큰 PK
@@ -103,40 +101,46 @@ CREATE TABLE match_requests (
   user_pid       BIGINT NOT NULL,                                        -- 사용자
   choice_gender  CHAR(1) NOT NULL CHECK (choice_gender IN ('M','F','A')),-- 희망 성별(M/F/All)
   min_age        INT NOT NULL,                                           -- 최소 나이
-  max_age        INT NOT NULL CHECK (max_age >= min_age),                -- 최대 나이
+  max_age        INT NOT NULL ,                -- 최대 나이
   region_code    VARCHAR(10) NOT NULL,                                   -- 희망 지역
   interests_json JSON NOT NULL,                                          -- 관심사 배열(JSON)
   status         VARCHAR(10) NOT NULL DEFAULT 'WAITING'                  -- 대기/매칭/취소
                   CHECK (status IN ('WAITING','MATCHED','CANCELLED')),
   requested_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,                    -- 요청시각
   CONSTRAINT fk_mr_user FOREIGN KEY (user_pid) REFERENCES users(user_pid) ON DELETE CASCADE,
-
+  CONSTRAINT ck_mr_age_range CHECK (max_age >= min_age),
+  
   -- 인덱스(매칭 스캔)
   INDEX idx_mr_match_scan (status, choice_gender, region_code, min_age, max_age, requested_at), -- 조건+FIFO
   INDEX idx_mr_user (user_pid)                                            -- 사용자별 최신 요청 조회
 );
 
 CREATE TABLE match_candidate (
-  candidate_id  BIGINT AUTO_INCREMENT PRIMARY KEY,                       -- 후보 PK
-  user1_pid     BIGINT NOT NULL,                                         -- 사용자1
-  user2_pid     BIGINT NOT NULL,                                         -- 사용자2
-  user1_accept  TINYINT(1) DEFAULT 0 CHECK (user1_accept IN (0,1)),      -- 1의 수락여부
-  user2_accept  TINYINT(1) DEFAULT 0 CHECK (user2_accept IN (0,1)),      -- 2의 수락여부
-  status        VARCHAR(10) NOT NULL DEFAULT 'PENDING'                   -- 대기/수락/거절/만료
+  candidate_id  BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user1_pid     BIGINT NOT NULL,
+  user2_pid     BIGINT NOT NULL,
+  user1_accept  TINYINT(1) NOT NULL DEFAULT 0 CHECK (user1_accept IN (0,1)),
+  user2_accept  TINYINT(1) NOT NULL DEFAULT 0 CHECK (user2_accept IN (0,1)),
+  status        VARCHAR(10) NOT NULL DEFAULT 'PENDING'
                  CHECK (status IN ('PENDING','ACCEPTED','DECLINED','EXPIRED')),
-  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,                      -- 생성시각
-  CONSTRAINT fk_mc_u1 FOREIGN KEY (user1_pid) REFERENCES users(user_pid) ON DELETE CASCADE,
-  CONSTRAINT fk_mc_u2 FOREIGN KEY (user2_pid) REFERENCES users(user_pid) ON DELETE CASCADE,
-  CONSTRAINT ck_mc_no_self CHECK (user1_pid <> user2_pid),               -- 자기 매칭 금지
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-  -- 순서무시 유니크 위해 생성 컬럼 사용
-  u_small BIGINT AS (LEAST(user1_pid, user2_pid)) STORED,                -- 작은쪽(표준화)
-  u_large BIGINT AS (GREATEST(user1_pid, user2_pid)) STORED,             -- 큰쪽(표준화)
-  UNIQUE KEY uq_mc_pair_status (u_small, u_large, status),               -- 동일쌍의 중복 PENDING 차단
+  -- 순서 무시 유니크
+  u_small BIGINT
+    GENERATED ALWAYS AS (LEAST(user1_pid, user2_pid)) STORED,
+  u_large BIGINT
+    GENERATED ALWAYS AS (GREATEST(user1_pid, user2_pid)) STORED,
+  UNIQUE KEY uq_mc_pair_status (u_small, u_large, status),
 
-  -- 인덱스(만료 스윕/모니터링)
-  INDEX idx_mc_created (created_at)                                      -- 오래된 PENDING 만료 처리
-);
+  -- FK
+  CONSTRAINT fk_mc_u1 FOREIGN KEY (user1_pid)
+    REFERENCES users(user_pid) ON DELETE CASCADE,
+  CONSTRAINT fk_mc_u2 FOREIGN KEY (user2_pid)
+    REFERENCES users(user_pid) ON DELETE CASCADE,
+
+  -- 보조 인덱스
+  INDEX idx_mc_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 /* =========================================
  * 4) 방/멤버/그룹 전환·초대
@@ -316,3 +320,4 @@ CREATE TABLE user_penalties (
   CONSTRAINT fk_up_user FOREIGN KEY (user_pid) REFERENCES users(user_pid) ON DELETE CASCADE,
   INDEX idx_up_user_window (user_pid, starts_at, ends_at)                   -- 기간 중복/효력 조회
 );
+
