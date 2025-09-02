@@ -2,7 +2,7 @@
  * 1) 회원/인증/잠금/소셜
  * ========================================= */
 CREATE TABLE users (
-  user_pid           BIGINT PRIMARY KEY,                -- 내부 PK
+  user_pid           BIGINT AUTO_INCREMENT PRIMARY KEY,                -- 내부 PK
   login_id           VARCHAR(30)  NOT NULL UNIQUE,                      -- 로그인 아이디(중복확인)
   password_hash      VARCHAR(255) NOT NULL,                             -- 해시된 비밀번호(규칙은 앱에서 검증)
   nick_name          VARCHAR(30)  NOT NULL,                             -- 이름/표시명
@@ -114,33 +114,6 @@ CREATE TABLE match_requests (
   INDEX idx_mr_match_scan (status, choice_gender, region_code, min_age, max_age, requested_at), -- 조건+FIFO
   INDEX idx_mr_user (user_pid)                                            -- 사용자별 최신 요청 조회
 );
-
-CREATE TABLE match_candidate (
-  candidate_id  BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user1_pid     BIGINT NOT NULL,
-  user2_pid     BIGINT NOT NULL,
-  user1_accept  TINYINT(1) NOT NULL DEFAULT 0 CHECK (user1_accept IN (0,1)),
-  user2_accept  TINYINT(1) NOT NULL DEFAULT 0 CHECK (user2_accept IN (0,1)),
-  status        VARCHAR(10) NOT NULL DEFAULT 'PENDING'
-                 CHECK (status IN ('PENDING','ACCEPTED','DECLINED','EXPIRED')),
-  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-  -- 순서 무시 유니크
-  u_small BIGINT
-    GENERATED ALWAYS AS (LEAST(user1_pid, user2_pid)) STORED,
-  u_large BIGINT
-    GENERATED ALWAYS AS (GREATEST(user1_pid, user2_pid)) STORED,
-  UNIQUE KEY uq_mc_pair_status (u_small, u_large, status),
-
-  -- FK
-  CONSTRAINT fk_mc_u1 FOREIGN KEY (user1_pid)
-    REFERENCES users(user_pid) ON DELETE CASCADE,
-  CONSTRAINT fk_mc_u2 FOREIGN KEY (user2_pid)
-    REFERENCES users(user_pid) ON DELETE CASCADE,
-
-  -- 보조 인덱스
-  INDEX idx_mc_created (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 /* =========================================
  * 4) 방/멤버/그룹 전환·초대
@@ -320,4 +293,6 @@ CREATE TABLE user_penalties (
   CONSTRAINT fk_up_user FOREIGN KEY (user_pid) REFERENCES users(user_pid) ON DELETE CASCADE,
   INDEX idx_up_user_window (user_pid, starts_at, ends_at)                   -- 기간 중복/효력 조회
 );
+
+
 
