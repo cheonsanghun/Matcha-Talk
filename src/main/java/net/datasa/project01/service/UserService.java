@@ -42,23 +42,21 @@ public class UserService {
             .nickName(requestDto.getNickName())
             .email(requestDto.getEmail())
             .countryCode(requestDto.getCountryCode())
-            // [수정됨] String의 첫 번째 글자를 Character로 변환하여 저장
             .gender(requestDto.getGender().charAt(0)) 
             .birthDate(LocalDate.parse(requestDto.getBirthDate()))
             .enabled(true)
             .rolename("ROLE_USER")
             .build();
-    
-    // ... (Profile 생성 및 저장 로직은 동일)
-    Profile profile = Profile.builder()
-            .user(user)
-            .visibility("PUBLIC")
-            .build();
-            
-    user.setProfile(profile);
 
-    userRepository.save(user);
-}
+        Profile profile = Profile.builder()
+            .user(user) // 관계의 주인인 User 엔티티 설정
+            .visibility("PUBLIC") // 기본값 설정
+            .build();
+
+        user.setProfile(profile); // 양방향 관계 설정
+
+        userRepository.save(user); // User만 저장해도 Profile이 함께 저장됨 (cascade)
+    }
 
     public String login(UserLoginRequestDto requestDto) {
     
@@ -76,17 +74,18 @@ public class UserService {
     public UserProfileResponseDto getMyProfile() {
         String loginId = SecurityContextHolder.getContext().getAuthentication().getName();
         
-        // --- 디버깅 로그 추가 ---
-        logger.info("Attempting to find user profile for loginId from Security Context: '{}'", loginId);
+        logger.info("Attempting to find user profile for loginId: '{}'", loginId);
 
         User user = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> {
-                    // --- 에러 발생 시에도 로그 추가 ---
                     logger.error("User not found in DB for loginId: '{}'", loginId);
                     return new IllegalArgumentException("해당 사용자를 찾을 수 없습니다.");
                 });
         
         logger.info("Successfully found user: {}", user.getNickName());
+        
+        // User 엔티티를 DTO로 변환하여 반환
+        // DTO의 생성자에서 Profile 정보까지 함께 처리
         return new UserProfileResponseDto(user);
     }
 }

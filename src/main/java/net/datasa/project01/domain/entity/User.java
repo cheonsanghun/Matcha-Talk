@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Getter
-@Setter
+@Setter // Profile과의 양방향 관계 설정을 위해 Setter 추가
 @Builder
 @AllArgsConstructor
 @Entity
@@ -37,19 +37,19 @@ public class User {
     private String countryCode;
 
     @Column(length = 1, nullable = false)
-    private Character gender; // CHAR(1)은 Character 타입과 매핑
+    private Character gender;
 
     @Column(name = "birth_date", nullable = false)
-    private LocalDate birthDate; // DATE는 LocalDate와 매핑
+    private LocalDate birthDate;
 
-    @Column(name = "email_verified", nullable = false)
+    @Column(name = "email_verified")
     private boolean emailVerified = false;
 
-    @Column(name = "failed_login_count", nullable = false)
+    @Column(name = "failed_login_count")
     private int failedLoginCount = 0;
 
     @Column(name = "locked_until")
-    private LocalDateTime lockedUntil; // DATETIME은 LocalDateTime과 매핑
+    private LocalDateTime lockedUntil;
 
     @Column(nullable = false)
     private boolean enabled = true;
@@ -65,7 +65,7 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    // 1:1 관계 설정. Profile 엔티티의 'user' 필드에 의해 매핑됨을 명시
+    // 1:1 양방향 관계 설정
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private Profile profile;
 }

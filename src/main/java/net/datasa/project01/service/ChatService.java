@@ -4,12 +4,19 @@ import lombok.RequiredArgsConstructor;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.RoomMember;
 import net.datasa.project01.domain.entity.User;
+
 import net.datasa.project01.repository.RoomMemberRepository;
+import net.datasa.project01.repository.RoomMessageRepository;
 import net.datasa.project01.repository.RoomRepository;
 import net.datasa.project01.repository.UserRepository;
+import net.datasa.project01.domain.dto.ChatMessageRequestDto; 
+import net.datasa.project01.domain.dto.ChatMessageResponseDto; 
+import net.datasa.project01.domain.entity.RoomMessage; 
+
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 
 @Service
 @RequiredArgsConstructor
@@ -18,6 +25,7 @@ public class ChatService {
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final UserRepository userRepository;
+    private final RoomMessageRepository roomMessageRepository; // RoomMessageRepository 주입
 
     /**
      * 새로운 그룹 채팅방을 생성
@@ -47,6 +55,38 @@ public class ChatService {
 
         return newRoom;
     }
+        
+    /**
+     * 메시지를 처리하고 데이터베이스에 저장한 뒤, 응답 DTO를 생성
+     * @param requestDto 클라이언트로부터 받은 메시지 DTO
+     * @param loginId 메시지를 보낸 사용자의 로그인 ID
+     * @return 다른 클라이언트들에게 브로드캐스팅할 응답 DTO
+     */
+    @Transactional
+    public ChatMessageResponseDto processMessage(ChatMessageRequestDto requestDto, String loginId) {
+        // 1. 보낸 사람과 채팅방 엔티티를 DB에서 조회합니다.
+        User sender = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        Room room = roomRepository.findById(requestDto.getRoomId())
+                .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+        // 2. RoomMessage 엔티티를 생성하고 DB에 저장합니다.
+        RoomMessage message = RoomMessage.builder()
+                .room(room)
+                .sender(sender)
+                .contentType(RoomMessage.ContentType.TEXT)
+                .textContent(requestDto.getContent())
+                .build();
+        roomMessageRepository.save(message);
+
+        // 3. 다른 클라이언트들에게 전달할 응답 DTO를 생성하여 반환합니다.
+        return new ChatMessageResponseDto(
+            room.getRoomId(),
+            sender.getNickName(),
+            message.getTextContent(),
+            message.getCreatedAt()
+        );
+    }
     
-    // 향후 여기에 '방 초대', '방 나가기', '랜덤 매칭 시작' 등의 메소드를 추가
+    // 향후 여기에 메소드 추가
 }

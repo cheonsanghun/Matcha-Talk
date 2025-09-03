@@ -4,7 +4,7 @@ import lombok.Getter;
 import net.datasa.project01.domain.entity.Profile;
 import net.datasa.project01.domain.entity.User;
 
-@Getter 
+@Getter
 public class UserProfileResponseDto {
     
     // User 엔티티에서 가져올 정보
@@ -20,7 +20,7 @@ public class UserProfileResponseDto {
     private final String languagesJson;
 
     /**
-     * User 엔티티 (+연관된 Profile 엔티티)를 DTO로 변환하기 위한 생성자
+     * User 엔티티를 DTO로 변환하기 위한 생성자
      * @param user 데이터베이스에서 조회한 User 엔티티 객체
      */
     public UserProfileResponseDto(User user) {
@@ -39,7 +39,7 @@ public class UserProfileResponseDto {
             this.visibility = profile.getVisibility();
             this.languagesJson = profile.getLanguagesJson();
         } else {
-            // 프로필이 없는 경우 기본값 처리
+            // 프로필이 없는 비정상적인 경우를 대비한 기본값 처리
             this.avatarUrl = null;
             this.bio = null;
             this.visibility = "PUBLIC";

@@ -16,11 +16,10 @@ public class Profile {
 
     @Id
     @Column(name = "user_pid")
-    private Long userPid; // users 테이블의 PK를 그대로 PK이자 FK로 사용
+    private Long userPid;
 
-    // @MapsId를 사용하여 userPid 필드가 User 엔티티의 ID와 매핑됨을 명시
     @OneToOne(fetch = FetchType.LAZY)
-    @MapsId
+    @MapsId // userPid 필드를 User 엔티티의 ID와 매핑
     @JoinColumn(name = "user_pid")
     private User user;
 
