@@ -1,0 +1,37 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.3.2'
+	id 'io.spring.dependency-management' version '1.1.5'
+}
+
+group = 'net.datasa'
+version = '0.0.1-SNAPSHOT'
+description = 'project01 - mock/db dual profile'
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }
+repositories { mavenCentral() }
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+	// (선택) 템플릿 쓸 때만 유지. REST만이면 지워도 됨
+	// implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+
+	// ★ 보안 + BCrypt PasswordEncoder + 전부 허용 설정용
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+
+	// ★ JPA & MySQL (db 프로필에서만 실제 사용)
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'  // ← 중복 제거, 1줄만
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') { useJUnitPlatform() }
