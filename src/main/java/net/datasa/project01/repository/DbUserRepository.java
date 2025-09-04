@@ -34,6 +34,14 @@ public class DbUserRepository implements UserRepository {
         }
     }
 
+
+    @Override
+    public Optional<User> findByEmail(String email) {
+        return em.createQuery("select u from User u where u.email = :email", User.class)
+                .setParameter("email", email)
+                .getResultStream().findFirst();
+    }
+
     @Override
     public Optional<User> findById(Long userPid) {
         // 회원번호(PK)로 회원정보 조회

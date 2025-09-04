@@ -12,26 +12,26 @@ java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }
 repositories { mavenCentral() }
 
 dependencies {
-	implementation 'org.springframework.boot:spring-boot-starter-web'
-	implementation 'org.springframework.boot:spring-boot-starter-validation'
-	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-web'           // 웹 서버, REST API 기능 제공
+	implementation 'org.springframework.boot:spring-boot-starter-validation'     // 입력값 검증(@Valid 등) 기능 제공
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'       // 서버 상태 모니터링/관리 엔드포인트 제공
 
-	// (선택) 템플릿 쓸 때만 유지. REST만이면 지워도 됨
-	// implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+	// (선택) 템플릿 엔진(타임리프) - HTML 렌더링 필요할 때만 사용, REST만 쓰면 주석 처리
+	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
 
-	// ★ 보안 + BCrypt PasswordEncoder + 전부 허용 설정용
-	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-security'       // 인증/인가, 비밀번호 해시(BCrypt) 등 보안 기능 제공
 
-	// ★ JPA & MySQL (db 프로필에서만 실제 사용)
-	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'  // ← 중복 제거, 1줄만
-	runtimeOnly 'com.mysql:mysql-connector-j'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'       // JPA(ORM)로 DB 연동 기능 제공
+	runtimeOnly 'com.mysql:mysql-connector-j'                                    // MySQL DB 드라이버(실행 시 필요)
 
-	compileOnly 'org.projectlombok:lombok'
-	annotationProcessor 'org.projectlombok:lombok'
+	compileOnly 'org.projectlombok:lombok'                                      // 롬복(코드 자동 생성, 컴파일 시만 필요)
+	annotationProcessor 'org.projectlombok:lombok'                              // 롬복 어노테이션 처리용(컴파일 시)
 
-	developmentOnly 'org.springframework.boot:spring-boot-devtools'
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'              // 개발 편의 기능(자동 리스타트 등, 배포 시 제외)
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'       // 테스트 코드 작성/실행용(단위/통합 테스트)
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'                 // JUnit 테스트 런처(테스트 실행 시 필요)
+
+	implementation 'org.springframework.boot:spring-boot-starter-mail'           // 이메일 발송 기능(인증 메일 등)
 }
 
 tasks.named('test') { useJUnitPlatform() }

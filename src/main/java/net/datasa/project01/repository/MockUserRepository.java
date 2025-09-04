@@ -57,4 +57,13 @@ public class MockUserRepository implements UserRepository {
         // 이메일 중복 체크
         return byEmail.containsKey(email);
     }
+
+    @Override // UserRepository 인터페이스의 메서드 구현임을 명시
+    public Optional<User> findByEmail(String email) {
+        // 이메일로 회원번호(PK)를 조회 (byEmail 인덱스 맵 사용)
+        Long id = byEmail.get(email); // 해당 이메일에 매핑된 회원번호를 가져옴 (없으면 null)
+        // 회원번호가 있으면 store 맵에서 회원정보(User)를 꺼내고, 없으면 Optional.empty 반환
+        return Optional.ofNullable(id) // id가 null이면 빈 Optional, 아니면 값이 있는 Optional
+                .map(store::get); // id가 있으면 store에서 User 객체를 꺼내서 Optional로 감싸 반환
+    }
 }
