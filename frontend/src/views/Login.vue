@@ -5,8 +5,8 @@
         <v-card class="pa-8">
           <div class="text-center text-h6 text-pink-darken-2 mb-6">로그인</div>
           <v-form @submit.prevent="onLogin">
-            <v-text-field v-model="login_id" label="아이디" variant="outlined" />
-            <v-text-field v-model="password" type="password" label="비밀번호" variant="outlined" />
+            <v-text-field v-model="login_id" label="아이디" variant="outlined"/>
+            <v-text-field v-model="password" type="password" label="비밀번호" variant="outlined"/>
             <div class="d-flex ga-3 mt-4">
               <v-btn color="pink" type="submit">로그인</v-btn>
               <v-spacer/>
@@ -20,9 +20,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useAuthStore } from '../stores/auth'
-import { useRouter } from 'vue-router'
+import {ref} from 'vue'
+import {useAuthStore} from '../stores/auth'
+import {useRouter} from 'vue-router'
 import api from '../services/api'
 
 const router = useRouter()
@@ -30,18 +30,18 @@ const store = useAuthStore()
 const login_id = ref('')
 const password = ref('')
 
-async function onLogin(){
-  if(!login_id.value || !password.value){
+async function onLogin() {
+  if (!login_id.value || !password.value) {
     return alert('아이디/비밀번호를 입력하세요')
   }
-  try{
-    const { data } = await api.post('/auth/login', {
+  try {
+    const {data} = await api.post('/auth/login', {
       loginId: login_id.value,
       password: password.value,
     })
-    store.login({ token: data.token, user: data.user })
+    store.login({token: data.token, user: data.user})
     router.push('/')
-  }catch(err){
+  } catch (err) {
     alert(err.response?.data?.message || '로그인 실패')
   }
 }
