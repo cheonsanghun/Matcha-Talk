@@ -23,6 +23,7 @@
 import { ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import api from '../services/api'
 
 const router = useRouter()
 const store = useAuthStore()
@@ -33,9 +34,15 @@ async function onLogin(){
   if(!login_id.value || !password.value){
     return alert('아이디/비밀번호를 입력하세요')
   }
-  const fakeToken = 'demo-token'
-  const user = { user_pid: 1, login_id: login_id.value, nick_name: 'Guest', email:'guest@example.com' }
-  store.login({ token: fakeToken, user })
-  router.push('/')
+  try{
+    const { data } = await api.post('/auth/login', {
+      loginId: login_id.value,
+      password: password.value,
+    })
+    store.login({ token: data.token, user: data.user })
+    router.push('/')
+  }catch(err){
+    alert(err.response?.data?.message || '로그인 실패')
+  }
 }
 </script>
