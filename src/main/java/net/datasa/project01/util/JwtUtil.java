@@ -26,75 +26,91 @@ import org.slf4j.LoggerFactory;
 
 @Component
 public class JwtUtil {
-    // 비밀 키는 외부에 노출되서는 안되는 키
+    
+    private static final Logger logger = LoggerFactory.getLogger(JwtUtil.class);
+    
     @Value("${jwt.secret}")
     private String SECRET_KEY;
+    
+    @Value("${jwt.expiration:86400000}") // 24시간 기본값
+    private long EXPIRATION_TIME;
+    
+    // TODO: Refresh Token 지원을 위한 설정 추가
+    // @Value("${jwt.refresh.expiration:604800000}") // 7일 기본값
+    // private long REFRESH_EXPIRATION_TIME;
 
-    // HMAC-SHA 알고리즘을 위한 키 생성
     private Key key;
 
     @PostConstruct
     public void init() {
+        if (SECRET_KEY.length() < 32) {
+            throw new IllegalArgumentException("JWT secret key must be at least 32 characters long");
+        }
         key = Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
+        logger.info("JwtUtil initialized with expiration time: {} ms", EXPIRATION_TIME);
     }
-    
-    // 토큰 유효 시간(24시간)
-    private final long EXPIRATION_TIME = 1000L * 60 * 60 * 24;
-
-    /**
-     * 사용자 이름을 기반으로 JWT 토큰 생성
-     * @param username 사용자 이름
-     * @return 생성된 JWT 토큰
-     */
 
     public String createToken(String username) {
+        // TODO: 사용자 역할(Role) 정보도 토큰에 포함 고려
+        // TODO: 디바이스 정보 추가 고려
         Date now = new Date();
         Date expiration = new Date(now.getTime() + EXPIRATION_TIME);
 
         return Jwts.builder()
-                .setSubject(username)       // 토큰 주체
-                .setIssuedAt(now)           // 토큰 발급 시간
-                .setExpiration(expiration)  // 토큰 만료 시간
-                .signWith(key, SignatureAlgorithm.HS256)  //사용할 암호화 알고리즘과 비밀 키
+                .setSubject(username)
+                .setIssuedAt(now)
+                .setExpiration(expiration)
+                .setIssuer("MatchTalk") // 토큰 발급자
+                .claim("type", "access") // 토큰 타입
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    /**
-     * 주어진 토큰에서 사용자 이름을 추출
-     * @param token JWT 토큰
-     * @return 사용자 이름
-     */
-
     public String getUsernameFromToken(String token) {
-        Claims claims = Jwts.parserBuilder()
-        .setSigningKey(key)
-        .build()
-        .parseClaimsJws(token)
-        .getBody();
-        
-        return claims.getSubject();
+        try {
+            Claims claims = Jwts.parserBuilder()
+                .setSigningKey(key)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+                
+            return claims.getSubject();
+        } catch (Exception e) {
+            logger.error("Error extracting username from token", e);
+            throw new IllegalArgumentException("Invalid token", e);
+        }
     }
     
-    /**
-     * @param token JWT 토큰
-     * @return 유효하면 true, 외에는 false
-     */
-    private static final Logger logger = LoggerFactory.getLogger(JwtUtil.class);
-
     public boolean validateToken(String token) {
         try {
-            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
+            Claims claims = Jwts.parserBuilder()
+                .setSigningKey(key)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+            
+            // TODO: 추가 유효성 검사 (블랙리스트 체크 등)
             return true;
         } catch (SignatureException e) {
-            logger.error("Invalid JWT signature: {}", e.getMessage());
+            logger.warn("Invalid JWT signature: {}", e.getMessage());
         } catch (MalformedJwtException e) {
-            logger.error("Invalid JWT token: {}", e.getMessage());
+            logger.warn("Invalid JWT token: {}", e.getMessage());
         } catch (ExpiredJwtException e) {
-            logger.error("JWT token is expired: {}", e.getMessage());
+            logger.debug("JWT token is expired: {}", e.getMessage());
         } catch (IllegalArgumentException e) {
-            logger.error("JWT claims string is empty: {}", e.getMessage());
+            logger.warn("JWT claims string is empty: {}", e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error during token validation", e);
         }
         return false;
     }
-
+    
+    // TODO: 추가 필요한 메서드들
+    // public String createRefreshToken(String username) { }
+    // public boolean validateRefreshToken(String token) { }
+    // public String refreshAccessToken(String refreshToken) { }
+    // public void invalidateToken(String token) { } // 블랙리스트 추가
+    // public Date getExpirationDateFromToken(String token) { }
+    // public boolean isTokenExpired(String token) { }
+    // public List<String> getRolesFromToken(String token) { }
 }

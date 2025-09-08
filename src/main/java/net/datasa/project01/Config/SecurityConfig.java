@@ -18,8 +18,22 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private final UserDetailsServiceImpl userDetailsServiceImpl;
+    private final UserDetailsServiceImpl userDetailsService;
     private final JwtUtil jwtUtil;
+
+    private static final String[] PUBLIC_ENDPOINTS = {
+        "/",
+        "/index.html",
+        "/login.html",
+        "/chat.html",
+        "/css/**",
+        "/js/**",
+        "/images/**",
+        "/favicon.ico",
+        "/ws-connect/**",
+        "/api/users/signup",
+        "/api/users/login"
+    };
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -28,27 +42,18 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-                .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(
-                            "/",
-                            "/login.html", 
-                            "/signup.html", 
-                            "/chat.html", // 테스트용 열어놓을 놈들 추가해뒀음
-                            "/css/**", 
-                            "/js/**", 
-                            "/images/**",
-                            "/favicon.ico", // favicon.ico 허용
-                            "/ws-connect/**" // 웹소켓 연결 경로 및 하위 경로 모두 허용
-                            ).permitAll()
-                            // 원래 열어놔야될 놈들은 아래
-                            .requestMatchers("/api/users/signup", "/api/users/login").permitAll()
-                            // 그 외 요청은 모두 인증 거쳐야됨
-                        .anyRequest().authenticated()
-                )
-                .addFilterBefore(new JwtAuthenticationFilter(jwtUtil, userDetailsServiceImpl), UsernamePasswordAuthenticationFilter.class);
-        return http.build();
+        return http
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(session -> 
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(authorize -> authorize
+                .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                .anyRequest().authenticated()
+            )
+            .addFilterBefore(
+                new JwtAuthenticationFilter(jwtUtil, userDetailsService), 
+                UsernamePasswordAuthenticationFilter.class
+            )
+            .build();
     }
 }

@@ -7,31 +7,47 @@ import net.datasa.project01.domain.dto.SignalMessage;
 import net.datasa.project01.service.ChatService;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Controller
 @RequiredArgsConstructor
+@Slf4j
 public class WebSocketChatController {
-
     private final ChatService chatService;
     private final SimpMessageSendingOperations messagingTemplate;
 
     /**
-     * 텍스트 채팅 메시지를 처리합니다.
+     * 텍스트 채팅 메시지를 처리
      * 목적지: /app/chat.sendMessage/{roomId}
      */
     @MessageMapping("/chat.sendMessage/{roomId}")
+    @SendTo("/topic/rooms/{roomId}")
     public ChatMessageResponseDto sendMessage(
-            @DestinationVariable Long roomId,
+            @DestinationVariable("roomId") Long roomId,
             ChatMessageRequestDto requestDto,
             Principal principal) {
         
-        String loginId = principal.getName();
-        requestDto.setRoomId(roomId);
-        return chatService.processMessage(requestDto, loginId);
+        try {
+            log.debug("Processing chat message for roomId: {} from user: {}", 
+                    roomId, principal.getName());
+            
+            String loginId = principal.getName();
+            requestDto.setRoomId(roomId);
+            
+            ChatMessageResponseDto response = chatService.processMessage(requestDto, loginId);
+            log.info("Chat message processed successfully for roomId: {}", roomId);
+            
+            return response;
+        } catch (Exception e) {
+            log.error("Error processing chat message for roomId: {}", roomId, e);
+            throw e;
+        }
     }
 
     /**
@@ -40,15 +56,26 @@ public class WebSocketChatController {
      */
     @MessageMapping("/signal")
     public void handleSignal(SignalMessage signalMessage, Principal principal) {
-        // 메시지를 보낸 사람의 ID를 서버에서 관리하는 Principal 객체에서 가져와 설정
-        // 이는 클라이언트가 보낸 senderLoginId 값을 신뢰하지 않고, 서버에서 직접 지정하여 보안을 강화
-        signalMessage.setSenderLoginId(principal.getName());
-        
-        // 메시지를 받을 사람(receiverLoginId)의 개인 큐(/user/{username}/queue/signals)로 메시지를 전송
-        messagingTemplate.convertAndSendToUser(
-            signalMessage.getReceiverLoginId(), // 수신자 loginId
-            "/queue/signals", // 수신자가 구독할 개인 큐 주소
-            signalMessage // 보낼 메시지
-        );
+        try {
+            if (signalMessage.getReceiverLoginId() == null || 
+                signalMessage.getReceiverLoginId().trim().isEmpty()) {
+                log.warn("Signal message missing receiver ID from user: {}", principal.getName());
+                return;
+            }
+            
+            signalMessage.setSenderLoginId(principal.getName());
+            
+            messagingTemplate.convertAndSendToUser(
+                signalMessage.getReceiverLoginId(),
+                "/queue/signals",
+                signalMessage
+            );
+            
+            log.debug("WebRTC signal sent from {} to {}", 
+                    principal.getName(), signalMessage.getReceiverLoginId());
+                    
+        } catch (Exception e) {
+            log.error("Error handling WebRTC signal from user: {}", principal.getName(), e);
+        }
     }
 }
