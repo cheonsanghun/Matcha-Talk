@@ -42,6 +42,8 @@ dependencies {
 
 	// Database
 	runtimeOnly 'com.mysql:mysql-connector-j'
+	// H2 Database for testing/fallback (개발 시 MySQL 없을 때 사용)
+	runtimeOnly 'com.h2database:h2'
 	// TODO: 추후 Redis 추가 가능 (세션 및 캠시 관리)
 	// implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
