@@ -67,43 +67,47 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-// @RequiredArgsConstructor // JWT 필터 등을 주입받을 경우 사용
+import lombok.RequiredArgsConstructor;
+import net.datasa.project01.service.UserDetailsServiceImpl;
+import net.datasa.project01.util.JwtUtil;
+
+@RequiredArgsConstructor // JWT 필터 등을 주입받을 경우 사용
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    private final UserDetailsServiceImpl userDetailsServiceImpl;
+    private final JwtUtil jwtUtil;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    // 허용할 경로들
-    private static final String[] PERMIT_ALL_PATTERNS = {
-            // 기본 페이지 및 정적 리소스
-            "/",
-            "/**/*.html",
-            "/**/*.css",
-            "/**/*.js",
-            "/favicon.ico",
-            // API
-            "/api/users/signup",
-            "/api/users/login",
-            // WebSocket
-            "/ws-connect/**"
-    };
-
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(AbstractHttpConfigurer::disable) // CSRF 보호 비활성화
-            .httpBasic(AbstractHttpConfigurer::disable) // HTTP Basic 인증 비활성화
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // 세션 STATELESS 설정
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(PERMIT_ALL_PATTERNS).permitAll() // 허용할 경로 설정
-                .anyRequest().authenticated() // 나머지 요청은 인증 필요
-            );
-
+                    // 아래의 경로 패턴들이 올바른 형식인지 다시 한번 확인
+                    .requestMatchers(
+                        "/",
+                        "/login.html", 
+                        "/signup.html", 
+                        "/chat.html",
+                        "/favicon.ico",
+                        "/css/**",      // 올바른 패턴
+                        "/js/**",       // 올바른 패턴
+                        "/images/**",   // 올바른 패턴
+                        "/ws-connect/**" // 올바른 패턴
+                    ).permitAll()
+                    .requestMatchers("/api/users/signup", "/api/users/login").permitAll()
+                    .anyRequest().authenticated()
+            )
+            .addFilterBefore(new JwtAuthenticationFilter(jwtUtil, userDetailsServiceImpl), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 }
