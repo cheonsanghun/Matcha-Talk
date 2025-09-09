@@ -23,7 +23,12 @@
 <script setup>
 import { useAuthStore } from '../stores/auth'
 import { storeToRefs } from 'pinia'
+
 const store = useAuthStore()
 const { user } = storeToRefs(store)
-function logout(){ store.logout() }
+function logout(){
+  store.logout()
+  // 버튼에 to="/"가 이미 있어도, 확실히 홈으로
+  router.replace({ name: 'home' })
+}
 </script>

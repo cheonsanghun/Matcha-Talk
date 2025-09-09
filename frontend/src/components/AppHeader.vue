@@ -30,3 +30,7 @@ import {useAuthStore} from '../stores/auth'
 const store = useAuthStore()
 const {isAuthenticated: isAuth} = storeToRefs(store)
 </script>
+
+<style scoped>
+.text-decoration-none { text-decoration: none; }
+</style>
