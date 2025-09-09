@@ -6,7 +6,7 @@
           <div class="d-flex align-center ga-4">
             <v-avatar size="64" class="bg-pink-lighten-4"><v-icon color="pink">mdi-account</v-icon></v-avatar>
             <div>
-              <div class="text-subtitle-1">{{ user?.nick_name || 'Guest' }}</div>
+              <div class="text-subtitle-1">{{ user?.nickname || 'Guest' }}</div>
               <div class="text-caption">{{ user?.email }}</div>
             </div>
             <v-spacer/>
@@ -23,7 +23,15 @@
 <script setup>
 import { useAuthStore } from '../stores/auth'
 import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
+
 const store = useAuthStore()
 const { user } = storeToRefs(store)
-function logout(){ store.logout() }
+const router = useRouter()
+
+function logout(){
+  store.logout()
+  // 버튼에 to="/"가 이미 있어도, 확실히 홈으로
+  router.replace({ name: 'home' })
+}
 </script>
