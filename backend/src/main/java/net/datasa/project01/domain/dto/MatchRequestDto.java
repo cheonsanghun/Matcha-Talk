@@ -8,9 +8,11 @@ import java.util.List;
  */
 @Data
 public class MatchRequestDto {
+    private Long userPid;
     private String choiceGender;
     private int minAge;
     private int maxAge;
     private String regionCode;
     private List<String> interestsJson;
+    private String status;
 }
