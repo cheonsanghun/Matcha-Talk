@@ -21,7 +21,8 @@ public class MatchRequest {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "request_id")
-    private Long matchRequestId;
+    private Long requestId;
+
 
     @Column(name = "user_pid", nullable = false)
     private Long userPid;
@@ -41,8 +42,10 @@ public class MatchRequest {
     @Column(name = "interests_json", columnDefinition = "JSON", nullable = false)
     private String interestsJson;
 
+    @Builder.Default
     @Column(name = "status", length = 10, nullable = false)
-    private String status;
+    private String status = "WAITING";
+
 
     @CreationTimestamp
     @Column(name = "requested_at", updatable = false)

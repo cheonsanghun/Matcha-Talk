@@ -1,5 +1,7 @@
 package net.datasa.project01.domain.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import lombok.Data;
 import java.util.List;
 
@@ -8,11 +10,19 @@ import java.util.List;
  */
 @Data
 public class MatchRequestDto {
-    private Long userPid;
+    @JsonProperty("choice_gender")
     private String choiceGender;
+
+    @JsonProperty("min_age")
     private int minAge;
+
+    @JsonProperty("max_age")
     private int maxAge;
+
+    @JsonProperty("region_code")
     private String regionCode;
+
+    @JsonProperty("interests_json")
     private List<String> interestsJson;
-    private String status;
+
 }
