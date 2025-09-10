@@ -33,6 +33,13 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'                 // JUnit 테스트 런처(테스트 실행 시 필요)
 
 	implementation 'org.springframework.boot:spring-boot-starter-mail'           // 이메일 발송 기능(인증 메일 등)
+
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+	implementation 'org.springframework.security:spring-security-messaging' // WebSocketSecurityConfig 쓸 때
+
+	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 }
 
 tasks.named('test') { useJUnitPlatform() }

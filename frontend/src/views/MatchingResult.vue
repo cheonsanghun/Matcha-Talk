@@ -51,7 +51,7 @@
   </v-container>
 </template>
 
-<script setup>
+<!--script setup>
 import { ref } from 'vue';
 import ChatPanel from '../components/ChatPanel.vue';
 
@@ -71,7 +71,80 @@ function declineMatch() {
     // TODO: 매칭 거절 로직
   }
 }
+</script-->
+
+<script setup>
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { createStompClient } from '../services/ws'
+import { setupSignalRoutes } from '../services/signaling'
+// import { setupChat } ...
+
+const me = ref(/* 로그인한 사용자 loginId */)
+const partner = ref(/* 매칭된 상대 loginId */)
+const pc = new RTCPeerConnection({
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+})
+const localVideo = ref(null)
+const remoteVideo = ref(null)
+let client, signal, subs = []
+
+onMounted(async () => {
+  // 1) STOMP 연결
+  client = createStompClient(localStorage.getItem('token'))
+  client.onConnect = async () => {
+    // 2) 시그널 구독
+    signal = setupSignalRoutes(client, {
+      me: me.value,
+      subscribeDest: `/topic/signal.${me.value}`, // 컨트롤러 전송 목적지와 일치시킬 것
+      onSignal: async (msg) => {
+        if (msg.type === 'offer') {
+          await pc.setRemoteDescription(msg.data)
+          const answer = await pc.createAnswer()
+          await pc.setLocalDescription(answer)
+          signal.sendSignal({ type:'answer', senderLoginId: me.value, receiverLoginId: partner.value, data: answer })
+        } else if (msg.type === 'answer') {
+          await pc.setRemoteDescription(msg.data)
+        } else if (msg.type === 'ice-candidate') {
+          try { await pc.addIceCandidate(msg.data) } catch {}
+        }
+      }
+    })
+
+    // 3) 미디어
+    const stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true })
+    stream.getTracks().forEach(t => pc.addTrack(t, stream))
+    localVideo.value.srcObject = stream
+
+    pc.ontrack = (e) => {
+      remoteVideo.value.srcObject = e.streams[0]
+    }
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        signal.sendSignal({
+          type:'ice-candidate',
+          senderLoginId: me.value,
+          receiverLoginId: partner.value,
+          data: e.candidate
+        })
+      }
+    }
+
+    // 4) 내가 발신자라면 Offer 생성
+    // (역할은 매칭 API 결과에 따라 결정)
+    const offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+    signal.sendSignal({ type:'offer', senderLoginId: me.value, receiverLoginId: partner.value, data: offer })
+  }
+  client.activate()
+})
+
+onBeforeUnmount(() => {
+  subs.forEach(s => s?.unsubscribe?.())
+  client?.deactivate?.()
+  pc?.close?.()
+})
 </script>
+
 
 <style scoped>
 .media-wrapper {

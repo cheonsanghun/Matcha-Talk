@@ -1,3 +1,5 @@
+import './polyfills'   // 최상단
+
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 
