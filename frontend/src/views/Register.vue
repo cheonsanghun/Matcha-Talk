@@ -172,8 +172,9 @@ const valid = computed(
 
 const r = {
   required: v => !!v || '필수 입력입니다.',
-  len: (min, max) => v => (v && v.length >= min && v.length <= max) || `${min}~${max}자`,
-  email: v => !!/^[A-Za-z0-9._%+-]+@gmail\.com$/.test(v) || 'Gmail 주소만 사용 가능'
+  len: (min, max) => v => (v && v.length >= min && v.length <= max) || `${min}~${max}자 이내로 입력하세요.`,
+  email: v => !!/^[A-Za-z0-9._%+-]+@gmail\.com$/.test(v) || 'Gmail 주소만 사용 가능합니다.',
+  pwStrong: v => /^(?=.*[a-z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/.test(v) || '소문자, 숫자, 특수문자를 포함해야 합니다.'
 }
 
 function checkRules(value, rules) {
@@ -196,7 +197,7 @@ function validate(field) {
       errors.value.email = checkRules(form.value.email, [r.required, r.email])
       break
     case 'password':
-      errors.value.password = checkRules(form.value.password, [r.required, r.len(8, 100)])
+      errors.value.password = checkRules(form.value.password, [r.required, r.pwStrong])
       break
     case 'password2':
       errors.value.password2 = form.value.password2 === form.value.password ? '' : '비밀번호가 일치하지 않습니다.'
