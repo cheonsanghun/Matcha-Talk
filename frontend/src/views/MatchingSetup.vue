@@ -117,11 +117,14 @@ const regions = [
   { title: '오사카', value: 'OSAKA' },
   { title: '후쿠오카', value: 'FUKUOKA' },
   { title: '제주', value: 'JEJU' },
+  { title: '인천', value: 'INCHEON' },
+  { title: '대구', value: 'DAEGU' },
+  { title: '광주', value: 'GWANGJU' },
   { title: '기타', value: 'OTHER' }
 ]
 const region = ref('')
 const dialog = ref(false)
-const interestPool = ['음악','영화','게임','여행','요리','운동','독서']
+const interestPool = ['음악','영화','게임','여행','요리','운동','독서','사진','패션','반려동물']
 const interests = ref([])
 const loading = ref(false)
 const isValid = computed(() => !!gender.value && !!region.value && interests.value.length > 0)
@@ -137,7 +140,7 @@ async function startMatch(){
     interests_json: interests.value,
   }
   try{
-    // await api.post('/match/requests', payload)
+    await api.post('/match/requests', payload)
     router.push('/match/result')
   }catch(e){
     alert('매칭 실패: ' + (e?.response?.data?.message || e.message))
