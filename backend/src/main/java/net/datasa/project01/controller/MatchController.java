@@ -23,6 +23,7 @@ public class MatchController {
     public ResponseEntity<Map<String, Long>> createMatchRequest(
             @RequestHeader("X-USER-PID") Long userPid,
             @RequestBody MatchRequestDto dto) throws JsonProcessingException {
+
         MatchRequest saved = matchRequestRepository.save(MatchRequest.builder()
                 .userPid(userPid)
                 .choiceGender(dto.getChoiceGender())
@@ -34,3 +35,4 @@ public class MatchController {
         return ResponseEntity.ok(Map.of("requestId", saved.getRequestId()));
     }
 }
+

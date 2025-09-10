@@ -23,6 +23,7 @@ public class MatchRequest {
     @Column(name = "request_id")
     private Long requestId;
 
+
     @Column(name = "user_pid", nullable = false)
     private Long userPid;
 
@@ -44,6 +45,7 @@ public class MatchRequest {
     @Builder.Default
     @Column(name = "status", length = 10, nullable = false)
     private String status = "WAITING";
+
 
     @CreationTimestamp
     @Column(name = "requested_at", updatable = false)

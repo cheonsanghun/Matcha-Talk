@@ -1,6 +1,7 @@
 package net.datasa.project01.domain.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+
 import lombok.Data;
 import java.util.List;
 
@@ -23,4 +24,5 @@ public class MatchRequestDto {
 
     @JsonProperty("interests_json")
     private List<String> interestsJson;
+
 }
