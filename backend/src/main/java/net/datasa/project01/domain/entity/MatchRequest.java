@@ -20,8 +20,11 @@ public class MatchRequest {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "match_request_id")
+    @Column(name = "request_id")
     private Long matchRequestId;
+
+    @Column(name = "user_pid", nullable = false)
+    private Long userPid;
 
     @Column(name = "choice_gender", length = 1, nullable = false)
     private String choiceGender;
@@ -32,13 +35,16 @@ public class MatchRequest {
     @Column(name = "max_age", nullable = false)
     private int maxAge;
 
-    @Column(name = "region_code", length = 30, nullable = false)
+    @Column(name = "region_code", length = 10, nullable = false)
     private String regionCode;
 
-    @Column(name = "interests_json", columnDefinition = "TEXT", nullable = false)
+    @Column(name = "interests_json", columnDefinition = "JSON", nullable = false)
     private String interestsJson;
 
+    @Column(name = "status", length = 10, nullable = false)
+    private String status;
+
     @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "requested_at", updatable = false)
+    private LocalDateTime requestedAt;
 }
