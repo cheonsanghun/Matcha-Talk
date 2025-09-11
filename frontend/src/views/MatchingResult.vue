@@ -77,6 +77,7 @@ function declineMatch() {
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { createStompClient } from '../services/ws'
 import { setupSignalRoutes } from '../services/signaling'
+import { useAuthStore } from '../stores/auth'
 // import { setupChat } ...
 
   const me = ref(/* 로그인한 사용자 loginId */)
@@ -90,11 +91,12 @@ import { setupSignalRoutes } from '../services/signaling'
 })
 const localVideo = ref(null)
 const remoteVideo = ref(null)
+const auth = useAuthStore()
 let client, signal, subs = []
 
 onMounted(async () => {
   // 1) STOMP 연결
-  client = createStompClient(localStorage.getItem('token'))
+  client = createStompClient(auth.token)
   client.onConnect = async () => {
     // 2) 시그널 구독
     signal = setupSignalRoutes(client, {

@@ -85,7 +85,7 @@ async function start () {
 
     // 1) STOMP 클라이언트를 먼저 생성
     if (!client) {
-      client = createStompClient(localStorage.getItem('token'))
+      client = createStompClient(auth.token)
     }
 
     // 2) 이벤트 핸들러를 설정
