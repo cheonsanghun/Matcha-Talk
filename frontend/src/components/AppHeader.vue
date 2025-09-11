@@ -16,6 +16,8 @@
       <div v-else class="d-flex ga-3">
         <v-btn variant="tonal" color="pink" to="/match">매칭</v-btn>
         <v-btn variant="tonal" color="pink" to="/chat">채팅</v-btn>
+        <v-btn variant="tonal" color="pink" to="/rtc-test">영상테스트</v-btn>
+        <v-btn variant="tonal" color="pink" to="/vocabulary">단어장</v-btn>
         <v-btn variant="tonal" color="pink" to="/shop" disabled>상점</v-btn>
         <v-btn color="pink" to="/profile">프로필</v-btn>
       </div>

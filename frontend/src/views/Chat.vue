@@ -121,7 +121,7 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import axios from 'axios'
+import { useFriendsStore } from '../stores/friends'
 
 const query = ref('')
 const tab = ref('direct')
@@ -138,18 +138,16 @@ const conversations = ref({
 
 const chatMessagesContainer = ref(null)
 
-onMounted(async () => {
-  try {
-    const { data } = await axios.get('/api/follows')
-    chats.value = data
-  } catch (e) {
-    chats.value = [
-      { id: 1, name: '김서연', last: '안녕하세요! 오늘 날씨가 정말 좋네요' },
-      { id: 2, name: '대학 동기', last: '오늘은 다음 주 모임 관련 이야기' }
-    ]
-  }
+const friendsStore = useFriendsStore()
+
+onMounted(() => {
+  chats.value = friendsStore.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
   current.value = chats.value[0] || groups.value[0]
   scrollToBottom()
+})
+
+friendsStore.$subscribe((_, state) => {
+  chats.value = state.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
 })
 
 

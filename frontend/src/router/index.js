@@ -16,6 +16,8 @@ const routes = [
 
   { path: '/rtc-test',      name: 'rtc-test',      component: () => import('../views/RtcTest.vue'),       meta: { requiresAuth: true } },
 
+  { path: '/vocabulary',    name: 'vocabulary',    component: () => import('../views/Vocabulary.vue'),   meta: { requiresAuth: true } },
+
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
