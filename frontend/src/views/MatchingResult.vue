@@ -35,9 +35,9 @@
               </div>
             </v-col>
             <v-col cols="12" md="3">
-              <v-card variant="outlined" class="pa-4 h-100 chat-wrapper d-flex flex-column">
-                <ChatPanel class="flex-grow-1" />
-              </v-card>
+                <v-card variant="outlined" class="pa-4 h-100 chat-wrapper d-flex flex-column">
+                  <ChatPanel class="flex-grow-1" :partner="partnerName" />
+                </v-card>
             </v-col>
           </v-row>
 
@@ -79,9 +79,13 @@ import { createStompClient } from '../services/ws'
 import { setupSignalRoutes } from '../services/signaling'
 // import { setupChat } ...
 
-const me = ref(/* 로그인한 사용자 loginId */)
-const partner = ref(/* 매칭된 상대 loginId */)
-const pc = new RTCPeerConnection({
+  const me = ref(/* 로그인한 사용자 loginId */)
+  const partner = ref(/* 매칭된 상대 loginId */)
+  const partnerName = ref('홍길동')
+  const partnerAvatar = ref('https://via.placeholder.com/150')
+  const sessionStatus = ref('대기 중')
+  const mediaUrl = ref('')
+  const pc = new RTCPeerConnection({
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 })
 const localVideo = ref(null)

@@ -1,8 +1,8 @@
 <template>
   <v-container class="py-4">
-    <div class="d-flex ga-4 mb-4">
-      <video ref="localVideo" autoplay muted playsinline class="w-50 bg-grey-lighten-2"></video>
-      <video ref="remoteVideo" autoplay playsinline class="w-50 bg-grey-lighten-2"></video>
+    <div class="video-wrapper mb-4">
+      <video ref="remoteVideo" autoplay playsinline class="remote-video bg-grey-lighten-2"></video>
+      <video ref="localVideo" autoplay muted playsinline class="local-video bg-grey-lighten-2"></video>
     </div>
     <div class="d-flex flex-column" style="max-width:400px">
       <div class="flex-grow-1 overflow-y-auto mb-2" style="height:200px;">
@@ -108,7 +108,20 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-video {
-  max-height: 240px;
+.video-wrapper {
+  position: relative;
+}
+.remote-video {
+  width: 100%;
+  max-height: 360px;
+}
+.local-video {
+  position: absolute;
+  width: 30%;
+  max-width: 200px;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  border: 2px solid white;
+  border-radius: 4px;
 }
 </style>
