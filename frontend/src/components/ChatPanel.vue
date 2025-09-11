@@ -24,7 +24,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue';
+import { ref, nextTick, onMounted } from 'vue';
 
 const messages = ref(['안녕하세요!', '테스트 메시지']);
 const newMessage = ref('');
@@ -46,6 +46,9 @@ function send() {
     scrollToBottom();
   }
 }
+
+onMounted(scrollToBottom);
+
 </script>
 
 <style scoped>

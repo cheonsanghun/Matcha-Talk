@@ -1,6 +1,6 @@
 <template>
-  <v-container fluid class="chat-page pa-0 mt-4">
-    <v-row no-gutters>
+  <v-container fluid class="chat-page  mt-4">
+    <v-row no-gutters class="h-100">
       <!-- Sidebar -->
       <v-col cols="12" md="3" class="chat-sidebar d-flex flex-column">
         <div class="sidebar-header d-flex align-center px-4 py-3">
@@ -75,7 +75,7 @@
           <v-btn v-else icon variant="text"><v-icon>mdi-video</v-icon></v-btn>
         </div>
         <v-divider />
-        <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto">
+        <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto" ref="chatMessagesContainer">
           <div class="text-center my-4 text-caption text-grey">2023년 1월 18일</div>
           <div
             v-for="(m, i) in messages"
@@ -120,7 +120,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import axios from 'axios'
 
 const query = ref('')
@@ -136,6 +136,8 @@ const conversations = ref({
   3: []
 })
 
+const chatMessagesContainer = ref(null)
+
 onMounted(async () => {
   try {
     const { data } = await axios.get('/api/follows')
@@ -147,6 +149,7 @@ onMounted(async () => {
     ]
   }
   current.value = chats.value[0] || groups.value[0]
+  scrollToBottom()
 })
 
 
@@ -171,10 +174,19 @@ const groupParticipants = computed(() => {
 
 const messages = computed(() => conversations.value[current.value.id] || [])
 
+function scrollToBottom() {
+  nextTick(() => {
+    const el = chatMessagesContainer.value
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
+  })
+}
 
 function openChat(item) {
   current.value = item
   if (!conversations.value[item.id]) conversations.value[item.id] = []
+  scrollToBottom()
 }
 
 function inviteParticipant() {
@@ -206,12 +218,15 @@ function send() {
   if (chat) chat.last = draft.value
 
   draft.value = ''
+  scrollToBottom()
 }
+
+watch(messages, () => scrollToBottom())
 </script>
 
 <style scoped>
 .chat-page {
-  height: calc(100vh - var(--v-layout-top) - 16px);
+  height: calc(100vh - var(--v-layout-top));
 }
 .chat-sidebar {
   background: #fff;
