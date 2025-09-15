@@ -36,6 +36,10 @@ public class User {
     @Column(name = "country_code", length = 2, nullable = false)
     private String countryCode;
 
+    // [추가됨] language_code 필드 <- api번역 때문에 추가
+    @Column(name = "language_code", length = 8)
+    private String languageCode;
+
     @Column(length = 1, nullable = false)
     private Character gender;
 
