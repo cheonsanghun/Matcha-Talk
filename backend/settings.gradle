@@ -1,1 +1,6 @@
+// ✅ JDK 17 자동 설치(툴체인) 활성화
+plugins {
+  id 'org.gradle.toolchains.foojay-resolver-convention' version '0.9.0'
+}
+
 rootProject.name = 'project01'
