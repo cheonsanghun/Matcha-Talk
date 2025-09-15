@@ -1,72 +1,74 @@
 package net.datasa.project01.controller;
 
-import net.datasa.project01.domain.dto.UserResponse;
-import net.datasa.project01.domain.dto.UserSignUpRequest;
-import net.datasa.project01.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import net.datasa.project01.domain.dto.UserResponse;
+import net.datasa.project01.domain.dto.UserSignUpRequestDto;
+import net.datasa.project01.service.UserService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
-import net.datasa.project01.service.EmailVerificationService;
 
-import java.net.URI;
 import java.util.Map;
 
-/**
- * REST 컨트롤러:
- * - POST /api/users/signup : 회원가입
- * - GET  /api/users/{pid}  : 단건 조회(옵션)
- * - GET  /api/users/ping   : 간단 헬스 핑
- */
+@Slf4j
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/users")
+@RequiredArgsConstructor
 public class UserController {
-
+    
     private final UserService userService;
-    private final EmailVerificationService emailVerifSvc; // ← 추가
 
-
-    @GetMapping("/ping")
-    public Map<String, Object> ping() {
-        return Map.of("ok", true, "service", "project01");
-    }
-
+    /**
+     * 회원가입 API
+     * @param requestDto 회원가입 요청 데이터
+     * @return 생성된 사용자 정보
+     */
     @PostMapping("/signup")
-    public ResponseEntity<UserResponse> signUp(@Valid @RequestBody UserSignUpRequest req) {
-        UserResponse created = userService.signUp(req);
-        // Location 헤더에 생성 리소스 경로 제공(REST 관례)
-        return ResponseEntity.created(URI.create("/api/users/" + created.getUserPid()))
-                .body(created);
+    public ResponseEntity<UserResponse> signUp(@Valid @RequestBody UserSignUpRequestDto requestDto) {
+        UserResponse response = userService.signUp(requestDto);
+        // 회원가입 성공 시, HTTP 201 Created 상태와 함께 생성된 사용자 정보 반환
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    @GetMapping("/{pid}")
-    public ResponseEntity<UserResponse> getOne(@PathVariable Long pid) {
-        return ResponseEntity.ok(userService.getUser(pid));
-    }
-
-    /** 아이디 중복 확인 */
+    /**
+     * 로그인 ID 또는 이메일 중복 확인 API
+     * @param loginId 확인할 로그인 ID (옵션)
+     * @param email 확인할 이메일 (옵션)
+     * @return 중복 여부 (true: 중복, false: 사용 가능)
+     */
     @GetMapping("/exists")
-    public Map<String, Boolean> existsLoginId(@RequestParam("loginId") String loginId) {
-        boolean exists = userService.existsByLoginId(loginId);
-        return Map.of("exists", exists);
+    public ResponseEntity<Map<String, Boolean>> checkExistence(
+            @RequestParam(required = false) String loginId,
+            @RequestParam(required = false) String email) {
+        
+        boolean exists = false;
+        if (loginId != null) {
+            exists = userService.existsByLoginId(loginId);
+        } else if (email != null) {
+            exists = userService.existsByEmail(email);
+        } else {
+            // 파라미터가 둘 다 없는 경우 잘못된 요청으로 처리
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(Map.of("exists", exists));
     }
 
-    /** (1) 인증번호 요청 — body: { "email": "..." } */
-    @PostMapping("/email/verify/request")
-    public Map<String, Object> requestEmailVerify(@RequestBody Map<String, String> body) {
-        String email = body.getOrDefault("email", "").trim();
-        if (email.isBlank()) throw new IllegalArgumentException("이메일을 입력하세요.");
-        return emailVerifSvc.requestVerifyEmail(email);
+    /**
+     * 현재 로그인된 사용자의 프로필 정보 조회 API
+     * @param userDetails JWT 인증을 통해 얻은 현재 사용자 정보
+     * @return 사용자 프로필 응답 DTO
+     */
+    @GetMapping("/profile")
+    public ResponseEntity<UserResponse> getMyProfile(@AuthenticationPrincipal UserDetails userDetails) {
+        // userDetails.getUsername()은 현재 로그인된 사용자의 loginId를 반환
+        // User 엔티티를 직접 조회하여 DTO로 변환하는 로직이 필요합니다. (UserService에 추가 필요)
+        UserResponse userProfile = userService.getUserByLoginId(userDetails.getUsername());
+        return ResponseEntity.ok(userProfile);
     }
-
-
-    /** (2) 인증번호 확인 — body: { "email": "...", "token": "123456" } */
-    @PostMapping("/email/verify/confirm")
-    public Map<String, Object> confirmEmailVerify(@RequestBody Map<String, String> body) {
-        String email = body.getOrDefault("email", "").trim();
-        String token = body.getOrDefault("token", "").trim();
-        if (email.isBlank() || token.isBlank()) throw new IllegalArgumentException("이메일과 인증번호를 입력하세요.");
-        return emailVerifSvc.confirmVerifyEmail(email, token);
-    }
+    
+    // 참고: getUser(Long pid)와 같은 다른 메소드들은 필요에 따라 계속 추가할 수 있음
 }

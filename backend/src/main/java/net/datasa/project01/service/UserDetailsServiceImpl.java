@@ -1,4 +1,4 @@
-package net.datasa.project01.service; 
+package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
 import net.datasa.project01.domain.entity.User;
@@ -30,7 +30,8 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         return new org.springframework.security.core.userdetails.User(
                 user.getLoginId(),
                 user.getPasswordHash(),
-                Collections.singletonList(new SimpleGrantedAuthority(user.getRoleName()))
+                // [수정됨] getRoleName() -> getRolename()
+                Collections.singletonList(new SimpleGrantedAuthority(user.getRolename()))
         );
     }
 }
