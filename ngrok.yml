@@ -1,0 +1,10 @@
+# Example ngrok configuration for Matcha-Talk
+# Run with: ngrok start --config=ngrok.yml --all
+version: "2"
+tunnels:
+  backend:
+    proto: http
+    addr: 8080
+  frontend:
+    proto: http
+    addr: 5173
