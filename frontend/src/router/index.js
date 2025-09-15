@@ -16,6 +16,10 @@ const routes = [
 
   { path: '/rtc-test',      name: 'rtc-test',      component: () => import('../views/RtcTest.vue'),       meta: { requiresAuth: true } },
 
+  { path: '/vocabulary',    name: 'vocabulary',    component: () => import('../views/Vocabulary.vue'),   meta: { requiresAuth: true } },
+
+  { path: '/admin', name: 'admin-dashboard', component: () => import('../views/admin/AdminDashboard.vue'), meta: { requiresAuth: true, requiresAdmin: true } },
+
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
@@ -35,6 +39,10 @@ router.beforeEach((to, from, next) => {
   // 보호 라우트
   if (to.meta?.requiresAuth && !auth.isAuthenticated) {
     return next({ name: 'login', replace: true })
+  }
+
+  if (to.meta?.requiresAdmin && auth.user?.roleName !== 'ROLE_ADMIN') {
+    return next({ name: 'home', replace: true })
   }
 
   next()
