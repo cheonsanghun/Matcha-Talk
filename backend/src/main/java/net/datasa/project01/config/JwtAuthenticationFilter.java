@@ -20,6 +20,7 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+
 @Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -38,6 +39,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.userDetailsService = userDetailsService;
         this.protectedMatchers = List.copyOf(protectedMatchers);
     }
+
 
     @Override
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {

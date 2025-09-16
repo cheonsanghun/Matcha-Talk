@@ -15,6 +15,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
+
 /**
  * 애플리케이션 전반의 HTTP 보안 정책을 구성합니다.
  * <ul>
@@ -56,6 +57,7 @@ public class SecurityConfig {
                         userDetailsService,
                         protectedMatchers);
 
+
         http
                 // CSRF 보호 비활성화 (REST API나 테스트 환경에서는 불필요)
                 .csrf(csrf -> csrf.disable())
@@ -65,6 +67,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         // 매칭 관련 엔드포인트는 JWT 인증 필요
                         .requestMatchers(PROTECTED_ENDPOINTS).authenticated()
+
                         // 그 외 모든 요청도 허용 (필요 시 확장)
                         .anyRequest().permitAll()
                 )
@@ -82,6 +85,7 @@ public class SecurityConfig {
         return Arrays.stream(PROTECTED_ENDPOINTS)
                 .map(AntPathRequestMatcher::new)
                 .collect(Collectors.toUnmodifiableList());
+
     }
 
     /**
