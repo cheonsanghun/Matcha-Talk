@@ -13,9 +13,11 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -23,9 +25,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
-    
+
     private final JwtUtil jwtUtil;
     private final UserDetailsServiceImpl userDetailsService;
+    private final List<RequestMatcher> protectedMatchers;
+
+    @Override
+    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+        boolean requiresAuth = protectedMatchers.stream()
+                .anyMatch(matcher -> matcher.matches(request));
+
+        if (!requiresAuth && log.isTraceEnabled()) {
+            log.trace("Skipping JWT filter for URI: {}", request.getRequestURI());
+        }
+
+        return !requiresAuth;
+    }
 
     @Override
     protected void doFilterInternal(
