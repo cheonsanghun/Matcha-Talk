@@ -10,8 +10,12 @@ const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 const origin = apiBase.replace(/\/api\/?$/, '')
 
 export function createStompClient(token) {
+    const sockJsUrl = token
+        ? `${origin}${WS_PATH}?token=${encodeURIComponent(token)}`
+        : `${origin}${WS_PATH}`
+
     const client = new Client({
-        webSocketFactory: () => new SockJS(origin + WS_PATH),
+        webSocketFactory: () => new SockJS(sockJsUrl),
         connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
         reconnectDelay: 3000,
         debug: () => {} // 필요 시 콘솔 출력

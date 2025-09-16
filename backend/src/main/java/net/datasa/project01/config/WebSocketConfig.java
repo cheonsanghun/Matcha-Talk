@@ -25,6 +25,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompHandler stompHandler;
     private final StompInboundLoggingInterceptor stompInboundLoggingInterceptor;
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
+    private final JwtHandshakeHandler jwtHandshakeHandler;
 
     private static final int INBOUND_CORE_POOL_SIZE = 8;
     private static final int INBOUND_MAX_POOL_SIZE = 32;
@@ -39,7 +41,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws-stomp")
-                .setAllowedOriginPatterns("http://localhost:5173") // 개발용
+                .addInterceptors(jwtHandshakeInterceptor)
+                .setHandshakeHandler(jwtHandshakeHandler)
+                .setAllowedOriginPatterns(
+                        "http://localhost:5173",
+                        "https://*.ngrok-free.app",
+                        "https://matcha-talk.datasa.app")
                 .withSockJS();  // ★ SockJS 필수
     }
 
