@@ -93,6 +93,32 @@ public class ChatService {
                 message.getCreatedAt()
         );
     }
+    @Transactional
+    public Room createPrivateRoom(User user1, User user2) {
+        // 1. 새로운 PRIVATE 타입의 방 생성
+        Room newRoom = Room.builder()
+                .roomType(Room.RoomType.PRIVATE)
+                .capacity(2)
+                .build();
+        roomRepository.save(newRoom);
+
+        // 2. 두 명의 사용자를 멤버로 추가
+        RoomMember member1 = RoomMember.builder()
+                .room(newRoom)
+                .user(user1)
+                .role("MEMBER")
+                .build();
+
+        RoomMember member2 = RoomMember.builder()
+                .room(newRoom)
+                .user(user2)
+                .role("MEMBER")
+                .build();
+
+        roomMemberRepository.saveAll(java.util.List.of(member1, member2)); // 두 멤버를 한 번에 저장
+
+        return newRoom;
+    }
 
     // TODO: 추가 필요한 메서드들
     // public void joinRoom(Long roomId, String loginId) { }
