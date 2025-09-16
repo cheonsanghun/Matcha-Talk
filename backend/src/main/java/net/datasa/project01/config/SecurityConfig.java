@@ -7,11 +7,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
-import net.datasa.project01.service.UserDetailsServiceImpl;
-import net.datasa.project01.util.JwtUtil;
-
 
 /**
  * [SecurityConfig]
@@ -31,12 +26,7 @@ public class SecurityConfig {
      * - 폼 로그인 비활성화 (REST API 환경)
      */
     @Bean
-    JwtAuthenticationFilter jwtAuthenticationFilter(JwtUtil jwtUtil, UserDetailsServiceImpl userDetailsService) {
-        return new JwtAuthenticationFilter(jwtUtil, userDetailsService);
-    }
-
-    @Bean
-    SecurityFilterChain http(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+    SecurityFilterChain http(HttpSecurity http) throws Exception {
         http
                 // CSRF 보호 비활성화 (REST API나 테스트 환경에서는 불필요)
                 .csrf(csrf -> csrf.disable())
@@ -44,8 +34,6 @@ public class SecurityConfig {
                 .authorizeHttpRequests(reg -> reg
                         // actuator, api/users 경로는 모두 허용
                         .requestMatchers("/actuator/**", "/api/users/**").permitAll()
-                        // 매치 API는 인증 필요
-                        .requestMatchers("/api/match/**").authenticated()
                         // 그 외 모든 요청도 허용
                         .anyRequest().permitAll()
                 )
@@ -53,8 +41,6 @@ public class SecurityConfig {
                 .httpBasic(Customizer.withDefaults())
                 // 폼 로그인 비활성화 (REST API 환경에서는 사용하지 않음)
                 .formLogin(form -> form.disable());
-
-        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         // 최종 SecurityFilterChain 반환
         return http.build();
     }

@@ -106,8 +106,10 @@
 import { ref, computed } from 'vue'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 const ageRange = ref([20, 30])
 const gender = ref('A')
 const regions = [
@@ -129,8 +131,19 @@ const interests = ref([])
 const loading = ref(false)
 const isValid = computed(() => !!gender.value && !!region.value && interests.value.length > 0)
 
+function redirectToLogin() {
+  const redirect = router.currentRoute.value.fullPath
+  router.replace({ name: 'login', query: { redirect } })
+}
+
 async function startMatch(){
+  if (!auth.isAuthenticated) {
+    redirectToLogin()
+    return
+  }
+
   if (!isValid.value) return
+
   loading.value = true
   const payload = {
     choice_gender: gender.value,
@@ -143,6 +156,12 @@ async function startMatch(){
     await api.post('/match/requests', payload)
     router.push('/match/result')
   }catch(e){
+    const status = e?.response?.status
+    if (status === 401) {
+      auth.logout()
+      redirectToLogin()
+      return
+    }
     alert('매칭 실패: ' + (e?.response?.data?.message || e.message))
   }finally{
     loading.value = false

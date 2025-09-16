@@ -1,20 +1,16 @@
 package net.datasa.project01.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.MatchRequestDto;
-import net.datasa.project01.domain.entity.MatchRequest;
-import net.datasa.project01.repository.MatchRequestRepository;
 import net.datasa.project01.service.MatchService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/match")
@@ -34,6 +30,10 @@ public class MatchController {
     public ResponseEntity<String> startRandomMatch(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody MatchRequestDto dto) {
+
+        if (userDetails == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증이 필요합니다.");
+        }
 
         try {
             String loginId = userDetails.getUsername();
