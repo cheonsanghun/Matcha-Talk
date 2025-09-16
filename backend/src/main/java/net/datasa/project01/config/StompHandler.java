@@ -14,6 +14,9 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+import java.util.Map;
+
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -28,8 +31,17 @@ public class StompHandler implements ChannelInterceptor {
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
-        log.debug("Processing STOMP message with command: {}", accessor.getCommand());
-        
+
+        if (log.isDebugEnabled()) {
+            Map<String, List<String>> headers = StompLoggingUtils.sanitizeHeaders(accessor.toNativeHeaderMap());
+            log.debug("Processing STOMP message - command={}, sessionId={}, destination={}, user={}, headers={}",
+                    accessor.getCommand(),
+                    accessor.getSessionId(),
+                    accessor.getDestination(),
+                    StompLoggingUtils.extractUser(accessor.getUser()),
+                    headers);
+        }
+
         if (StompCommand.CONNECT.equals(accessor.getCommand())) {
             authenticateWebSocketConnection(accessor);
         }
@@ -39,14 +51,20 @@ public class StompHandler implements ChannelInterceptor {
     
     private void authenticateWebSocketConnection(StompHeaderAccessor accessor) {
         String authHeader = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
-        
+
+        if (log.isDebugEnabled()) {
+            log.debug("CONNECT frame headers after sanitization: {}",
+                    StompLoggingUtils.sanitizeHeaders(accessor.toNativeHeaderMap()));
+        }
+
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
-            log.warn("No valid authorization header found for WebSocket connection");
+            log.warn("No valid authorization header found for WebSocket connection. sessionId={}",
+                    accessor.getSessionId());
             return;
         }
-        
+
         String token = authHeader.substring(BEARER_PREFIX.length());
-        
+
         try {
             if (jwtUtil.validateToken(token)) {
                 String loginId = jwtUtil.getUsernameFromToken(token);
@@ -58,13 +76,13 @@ public class StompHandler implements ChannelInterceptor {
                         
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 accessor.setUser(authentication);
-                
+
                 log.info("WebSocket authentication successful for user: {}", loginId);
             } else {
-                log.warn("Invalid JWT token for WebSocket connection");
+                log.warn("Invalid JWT token for WebSocket connection. sessionId={}", accessor.getSessionId());
             }
         } catch (Exception e) {
-            log.error("Error during WebSocket authentication", e);
+            log.error("Error during WebSocket authentication. sessionId={}", accessor.getSessionId(), e);
         }
     }
 }

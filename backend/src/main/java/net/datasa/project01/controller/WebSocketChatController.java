@@ -33,9 +33,17 @@ public class WebSocketChatController {
             ChatMessageRequestDto requestDto,
             Principal principal) {
 
+        String messageContent = requestDto != null ? requestDto.getContent() : "<null>";
+
+        if (principal == null) {
+            log.error("Received chat message without authenticated principal. roomId={}, payload={}",
+                    roomId, messageContent);
+            throw new IllegalStateException("인증된 사용자 정보가 없습니다.");
+        }
+
         try {
-            log.debug("Processing chat message for roomId: {} from user: {}",
-                    roomId, principal.getName());
+            log.debug("Processing chat message for roomId: {} from user: {} with payload: {}",
+                    roomId, principal.getName(), messageContent);
 
             String loginId = principal.getName();
             requestDto.setRoomId(roomId);
@@ -56,6 +64,13 @@ public class WebSocketChatController {
      */
     @MessageMapping("/signal")
     public void handleSignal(SignalMessage signalMessage, Principal principal) {
+        if (principal == null) {
+            log.error("Received WebRTC signal without authenticated principal. payloadType={} receiver={}",
+                    signalMessage != null ? signalMessage.getType() : "<null>",
+                    signalMessage != null ? signalMessage.getReceiverLoginId() : "<null>");
+            return;
+        }
+
         try {
             if (signalMessage.getReceiverLoginId() == null ||
                     signalMessage.getReceiverLoginId().trim().isEmpty()) {
@@ -71,8 +86,8 @@ public class WebSocketChatController {
                     signalMessage
             );
 
-            log.debug("WebRTC signal sent from {} to {}",
-                    principal.getName(), signalMessage.getReceiverLoginId());
+            log.debug("WebRTC signal [{}] sent from {} to {}",
+                    signalMessage.getType(), principal.getName(), signalMessage.getReceiverLoginId());
 
         } catch (Exception e) {
             log.error("Error handling WebRTC signal from user: {}", principal.getName(), e);
