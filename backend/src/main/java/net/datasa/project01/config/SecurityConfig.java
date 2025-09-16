@@ -4,7 +4,6 @@ import net.datasa.project01.service.UserDetailsServiceImpl;
 import net.datasa.project01.util.JwtUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -50,8 +49,8 @@ public class SecurityConfig {
                 )
                 // JWT 인증 필터 등록
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                // HTTP Basic 인증 활성화 (테스트용, 실제 서비스에서는 비활성화 권장)
-                .httpBasic(Customizer.withDefaults())
+                // 인증 실패 시 처리 핸들러 등록
+                .exceptionHandling(e -> e.authenticationEntryPoint(new JwtAuthenticationEntryPoint()))
                 // 폼 로그인 비활성화 (REST API 환경에서는 사용하지 않음)
                 .formLogin(form -> form.disable());
         // 최종 SecurityFilterChain 반환
