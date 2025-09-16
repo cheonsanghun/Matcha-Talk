@@ -90,8 +90,16 @@ public class MatchService {
             Room privateRoom = chatService.createPrivateRoom(me, opponent);
 
             // 양쪽 사용자에게 매칭 성공 알림 전송 (웹소켓)
-            MatchFoundResponseDto myResponse = new MatchFoundResponseDto(privateRoom.getRoomId(), opponent.getNickName());
-            MatchFoundResponseDto opponentResponse = new MatchFoundResponseDto(privateRoom.getRoomId(), me.getNickName());
+            MatchFoundResponseDto myResponse = new MatchFoundResponseDto(
+                    privateRoom.getRoomId(),
+                    opponent.getNickName(),
+                    opponent.getLoginId()
+            );
+            MatchFoundResponseDto opponentResponse = new MatchFoundResponseDto(
+                    privateRoom.getRoomId(),
+                    me.getNickName(),
+                    me.getLoginId()
+            );
 
             messagingTemplate.convertAndSendToUser(me.getLoginId(), "/queue/match-results", myResponse);
             messagingTemplate.convertAndSendToUser(opponent.getLoginId(), "/queue/match-results", opponentResponse);

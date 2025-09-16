@@ -8,5 +8,6 @@ import lombok.Getter;
 public class MatchFoundResponseDto {
     private Long roomId;
     private String partnerNickName;
+    private String partnerLoginId;
     // 향후 파트너의 프로필 사진, 관심사 등 추가 정보 포함 가능
 }

@@ -12,6 +12,7 @@ const routes = [
 
   { path: '/match',         name: 'match',         component: () => import('../views/MatchingSetup.vue'),  meta: { requiresAuth: true } },
   { path: '/match/result',  name: 'match-result',  component: () => import('../views/MatchingResult.vue'), meta: { requiresAuth: true } },
+  { path: '/match/video/:roomId', name: 'match-video', component: () => import('../views/MatchVideoChat.vue'), meta: { requiresAuth: true } },
   { path: '/chat',          name: 'chat',          component: () => import('../views/Chat.vue'),           meta: { requiresAuth: true } },
 
   { path: '/rtc-test',      name: 'rtc-test',      component: () => import('../views/RtcTest.vue'),       meta: { requiresAuth: true } },
