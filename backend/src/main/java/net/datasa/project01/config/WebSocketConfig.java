@@ -11,6 +11,8 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+import java.util.Collections;
+
 import java.util.concurrent.RejectedExecutionException;
 
 import jakarta.annotation.PostConstruct;
@@ -52,14 +54,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureClientInboundChannel(ChannelRegistration registration) {
         log.debug("Configuring client inbound channel with diagnostic interceptors");
         registration.interceptors(stompInboundLoggingInterceptor, stompHandler);
-        ThreadPoolTaskExecutor executor = clientInboundChannelExecutor();
+        ThreadPoolTaskExecutor executor = diagnosticClientInboundExecutor();
+
         registration.taskExecutor(executor);
         log.info("clientInboundChannel executor in use - corePoolSize={}, maxPoolSize={}, queueCapacity={}",
                 executor.getCorePoolSize(), executor.getMaxPoolSize(), INBOUND_QUEUE_CAPACITY);
     }
 
     @Bean
-    public ThreadPoolTaskExecutor clientInboundChannelExecutor() {
+    public ThreadPoolTaskExecutor diagnosticClientInboundExecutor() {
+
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setThreadNamePrefix("ws-inbound-");
         executor.setCorePoolSize(INBOUND_CORE_POOL_SIZE);
@@ -68,11 +72,23 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         executor.setKeepAliveSeconds(INBOUND_KEEP_ALIVE_SECONDS);
         executor.setRejectedExecutionHandler((runnable, threadPoolExecutor) -> {
             int queueSize = threadPoolExecutor.getQueue() != null ? threadPoolExecutor.getQueue().size() : -1;
-            log.error("clientInboundChannel executor is saturated - activeCount={}, poolSize={}, queueSize={}",
+            String saturationReason = String.format(
+                    "스레드 풀 또는 작업 큐가 포화 상태입니다. activeCount=%d, poolSize=%d, queueSize=%d",
                     threadPoolExecutor.getActiveCount(),
                     threadPoolExecutor.getPoolSize(),
                     queueSize);
-            throw new RejectedExecutionException("clientInboundChannel executor is saturated");
+            String diagnosticMessage = StompLoggingUtils.buildClientInboundFailureMessage(
+                    saturationReason,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    threadPoolExecutor.getClass().getSimpleName(),
+                    Collections.emptyMap());
+            log.error(diagnosticMessage);
+            throw new RejectedExecutionException(saturationReason);
+
         });
         executor.initialize();
         log.info("clientInboundChannel executor initialized - corePoolSize={}, maxPoolSize={}, queueCapacity={}",
