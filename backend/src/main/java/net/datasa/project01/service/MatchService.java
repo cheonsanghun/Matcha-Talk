@@ -86,8 +86,8 @@ public class MatchService {
             // 두 요청의 상태를 MATCHED로 변경
             matchedOpponentRequest.setStatus(MatchRequest.MatchStatus.MATCHED);
 
-            // 1:1 채팅방 생성
-            Room privateRoom = chatService.createPrivateRoom(me, opponent);
+            // 1:1 채팅방 생성 (이미 존재한다면 재사용)
+            Room privateRoom = chatService.getOrCreatePrivateRoom(me.getLoginId(), opponent.getLoginId());
 
             // 양쪽 사용자에게 매칭 성공 알림 전송 (웹소켓)
             MatchFoundResponseDto myResponse = new MatchFoundResponseDto(

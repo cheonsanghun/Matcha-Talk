@@ -11,4 +11,9 @@ public class ChatMessageRequestDto {
      */
     private Long roomId;        // 메시지를 보낼 방
     private String content;     // 메시지 내용
+    private String contentType; // TEXT, IMAGE, FILE
+    private String fileName;
+    private String fileUrl;
+    private String mimeType;
+    private Long sizeBytes;
 }

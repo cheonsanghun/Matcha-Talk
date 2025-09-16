@@ -26,10 +26,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final StompHandler stompHandler;
     private final StompInboundLoggingInterceptor stompInboundLoggingInterceptor;
 
-    private static final int INBOUND_CORE_POOL_SIZE = 4;
-    private static final int INBOUND_MAX_POOL_SIZE = 16;
-    private static final int INBOUND_QUEUE_CAPACITY = 200;
-    private static final int INBOUND_KEEP_ALIVE_SECONDS = 60;
+    private static final int INBOUND_CORE_POOL_SIZE = 8;
+    private static final int INBOUND_MAX_POOL_SIZE = 32;
+    private static final int INBOUND_QUEUE_CAPACITY = 1000;
+    private static final int INBOUND_KEEP_ALIVE_SECONDS = 120;
 
     @PostConstruct
     public void init() {
