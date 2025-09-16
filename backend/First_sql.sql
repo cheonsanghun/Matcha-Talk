@@ -17,6 +17,7 @@ CREATE TABLE users
        추가 안전장치로 체크 제약을 둠(서버 시간 기준). */
         CHECK (birth_date >= DATE '1900-01-01'),
     email_verified     TINYINT(1)   DEFAULT 0 CHECK (email_verified IN (0,1)),            -- 이메일 인증 여부
+    language_code      VARCHAR(8) NULL,                                                   -- 사용 언어 코드(ko, ja 등)
     failed_login_count INT         DEFAULT 0 CHECK (failed_login_count >= 0),             -- 연속 로그인 실패 횟수
     locked_until       DATETIME NULL,                                                     -- 5회 이상 실패 시 잠금 해제 예정 시각
     enabled            TINYINT(1)   DEFAULT 1 CHECK (enabled IN (0,1)),                   -- 계정 사용 가능 여부(1:사용,0:정지)

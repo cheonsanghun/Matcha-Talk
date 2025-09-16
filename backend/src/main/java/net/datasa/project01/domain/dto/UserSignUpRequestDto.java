@@ -47,6 +47,13 @@ public class UserSignUpRequestDto {
     @NotNull
     private LocalDate birthDate;
 
+    @NotBlank
+    @Pattern(regexp = "^(ko|ja)$", message = "언어 코드는 'ko' 또는 'ja'여야 합니다.")
+    private String languageCode; 
+
+    @NotBlank(message = "이메일 인증 코드를 입력해주세요.")
+    private String verificationCode;
+
     @AssertTrue(message = "비밀번호와 비밀번호 확인이 일치하지 않습니다.")
     public boolean isPasswordConfirmed() {
         if (password == null || confirmPassword == null) return false;

@@ -19,7 +19,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    // private final EmailVerificationService emailVerificationService; // TODO: EmailVerificationService 구현 후 주석 해제
+    private final EmailVerificationService emailVerificationService;
 
     /**
      * 회원가입 처리 메서드
@@ -35,8 +35,8 @@ public class UserService {
             throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
         }
 
-        // TODO: EmailVerificationService 구현 후 아래 주석 해제
-        // emailVerificationService.verifyTokenForEmail(req.getEmail(), req.getVerificationToken());
+        // 회원가입 전, 이메일 인증이 완료되었는지 최종 확인
+        emailVerificationService.verifyTokenForEmail(req.getEmail(), req.getVerificationCode());
 
         // User 엔티티 생성
         User user = User.builder()
@@ -45,9 +45,10 @@ public class UserService {
                 .nickName(req.getNickName())
                 .email(req.getEmail())
                 .countryCode(req.getCountryCode())
+                .languageCode(req.getLanguageCode())    // dto에서 입력받은 언어값으로 언어설정 나중에 프론트에 (사용 언어)추가로 설정하면 될 듯
                 .gender(req.getGender().charAt(0)) // String -> Character 변환
                 .birthDate(req.getBirthDate())
-                .emailVerified(true) // TODO: 이메일 인증 기능 구현 후 false로 변경하고, 인증 완료 시 true로 업데이트
+                .emailVerified(true) // 이 단계까지 왔다면 이메일 인증이 성공한 것임
                 .enabled(true)
                 .rolename("ROLE_USER")
                 .build();

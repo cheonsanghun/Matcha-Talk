@@ -135,8 +135,10 @@ public class EmailVerificationService {
         if (ev.getUsedAt() == null) {
             throw new IllegalArgumentException("이메일 인증이 완료되지 않았습니다.");
         }
-        if (!ev.getExpiresAt().isAfter(now)) {
-            throw new IllegalArgumentException("인증번호가 만료되었습니다.");
+        // [수정됨] 토큰의 만료 시간이 아닌, 인증 완료 후 일정 시간이 지났는지 확인 (예: 1시간)
+        long minutesSinceVerified = Duration.between(ev.getUsedAt(), now).toMinutes();
+        if (minutesSinceVerified > 60) {
+            throw new IllegalArgumentException("이메일 인증 후 1시간이 경과했습니다. 다시 인증해주세요.");
         }
     }
 

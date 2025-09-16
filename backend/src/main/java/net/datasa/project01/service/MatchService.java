@@ -86,6 +86,18 @@ public class MatchService {
             // 두 요청의 상태를 MATCHED로 변경
             matchedOpponentRequest.setStatus(MatchRequest.MatchStatus.MATCHED);
 
+            // [수정됨] 나의 매칭 요청도 'MATCHED' 상태로 생성하여 기록을 남김
+            MatchRequest myMatchedRequest = MatchRequest.builder()
+                    .user(me)
+                    .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
+                    .minAge(requestDto.getMinAge())
+                    .maxAge(requestDto.getMaxAge())
+                    .regionCode(requestDto.getRegionCode())
+                    .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
+                    .status(MatchRequest.MatchStatus.MATCHED) // 상태를 MATCHED로 설정
+                    .build();
+            matchRequestRepository.save(myMatchedRequest);
+
             // 1:1 채팅방 생성
             Room privateRoom = chatService.createPrivateRoom(me, opponent);
 
