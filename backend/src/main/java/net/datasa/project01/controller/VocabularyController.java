@@ -33,7 +33,7 @@ public class VocabularyController {
             @RequestBody @Valid VocabularySaveRequest request) {
 
         return ResponseEntity.ok(
-                vocabularyService.addWord(requireUser(userDetails), request.getOriginal(), request.getTranslated())
+                vocabularyService.addWord(requireUser(userDetails), request.original(), request.translated)
         );
     }
 
