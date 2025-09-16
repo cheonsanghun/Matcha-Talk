@@ -2,8 +2,10 @@ package net.datasa.project01.controller;
 
 import lombok.RequiredArgsConstructor;
 import net.datasa.project01.domain.dto.LoginRequest;
+import net.datasa.project01.domain.dto.LoginResponse;
 import net.datasa.project01.domain.dto.UserSummary;
 import net.datasa.project01.service.AuthService;
+import net.datasa.project01.util.JwtUtil;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -36,6 +38,9 @@ public class AuthController {
     /** 로그인/잠금 정책을 포함한 실제 인증 로직을 제공하는 서비스 빈 */
     private final AuthService authService;
 
+    /** JWT 토큰 생성 및 검증 유틸리티 */
+    private final JwtUtil jwtUtil;
+
     /**
      * 로그인 엔드포인트.
      *
@@ -44,10 +49,20 @@ public class AuthController {
      * - 성공 시: UserSummary만 내려 UI가 필요한 최소 정보만 제공한다(민감정보 제외).
      */
     @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<UserSummary> loginLocal(@RequestBody @Validated LoginRequest req) {
+    public ResponseEntity<LoginResponse> loginLocal(@RequestBody @Validated LoginRequest req) {
         // 서비스 계층에 실제 인증을 위임한다.
         UserSummary user = authService.loginLocal(req.getLoginId(), req.getPassword());
-        // 성공 응답: 200 OK + UserSummary(JSON)
-        return ResponseEntity.ok(user);
+
+        // 로그인 성공 시 JWT 토큰을 발급한다.
+        String token = jwtUtil.createToken(user.getLoginId());
+
+        // 성공 응답: 200 OK + { token, token_type, user }
+        return ResponseEntity.ok(
+                LoginResponse.builder()
+                        .token(token)
+                        .tokenType("Bearer")
+                        .user(user)
+                        .build()
+        );
     }
 }
