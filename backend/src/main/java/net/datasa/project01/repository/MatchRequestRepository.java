@@ -21,7 +21,7 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
             // 나의 희망 성별이 '모두(A)'이거나 상대방의 성별과 일치하며,
             "AND (:myChoiceGender = 'A' OR u.gender = :myChoiceGender) " +
             // 상대방의 나이가 나의 희망 나이 범위에 속함
-            "AND FUNCTION('TIMESTAMPDIFF', 'YEAR', u.birthDate, CURRENT_DATE) BETWEEN :myMinAge AND :myMaxAge " +
+            "AND FUNCTION('TIMESTAMPDIFF', YEAR, u.birthDate, CURRENT_DATE) BETWEEN :myMinAge AND :myMaxAge " +
             "ORDER BY mr.requestedAt ASC")
     List<MatchRequest> findPotentialMatches(
             @Param("myPid") Long myPid,

@@ -137,7 +137,7 @@ async function startMatch(){
     min_age: ageRange.value[0],
     max_age: ageRange.value[1],
     region_code: region.value,
-    interests_json: interests.value,
+    interests: interests.value,
   }
   try{
     await api.post('/match/requests', payload)
