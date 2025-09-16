@@ -29,3 +29,15 @@ curl -X POST https://your-domain/api/match/requests \
 `SecurityConfig`에서는 회원가입/로그인 등 공개 API를 `permitAll()`로 설정하고, 매칭 관련 API만 `authenticated()`로 지정했습니다. 또한 `JwtAuthenticationFilter`가 해당 보호 경로(`/api/match/**`)에만 동작하도록 조정하여, 공개 엔드포인트에서는 토큰이 없어도 401이 발생하지 않습니다.
 
 필요 시 `protectedEndpoints()` 또는 `authorizeHttpRequests` 설정에 경로를 추가/수정하여 인증 범위를 확장할 수 있습니다.
+
+## 인증 실패 응답 형식
+JWT가 없거나 유효하지 않은 상태로 보호된 API를 호출하면 HTTP 401 응답과 함께 다음과 같은 JSON 본문이 반환됩니다.
+
+```
+{
+  "message": "Authorization 헤더에 JWT 토큰이 없습니다."
+}
+```
+
+검증 단계에서 발견된 실제 사유(토큰 누락, 만료, 사용자 미존재 등)가 `message` 필드에 담기므로, 클라이언트는 이를 참고해 재로그인이나 토큰 재발급 등의 후속 조치를 수행하면 됩니다.
+
