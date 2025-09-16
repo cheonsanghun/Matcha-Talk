@@ -1,5 +1,7 @@
 package net.datasa.project01.config;
 
+import net.datasa.project01.service.UserDetailsServiceImpl;
+import net.datasa.project01.util.JwtUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -7,6 +9,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * [SecurityConfig]
@@ -26,7 +29,13 @@ public class SecurityConfig {
      * - 폼 로그인 비활성화 (REST API 환경)
      */
     @Bean
-    SecurityFilterChain http(HttpSecurity http) throws Exception {
+    SecurityFilterChain http(
+            HttpSecurity http,
+            JwtUtil jwtUtil,
+            UserDetailsServiceImpl userDetailsService) throws Exception {
+        JwtAuthenticationFilter jwtAuthenticationFilter =
+                new JwtAuthenticationFilter(jwtUtil, userDetailsService);
+
         http
                 // CSRF 보호 비활성화 (REST API나 테스트 환경에서는 불필요)
                 .csrf(csrf -> csrf.disable())
@@ -34,9 +43,13 @@ public class SecurityConfig {
                 .authorizeHttpRequests(reg -> reg
                         // actuator, api/users 경로는 모두 허용
                         .requestMatchers("/actuator/**", "/api/users/**").permitAll()
+                        // 매칭 관련 엔드포인트는 인증 필요
+                        .requestMatchers("/api/match/**").authenticated()
                         // 그 외 모든 요청도 허용
                         .anyRequest().permitAll()
                 )
+                // JWT 인증 필터 등록
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 // HTTP Basic 인증 활성화 (테스트용, 실제 서비스에서는 비활성화 권장)
                 .httpBasic(Customizer.withDefaults())
                 // 폼 로그인 비활성화 (REST API 환경에서는 사용하지 않음)
