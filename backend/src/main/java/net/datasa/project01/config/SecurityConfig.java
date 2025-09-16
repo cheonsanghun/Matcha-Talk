@@ -1,5 +1,8 @@
 package net.datasa.project01.config;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 import net.datasa.project01.service.UserDetailsServiceImpl;
 import net.datasa.project01.util.JwtUtil;
 import org.springframework.context.annotation.Bean;
@@ -9,42 +12,60 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
- * [SecurityConfig]
- * - 테스트 및 개발 편의성을 위해 모든 HTTP 요청을 인증 없이 허용합니다.
- * - REST API 환경에 맞춰 CSRF, 폼 로그인 등을 비활성화합니다.
- * - 비밀번호 저장 시 BCrypt 해시를 사용하도록 PasswordEncoder 빈을 제공합니다.
+ * 애플리케이션 전반의 HTTP 보안 정책을 구성합니다.
+ * <ul>
+ *     <li>회원가입/로그인 등 공개 API는 permitAll()로 허용합니다.</li>
+ *     <li>매칭 관련 API(`/api/match/**`)는 JWT 인증이 필요합니다.</li>
+ *     <li>REST API 환경에 맞춰 CSRF와 폼 로그인을 비활성화합니다.</li>
+ *     <li>비밀번호 저장 시 BCrypt 해시를 사용하도록 PasswordEncoder 빈을 제공합니다.</li>
+ * </ul>
  */
 @Configuration // 스프링 설정 클래스임을 명시
 public class SecurityConfig {
 
+    private static final String[] PUBLIC_ENDPOINTS = {
+            "/actuator/**",
+            "/api/users/**",
+            "/api/auth/**"
+    };
+
+    private static final String[] PROTECTED_ENDPOINTS = {
+            "/api/match/**"
+    };
+
     /**
      * SecurityFilterChain 빈 등록
-     * - 모든 요청을 permitAll()로 허용
-     * - actuator, api/users 경로도 별도 허용
-     * - CSRF 보호 비활성화 (REST/테스트 환경)
-     * - HTTP Basic 인증 활성화(테스트용, 실제 서비스에서는 비활성화 권장)
-     * - 폼 로그인 비활성화 (REST API 환경)
+     * - REST API 환경에 맞춰 CSRF, 폼 로그인을 비활성화합니다.
+     * - 공개 엔드포인트는 permitAll(), 매칭 관련 엔드포인트는 authenticated()로 제어합니다.
+     * - JWT 전용 인증 필터와 인증 실패 처리기를 필터 체인에 연결합니다.
      */
     @Bean
     SecurityFilterChain http(
             HttpSecurity http,
             JwtUtil jwtUtil,
             UserDetailsServiceImpl userDetailsService) throws Exception {
+        List<RequestMatcher> protectedMatchers = protectedEndpointMatchers();
+
         JwtAuthenticationFilter jwtAuthenticationFilter =
-                new JwtAuthenticationFilter(jwtUtil, userDetailsService);
+                new JwtAuthenticationFilter(
+                        jwtUtil,
+                        userDetailsService,
+                        protectedMatchers);
 
         http
                 // CSRF 보호 비활성화 (REST API나 테스트 환경에서는 불필요)
                 .csrf(csrf -> csrf.disable())
                 // HTTP 요청 권한 설정
                 .authorizeHttpRequests(reg -> reg
-                        // actuator, api/users 경로는 모두 허용
-                        .requestMatchers("/actuator/**", "/api/users/**").permitAll()
-                        // 매칭 관련 엔드포인트는 인증 필요
-                        .requestMatchers("/api/match/**").authenticated()
-                        // 그 외 모든 요청도 허용
+                        // 인증 없이 접근 가능한 엔드포인트(회원가입/로그인 등)
+                        .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        // 매칭 관련 엔드포인트는 JWT 인증 필요
+                        .requestMatchers(PROTECTED_ENDPOINTS).authenticated()
+                        // 그 외 모든 요청도 허용 (필요 시 확장)
                         .anyRequest().permitAll()
                 )
                 // JWT 인증 필터 등록
@@ -55,6 +76,12 @@ public class SecurityConfig {
                 .formLogin(form -> form.disable());
         // 최종 SecurityFilterChain 반환
         return http.build();
+    }
+
+    private List<RequestMatcher> protectedEndpointMatchers() {
+        return Arrays.stream(PROTECTED_ENDPOINTS)
+                .map(AntPathRequestMatcher::new)
+                .collect(Collectors.toUnmodifiableList());
     }
 
     /**
