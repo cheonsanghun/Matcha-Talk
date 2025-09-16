@@ -34,6 +34,7 @@ STOMP 메시지가 서버 clientInboundChannel로 전달되지 못했습니다.
 • 헤더: %s
 """;
 
+
     private StompLoggingUtils() {
     }
 
@@ -85,5 +86,6 @@ STOMP 메시지가 서버 clientInboundChannel로 전달되지 못했습니다.
     private static String fallback(String value) {
         return value != null && !value.isBlank() ? value : UNKNOWN_VALUE;
     }
+
 }
 

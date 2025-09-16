@@ -12,6 +12,7 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 import java.util.Collections;
+
 import java.util.concurrent.RejectedExecutionException;
 
 import jakarta.annotation.PostConstruct;
@@ -54,6 +55,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         log.debug("Configuring client inbound channel with diagnostic interceptors");
         registration.interceptors(stompInboundLoggingInterceptor, stompHandler);
         ThreadPoolTaskExecutor executor = diagnosticClientInboundExecutor();
+
         registration.taskExecutor(executor);
         log.info("clientInboundChannel executor in use - corePoolSize={}, maxPoolSize={}, queueCapacity={}",
                 executor.getCorePoolSize(), executor.getMaxPoolSize(), INBOUND_QUEUE_CAPACITY);
@@ -61,6 +63,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Bean
     public ThreadPoolTaskExecutor diagnosticClientInboundExecutor() {
+
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setThreadNamePrefix("ws-inbound-");
         executor.setCorePoolSize(INBOUND_CORE_POOL_SIZE);
@@ -85,6 +88,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     Collections.emptyMap());
             log.error(diagnosticMessage);
             throw new RejectedExecutionException(saturationReason);
+
         });
         executor.initialize();
         log.info("clientInboundChannel executor initialized - corePoolSize={}, maxPoolSize={}, queueCapacity={}",

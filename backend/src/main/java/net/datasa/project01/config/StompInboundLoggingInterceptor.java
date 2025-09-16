@@ -5,6 +5,7 @@ import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.MessagingException;
+
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
@@ -14,6 +15,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
+
 
 @Slf4j
 @Component
@@ -96,6 +98,7 @@ public class StompInboundLoggingInterceptor implements ChannelInterceptor {
             return "메시징 처리 중 예외 발생(" + ex.getClass().getSimpleName() + "): " + ex.getMessage();
         }
         return ex.getClass().getSimpleName() + ": " + ex.getMessage();
+
     }
 }
 
