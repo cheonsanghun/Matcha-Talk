@@ -35,7 +35,12 @@ public class SecurityConfig {
     };
 
     private static final String[] PROTECTED_ENDPOINTS = {
-            "/api/match/**"
+            "/api/match/**",
+            "/api/rooms/**",
+            "/api/chat/**",
+            "/api/follows/**",
+            "/api/vocabulary/**",
+            "/api/translate/**"
     };
 
     /**

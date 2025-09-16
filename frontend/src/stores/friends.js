@@ -1,19 +1,30 @@
 import { defineStore } from 'pinia'
+import api from '../services/api'
 
 export const useFriendsStore = defineStore('friends', {
   state: () => ({
-    list: JSON.parse(localStorage.getItem('friends') || '[]')
+    list: [],
+    loading: false,
   }),
   actions: {
-    add(name) {
-      if (name && !this.list.includes(name)) {
-        this.list.push(name)
-        localStorage.setItem('friends', JSON.stringify(this.list))
+    async fetch() {
+      this.loading = true
+      try {
+        const { data } = await api.get('/follows')
+        this.list = data
+      } finally {
+        this.loading = false
       }
     },
-    remove(name) {
-      this.list = this.list.filter(f => f !== name)
-      localStorage.setItem('friends', JSON.stringify(this.list))
-    }
-  }
+    async add(loginId) {
+      if (!loginId) return
+      await api.post(`/follows/${encodeURIComponent(loginId)}`)
+      await this.fetch()
+    },
+    async remove(loginId) {
+      if (!loginId) return
+      await api.delete(`/follows/${encodeURIComponent(loginId)}`)
+      await this.fetch()
+    },
+  },
 })

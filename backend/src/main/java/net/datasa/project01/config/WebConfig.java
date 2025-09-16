@@ -2,6 +2,7 @@ package net.datasa.project01.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -16,5 +17,11 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedOriginPatterns("https://*.ngrok-free.app","http://localhost:*")
                 .allowedMethods("*")
                 .allowCredentials(true);
+    }
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:uploads/");
     }
 }

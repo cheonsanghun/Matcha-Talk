@@ -1,108 +1,230 @@
 package net.datasa.project01.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import net.datasa.project01.domain.dto.ChatMessagePageResponseDto;
+import net.datasa.project01.domain.dto.ChatMessageRequestDto;
+import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.RoomMember;
+import net.datasa.project01.domain.entity.RoomMessage;
 import net.datasa.project01.domain.entity.User;
-
 import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.RoomMessageRepository;
 import net.datasa.project01.repository.RoomRepository;
 import net.datasa.project01.repository.UserRepository;
-import net.datasa.project01.domain.dto.ChatMessageRequestDto;
-import net.datasa.project01.domain.dto.ChatMessageResponseDto;
-import net.datasa.project01.domain.entity.RoomMessage;
-
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
+@Slf4j
 public class ChatService {
 
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final UserRepository userRepository;
     private final RoomMessageRepository roomMessageRepository;
-    // TODO: 알림 서비스 추가 (Push Notification)
-    // private final NotificationService notificationService;
-    // TODO: 파일 업로드 서비스 추가
-    // private final FileUploadService fileUploadService;
-    // TODO: 커비너 세션 및 캐시 관리
-    // private final RedisTemplate<String, Object> redisTemplate;
+    private final SimpMessageSendingOperations messagingTemplate;
 
-    @Transactional
-    public Room createGroupRoom() {
-        // TODO: 방 이름 설정 기능 추가
-        // TODO: 비밀번호 보호 기능 추가
-        // TODO: 초대 전용 방 기능 추가
-        // 1. 요청을 보낸 사용자의 정보를 SecurityContextHolder에서 가져오기
-        String loginId = SecurityContextHolder.getContext().getAuthentication().getName();
-        User creator = userRepository.findByLoginId(loginId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+    @Value("${chat.upload-dir:uploads/chat}")
+    private String uploadDir;
 
-        // 2. 새로운 Room 엔티티를 생성하고 데이터베이스에 저장
+    private Path uploadPath;
+
+    @PostConstruct
+    void initUploadDir() {
+        try {
+            uploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
+            Files.createDirectories(uploadPath);
+        } catch (IOException e) {
+            throw new IllegalStateException("채팅 파일 저장 디렉터리를 생성할 수 없습니다.", e);
+        }
+    }
+
+    public Room createGroupRoom(String loginId) {
+        User creator = getUser(loginId);
+
         Room newRoom = Room.builder()
-                .roomType(Room.RoomType.GROUP) // Enum 타입 직접 사용
-                .capacity(4) // 그룹방의 최대 인원은 4명으로 고정
+                .roomType(Room.RoomType.GROUP)
+                .capacity(4)
                 .build();
         roomRepository.save(newRoom);
 
-        // 3. 방을 만든 사람을 해당 방의 첫 멤버이자 방장(HOST)으로 추가
         RoomMember newMember = RoomMember.builder()
                 .room(newRoom)
                 .user(creator)
-                .role("HOST") // DB 스키마에 정의된 enum 값
+                .role("HOST")
                 .build();
         roomMemberRepository.save(newMember);
 
-        // TODO: 방 생성 알림 전송
-        // TODO: 방 생성 로그 기록
+        log.info("Group room {} created by {}", newRoom.getRoomId(), loginId);
         return newRoom;
     }
 
-    @Transactional
     public ChatMessageResponseDto processMessage(ChatMessageRequestDto requestDto, String loginId) {
-        // TODO: 메시지 내용 필터링 (욕설, 스팸 등)
-        // TODO: 메시지 길이 제한 검증
-        // TODO: 사용자 참여 권한 확인
-        // 1. 보낸 사람과 채팅방 엔티티를 DB에서 조회합니다.
-        User sender = userRepository.findByLoginId(loginId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
-        Room room = roomRepository.findById(requestDto.getRoomId())
-                .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+        User sender = getUser(loginId);
+        Room room = getRoom(requestDto.getRoomId());
+        ensureActiveMember(room, sender);
 
-        // 2. RoomMessage 엔티티를 생성하고 DB에 저장합니다.
+        RoomMessage.ContentType contentType = parseContentType(requestDto.getContentType());
+        if (contentType == RoomMessage.ContentType.TEXT && !StringUtils.hasText(requestDto.getContent())) {
+            throw new IllegalArgumentException("메시지 내용이 비어 있습니다.");
+        }
+
         RoomMessage message = RoomMessage.builder()
                 .room(room)
                 .sender(sender)
-                .contentType(RoomMessage.ContentType.TEXT)
-                .textContent(requestDto.getContent())
+                .contentType(contentType)
+                .textContent(contentType == RoomMessage.ContentType.TEXT ? requestDto.getContent() : null)
+                .fileName(requestDto.getFileName())
+                .filePath(requestDto.getFileUrl())
+                .mimeType(requestDto.getMimeType())
+                .sizeBytes(requestDto.getSizeBytes())
                 .build();
-        roomMessageRepository.save(message);
 
-        // 3. 다른 클라이언트들에게 전달할 응답 DTO를 생성하여 반환합니다.
-        // TODO: 오프라인 사용자에게 푸시 알림 전송
-        // TODO: 메시지 읽음 여부 추적
-        return new ChatMessageResponseDto(
-                room.getRoomId(),
-                sender.getNickName(),
-                message.getTextContent(),
-                message.getCreatedAt()
-        );
+        roomMessageRepository.save(message);
+        return ChatMessageResponseDto.from(message);
     }
-    @Transactional
-    public Room createPrivateRoom(User user1, User user2) {
-        // 1. 새로운 PRIVATE 타입의 방 생성
+
+    public ChatMessageResponseDto saveFileMessage(Long roomId, MultipartFile file, String loginId) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("업로드할 파일이 필요합니다.");
+        }
+
+        User sender = getUser(loginId);
+        Room room = getRoom(roomId);
+        ensureActiveMember(room, sender);
+
+        try {
+            Path roomDir = uploadPath.resolve(String.valueOf(roomId));
+            Files.createDirectories(roomDir);
+
+            String originalFileName = StringUtils.cleanPath(Objects.requireNonNullElse(file.getOriginalFilename(), "file"));
+            String timeStamp = String.valueOf(LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+            String storedFileName = timeStamp + "_" + originalFileName;
+
+            Path storedPath = roomDir.resolve(storedFileName);
+            Files.copy(file.getInputStream(), storedPath, StandardCopyOption.REPLACE_EXISTING);
+
+            String publicUrl = "/uploads/chat/" + roomId + "/" + storedFileName;
+
+            RoomMessage.ContentType type = isImage(file.getContentType())
+                    ? RoomMessage.ContentType.IMAGE
+                    : RoomMessage.ContentType.FILE;
+
+            RoomMessage message = RoomMessage.builder()
+                    .room(room)
+                    .sender(sender)
+                    .contentType(type)
+                    .fileName(originalFileName)
+                    .filePath(publicUrl)
+                    .mimeType(file.getContentType())
+                    .sizeBytes(file.getSize())
+                    .build();
+
+            roomMessageRepository.save(message);
+
+            ChatMessageResponseDto response = ChatMessageResponseDto.from(message);
+            broadcast(response);
+            return response;
+        } catch (IOException e) {
+            throw new IllegalStateException("파일을 저장하는 중 오류가 발생했습니다.", e);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public ChatMessagePageResponseDto getMessages(Long roomId, String loginId, int page, int size) {
+        Room room = getRoom(roomId);
+        User user = getUser(loginId);
+        ensureActiveMember(room, user);
+
+        Page<RoomMessage> messages = roomMessageRepository.findByRoomOrderByCreatedAtDesc(
+                room,
+                PageRequest.of(page, size)
+        );
+
+        List<ChatMessageResponseDto> responses = new ArrayList<>();
+        messages.forEach(message -> responses.add(ChatMessageResponseDto.from(message)));
+        responses.sort((a, b) -> a.getSentAt().compareTo(b.getSentAt()));
+
+        return new ChatMessagePageResponseDto(responses, messages.hasNext());
+    }
+
+    public Room getOrCreatePrivateRoom(String loginId, String targetLoginId) {
+        User me = getUser(loginId);
+        User partner = getUser(targetLoginId);
+
+        return roomMemberRepository.findActiveSharedRoom(me, partner, Room.RoomType.PRIVATE)
+                .orElseGet(() -> createPrivateRoom(me, partner));
+    }
+
+    public void inviteMembers(Long roomId, String inviterLoginId, List<String> targets) {
+        if (targets == null || targets.isEmpty()) {
+            return;
+        }
+        if (targets.size() > 2) {
+            throw new IllegalArgumentException("최대 2명까지 초대할 수 있습니다.");
+        }
+
+        Room room = getRoom(roomId);
+        if (room.getRoomType() != Room.RoomType.GROUP) {
+            throw new IllegalArgumentException("그룹 방에서만 초대할 수 있습니다.");
+        }
+
+        User inviter = getUser(inviterLoginId);
+        ensureActiveMember(room, inviter);
+
+        long activeCount = roomMemberRepository.countByRoomAndLeftAtIsNull(room);
+        if (activeCount >= room.getCapacity()) {
+            throw new IllegalStateException("방 정원을 초과할 수 없습니다.");
+        }
+
+        for (String login : targets) {
+            if (activeCount >= room.getCapacity()) {
+                break;
+            }
+            User invitee = getUser(login);
+            if (roomMemberRepository.existsByRoomAndUserAndLeftAtIsNull(room, invitee)) {
+                continue;
+            }
+            RoomMember member = RoomMember.builder()
+                    .room(room)
+                    .user(invitee)
+                    .role("MEMBER")
+                    .invitedByUser(inviter)
+                    .build();
+            roomMemberRepository.save(member);
+            activeCount++;
+        }
+    }
+
+    private Room createPrivateRoom(User user1, User user2) {
         Room newRoom = Room.builder()
                 .roomType(Room.RoomType.PRIVATE)
                 .capacity(2)
                 .build();
         roomRepository.save(newRoom);
 
-        // 2. 두 명의 사용자를 멤버로 추가
         RoomMember member1 = RoomMember.builder()
                 .room(newRoom)
                 .user(user1)
@@ -115,21 +237,42 @@ public class ChatService {
                 .role("MEMBER")
                 .build();
 
-        roomMemberRepository.saveAll(java.util.List.of(member1, member2)); // 두 멤버를 한 번에 저장
-
+        roomMemberRepository.saveAll(List.of(member1, member2));
         return newRoom;
     }
 
-    // TODO: 추가 필요한 메서드들
-    // public void joinRoom(Long roomId, String loginId) { }
-    // public void leaveRoom(Long roomId, String loginId) { }
-    // public List<RoomResponseDto> getUserRooms(String loginId) { }
-    // public List<ChatMessageResponseDto> getMessageHistory(Long roomId, int page, int size) { }
-    // public void deleteMessage(Long messageId, String loginId) { }
-    // public void updateMessage(Long messageId, String newContent, String loginId) { }
-    // public void uploadFile(Long roomId, MultipartFile file, String loginId) { }
-    // public void markMessageAsRead(Long messageId, String loginId) { }
-    // public int getUnreadMessageCount(String loginId) { }
-    // public void kickMember(Long roomId, String targetLoginId, String adminLoginId) { }
-    // public void updateRoomSettings(Long roomId, RoomSettingsDto settings, String loginId) { }
+    private void broadcast(ChatMessageResponseDto responseDto) {
+        messagingTemplate.convertAndSend("/topic/rooms/" + responseDto.getRoomId(), responseDto);
+    }
+
+    private User getUser(String loginId) {
+        return userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+    }
+
+    private Room getRoom(Long roomId) {
+        return roomRepository.findById(roomId)
+                .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+    }
+
+    private void ensureActiveMember(Room room, User user) {
+        if (!roomMemberRepository.existsByRoomAndUserAndLeftAtIsNull(room, user)) {
+            throw new IllegalArgumentException("채팅방에 참여하지 않은 사용자입니다.");
+        }
+    }
+
+    private RoomMessage.ContentType parseContentType(String contentType) {
+        if (!StringUtils.hasText(contentType)) {
+            return RoomMessage.ContentType.TEXT;
+        }
+        try {
+            return RoomMessage.ContentType.valueOf(contentType.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            return RoomMessage.ContentType.TEXT;
+        }
+    }
+
+    private boolean isImage(String mimeType) {
+        return mimeType != null && mimeType.startsWith("image/");
+    }
 }

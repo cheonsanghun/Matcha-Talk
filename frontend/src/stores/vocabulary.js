@@ -1,13 +1,24 @@
-import { defineStore } from 'pinia';
+import { defineStore } from 'pinia'
+import api from '../services/api'
 
 export const useVocabularyStore = defineStore('vocabulary', {
   state: () => ({
-    words: JSON.parse(localStorage.getItem('vocabulary') || '[]')
+    words: [],
+    loading: false,
   }),
   actions: {
-    addWord(original, translated) {
-      this.words.push({ original, translated });
-      localStorage.setItem('vocabulary', JSON.stringify(this.words));
-    }
-  }
-});
+    async fetch() {
+      this.loading = true
+      try {
+        const { data } = await api.get('/vocabulary')
+        this.words = data
+      } finally {
+        this.loading = false
+      }
+    },
+    async addWord(original, translated) {
+      await api.post('/vocabulary', { original, translated })
+      await this.fetch()
+    },
+  },
+})
