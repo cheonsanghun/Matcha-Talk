@@ -11,7 +11,15 @@
             variant="tonal"
             class="mb-6 text-start"
           >
-            {{ errorMessage }}
+            <div class="mb-2">{{ errorMessage }}</div>
+            <ul v-if="errorDetails.length" class="error-detail-list">
+              <li
+                v-for="(detail, index) in errorDetails"
+                :key="`${index}-${detail}`"
+              >
+                {{ detail }}
+              </li>
+            </ul>
           </v-alert>
 
           <div v-if="isWaiting && !errorMessage" class="py-8">
@@ -50,10 +58,19 @@
             </div>
           </div>
 
-          <div v-else-if="errorMessage" class="py-6">
-            <div class="text-body-2 text-medium-emphasis">
-              문제가 계속되면 잠시 후 다시 시도해주세요.
+          <div v-else-if="errorMessage" class="py-6 text-start">
+            <div class="text-body-2 text-medium-emphasis mb-4">
+              문제가 계속되면 잠시 후 다시 시도해주세요. 오류가 반복되면 아래 안내를
+              참고해 관리자에게 전달해주세요.
             </div>
+            <ul v-if="errorDetails.length" class="error-detail-list mb-4">
+              <li
+                v-for="(detail, index) in errorDetails"
+                :key="`secondary-${index}-${detail}`"
+              >
+                {{ detail }}
+              </li>
+            </ul>
             <v-btn
               class="mt-4"
               color="pink"
@@ -83,6 +100,21 @@ const partnerNickname = ref('')
 const partnerLoginId = ref('')
 const roomId = ref(null)
 const errorMessage = ref('')
+const errorDetails = ref([])
+
+const stompErrorHelp = Object.freeze([
+  'STOMP 메시지가 서버 clientInboundChannel로 전달되지 못했습니다.',
+  '가능한 원인:',
+  '• 스레드 풀 또는 작업 큐가 포화 상태입니다.',
+  '• 메시지 형식이 잘못되었거나 필수 헤더가 누락되었습니다.',
+  '• 서버 측 핸들러(@MessageMapping 등)에서 예외가 발생했습니다.',
+  '• STOMP 브로커 또는 연결 설정에 문제가 있습니다.',
+  '권장 조치:',
+  '• 에러 발생 시점의 서버 로그를 확인하고 필요하면 WebSocket 로그 레벨을 DEBUG로 높여 원인을 파악합니다.',
+  '• clientInboundChannel에 사용하는 TaskExecutor의 스레드 및 큐 설정을 조정합니다.',
+  '• 클라이언트에서 전송하는 STOMP 프레임과 헤더(Authorization 등)를 검증합니다.',
+  '• 브로커 또는 WebSocket 엔드포인트 설정과 인증 정보를 다시 확인합니다.',
+])
 
 let client = null
 let subscription = null
@@ -101,6 +133,9 @@ function handleMatchMessage(message) {
     partnerLoginId.value = payload.partnerLoginId ?? ''
     roomId.value = payload.roomId ?? null
 
+    errorMessage.value = ''
+    errorDetails.value = []
+
     if (!roomId.value || !partnerNickname.value) {
       throw new Error('Incomplete match information')
     }
@@ -116,6 +151,7 @@ function handleMatchMessage(message) {
   } catch (err) {
     console.error('Failed to process match result message:', err)
     errorMessage.value = '매칭 결과를 불러오는 중 오류가 발생했습니다.'
+    errorDetails.value = []
     isWaiting.value = false
   }
 }
@@ -130,13 +166,17 @@ function setupStomp() {
   client.onWebSocketError = (event) => {
     console.error('WebSocket error', event)
     errorMessage.value = '매칭 서버와 연결할 수 없습니다.'
+    errorDetails.value = [
+      '네트워크 상태를 확인한 뒤 다시 시도해주세요.',
+      '문제가 지속되면 관리자에게 해당 상황과 함께 문의해주세요.',
+    ]
     isWaiting.value = false
   }
 
   client.onStompError = (frame) => {
     console.error('STOMP error', frame.headers, frame.body)
-    errorMessage.value =
-      frame.headers?.message || '매칭 서버에서 오류가 발생했습니다.'
+    errorMessage.value = '매칭 서버에서 STOMP 메시지를 처리하는 중 문제가 발생했습니다.'
+    errorDetails.value = [...stompErrorHelp]
     isWaiting.value = false
   }
 
@@ -202,5 +242,13 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 16px;
   margin-top: 24px;
+}
+
+.error-detail-list {
+  padding-left: 20px;
+  margin: 0;
+  text-align: left;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 </style>
