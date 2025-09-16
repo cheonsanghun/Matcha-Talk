@@ -9,6 +9,10 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
+
+import java.util.List;
 
 /**
  * [SecurityConfig]
@@ -33,18 +37,21 @@ public class SecurityConfig {
             JwtUtil jwtUtil,
             UserDetailsServiceImpl userDetailsService) throws Exception {
         JwtAuthenticationFilter jwtAuthenticationFilter =
-                new JwtAuthenticationFilter(jwtUtil, userDetailsService);
+                new JwtAuthenticationFilter(
+                        jwtUtil,
+                        userDetailsService,
+                        protectedEndpoints());
 
         http
                 // CSRF 보호 비활성화 (REST API나 테스트 환경에서는 불필요)
                 .csrf(csrf -> csrf.disable())
                 // HTTP 요청 권한 설정
                 .authorizeHttpRequests(reg -> reg
-                        // actuator, api/users 경로는 모두 허용
-                        .requestMatchers("/actuator/**", "/api/users/**").permitAll()
-                        // 매칭 관련 엔드포인트는 인증 필요
+                        // 인증 없이 접근 가능한 엔드포인트(회원가입/로그인 등)
+                        .requestMatchers("/actuator/**", "/api/users/**", "/api/auth/**").permitAll()
+                        // 매칭 관련 엔드포인트는 JWT 인증 필요
                         .requestMatchers("/api/match/**").authenticated()
-                        // 그 외 모든 요청도 허용
+                        // 그 외 모든 요청도 허용 (필요 시 확장)
                         .anyRequest().permitAll()
                 )
                 // JWT 인증 필터 등록
@@ -55,6 +62,12 @@ public class SecurityConfig {
                 .formLogin(form -> form.disable());
         // 최종 SecurityFilterChain 반환
         return http.build();
+    }
+
+    private List<RequestMatcher> protectedEndpoints() {
+        return List.of(
+                new AntPathRequestMatcher("/api/match/**")
+        );
     }
 
     /**
