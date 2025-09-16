@@ -162,7 +162,8 @@ async function startMatch(){
       redirectToLogin()
       return
     }
-    alert('매칭 실패: ' + (e?.response?.data?.message || e.message))
+    const message = e?.response?.data?.message || e?.response?.data || e.message
+    alert('매칭 실패: ' + message)
   }finally{
     loading.value = false
   }
