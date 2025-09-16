@@ -137,10 +137,13 @@ async function startMatch(){
     interests_json: interests.value,
   }
   try{
-    // await api.post('/match/requests', payload)
-    router.push('/match/result')
+    const { data } = await api.post('/match/requests', payload)
+    const query = data?.requestId ? { requestId: data.requestId } : {}
+    await router.push({ name: 'match-result', query })
   }catch(e){
+    console.error('failed to start match request', e)
     alert('매칭 실패: ' + (e?.response?.data?.message || e.message))
+    await router.push({ name: 'match-result' })
   }finally{
     loading.value = false
   }
