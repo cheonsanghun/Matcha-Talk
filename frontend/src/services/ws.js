@@ -18,7 +18,22 @@ export function createStompClient(token) {
         webSocketFactory: () => new SockJS(sockJsUrl),
         connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
         reconnectDelay: 3000,
-        debug: () => {} // 필요 시 콘솔 출력
+        debug: () => {}, // 필요 시 콘솔 출력
+        beforeConnect: () => {
+            console.info('[STOMP] CONNECT 시도 - url=%s, headers=%o', sockJsUrl, token ? { Authorization: 'Bearer ****' } : {});
+        },
+        onConnect: frame => {
+            console.info('[STOMP] CONNECT 성공 - session=%s, server=%s', frame?.headers?.session, frame?.headers['server']);
+        },
+        onStompError: frame => {
+            console.error('[STOMP] STOMP ERROR 수신 - message=%s, body=%s', frame?.headers?.message, frame?.body);
+        },
+        onWebSocketError: event => {
+            console.error('[STOMP] WebSocket 오류 발생', event);
+        },
+        onWebSocketClose: event => {
+            console.warn('[STOMP] WebSocket 연결이 종료되었습니다 - code=%s, reason=%s', event?.code, event?.reason);
+        }
     })
     return client
 }

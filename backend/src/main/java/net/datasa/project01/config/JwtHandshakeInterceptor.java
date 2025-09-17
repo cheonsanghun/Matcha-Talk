@@ -45,7 +45,8 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         String token = resolveToken(request);
 
         if (!StringUtils.hasText(token)) {
-            log.debug("No JWT provided during WebSocket handshake. uri={}", request.getURI());
+            log.debug("WebSocket 핸드셰이크 요청에 JWT가 포함되지 않았습니다. uri={}", request.getURI());
+
             return true;
         }
 
@@ -68,12 +69,13 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                             .setAttribute(WEBSOCKET_PRINCIPAL_ATTR, authentication);
                 }
 
-                log.info("WebSocket handshake authenticated for user: {}", username);
+                log.info("WebSocket 핸드셰이크 JWT 인증 성공: 사용자={} uri={}", username, request.getURI());
             } else {
-                log.warn("JWT validation failed during WebSocket handshake. uri={}", request.getURI());
+                log.warn("WebSocket 핸드셰이크에서 JWT 검증에 실패했습니다. uri={}", request.getURI());
             }
         } catch (Exception ex) {
-            log.error("Unexpected error during WebSocket handshake authentication", ex);
+            log.error("WebSocket 핸드셰이크 인증 처리 중 예기치 못한 오류가 발생했습니다.", ex);
+
         }
 
         return true;
