@@ -13,12 +13,18 @@ api.interceptors.request.use((config) => {
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   if (user?.id) config.headers['X-USER-PID'] = user.id
 
-  if (config.params && isTransformable(config.params)) {
+  const { skipSnakifyParams } = config
+
+  if (config.params && !skipSnakifyParams && isTransformable(config.params)) {
     config.params = snakifyKeys(config.params)
   }
 
   if (config.data && isTransformable(config.data)) {
     config.data = snakifyKeys(config.data)
+  }
+
+  if (skipSnakifyParams) {
+    delete config.skipSnakifyParams
   }
 
   return config
