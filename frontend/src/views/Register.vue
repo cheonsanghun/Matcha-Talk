@@ -48,7 +48,7 @@
 
             <div class="d-flex align-end mb-4" v-if="verificationSent && !emailVerified">
               <v-text-field
-                  v-model="verificationToken"
+                  v-model="verificationCode"
                   label="인증번호"
                   variant="outlined"
                   class="flex-grow-1 me-2"
@@ -120,6 +120,18 @@
             />
 
             <v-select
+                v-model="form.language_code"
+                :items="languageItems"
+                item-title="title"
+                item-value="value"
+                label="선호 언어"
+                variant="outlined"
+                class="mb-4"
+                :error-messages="errors.language_code"
+                @blur="validate('language_code')"
+            />
+
+            <v-select
                 v-model="form.country_code"
                 :items="countryItems"
                 label="국적"
@@ -143,12 +155,16 @@ import {useRouter} from 'vue-router'
 
 const router = useRouter()
 const genderItems = ['M', 'F']
+const languageItems = [
+  {title: '한국어', value: 'ko'},
+  {title: '일본어', value: 'ja'}
+]
 const countryItems = ['KR', 'JP']
 
 const form = ref({
   nick_name: '', loginId: '', email: '',
   password: '', password2: '',
-  gender: null, country_code: null
+  gender: null, language_code: 'ko', country_code: null
 })
 
 const birth = ref({year: null, month: null, day: null})
@@ -158,11 +174,11 @@ const dayItems = Array.from({length: 31}, (_, i) => i + 1)
 
 const errors = ref({
   nick_name: '', loginId: '', email: '', password: '', password2: '',
-  birth: '', gender: '', country_code: ''
+  birth: '', gender: '', language_code: '', country_code: ''
 })
 
 const verificationSent = ref(false)
-const verificationToken = ref('')
+const verificationCode = ref('')
 const emailVerified = ref(false)
 const loginIdAvailable = ref(false)
 
@@ -209,6 +225,9 @@ function validate(field) {
     case 'gender':
       errors.value.gender = form.value.gender ? '' : '성별을 선택하세요.'
       break
+    case 'language_code':
+      errors.value.language_code = form.value.language_code ? '' : '언어를 선택하세요.'
+      break
     case 'country_code':
       errors.value.country_code = form.value.country_code ? '' : '국적을 선택하세요.'
       break
@@ -220,7 +239,7 @@ watch(() => form.value.loginId, () => {
 })
 
 async function onSubmit() {
-  ;['nick_name', 'loginId', 'email', 'password', 'password2', 'birth', 'gender', 'country_code'].forEach(validate)
+  ;['nick_name', 'loginId', 'email', 'password', 'password2', 'birth', 'gender', 'language_code', 'country_code'].forEach(validate)
   if (!valid.value) return
 
   const birth_date = `${birth.value.year}-${String(birth.value.month).padStart(2, '0')}-${String(birth.value.day).padStart(2, '0')}`
@@ -230,7 +249,8 @@ async function onSubmit() {
     confirm_password: form.value.password2,
     nick_name: form.value.nick_name,
     email: form.value.email,
-    verification_token: verificationToken.value,
+    verification_code: verificationCode.value,
+    language_code: form.value.language_code,
     country_code: form.value.country_code,
     gender: form.value.gender,
     birth_date
@@ -261,7 +281,10 @@ async function checkLoginId() {
   validate('loginId')
   if (errors.value.loginId) return
   try {
-    const {data} = await api.get('/users/exists', {params: {loginId: form.value.loginId}})
+    const {data} = await api.get('/users/exists', {
+      params: {loginId: form.value.loginId},
+      skipSnakifyParams: true
+    })
     if (data.exists) {
       errors.value.loginId = '이미 사용 중인 아이디입니다.'
       loginIdAvailable.value = false
@@ -280,7 +303,7 @@ async function confirmEmailVerify() {
   try {
     await api.post('/users/email/verify/confirm', {
       email: form.value.email,
-      token: verificationToken.value
+      token: verificationCode.value
     })
     emailVerified.value = true
     alert('이메일 인증이 완료되었습니다.')
