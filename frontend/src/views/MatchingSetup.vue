@@ -106,8 +106,10 @@
 import { ref, computed } from 'vue'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
+import { useMatchStore } from '../stores/match'
 
 const router = useRouter()
+const matchStore = useMatchStore()
 const ageRange = ref([20, 30])
 const gender = ref('A')
 const regions = [
@@ -132,15 +134,17 @@ const isValid = computed(() => !!gender.value && !!region.value && interests.val
 async function startMatch(){
   if (!isValid.value) return
   loading.value = true
+  matchStore.reset()
   const payload = {
-    choice_gender: gender.value,
-    min_age: ageRange.value[0],
-    max_age: ageRange.value[1],
-    region_code: region.value,
-    interests_json: interests.value,
+    choiceGender: gender.value,
+    minAge: ageRange.value[0],
+    maxAge: ageRange.value[1],
+    regionCode: region.value,
+    interests: interests.value,
   }
   try{
-    await api.post('/match/requests', payload)
+    const { data } = await api.post('/match/requests', payload)
+    matchStore.setFromStartResponse(data)
     router.push('/match/result')
   }catch(e){
     alert('매칭 실패: ' + (e?.response?.data?.message || e.message))

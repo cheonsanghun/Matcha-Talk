@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.datasa.project01.domain.dto.MatchDecisionResponseDto;
 import net.datasa.project01.domain.dto.MatchRequestDto;
+import net.datasa.project01.domain.dto.MatchStartResponseDto;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.repository.MatchRequestRepository;
@@ -48,10 +50,8 @@ public class MatchController {
                 log.info("Match request received from authenticated user: {}", loginId);
 
                 // 서비스 레이어에 매칭 시작/탐색 위임
-                matchService.startOrFindMatch(loginId, dto);
-
-                // 서비스 결과 구조가 정해지지 않았으므로 표준 메시지만 반환
-                return ResponseEntity.ok(Map.of("message", "매칭 요청이 성공적으로 접수되었습니다."));
+                MatchStartResponseDto response = matchService.startOrFindMatch(loginId, dto);
+                return ResponseEntity.ok(response);
             }
 
             // 2) 헤더 기반(비인증) 흐름: 요청 엔티티 저장 후 requestId 반환
@@ -86,6 +86,38 @@ public class MatchController {
         } catch (IllegalArgumentException e) {
             log.warn("Invalid match request. user={} / userPid={} / reason={}",
                     (userDetails != null ? userDetails.getUsername() : "null"), userPid, e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/requests/{requestId}/accept")
+    public ResponseEntity<?> acceptMatch(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long requestId) {
+        if (userDetails == null) {
+            return ResponseEntity.status(401).body("인증 정보가 필요합니다.");
+        }
+        try {
+            MatchDecisionResponseDto response = matchService.respondToMatch(userDetails.getUsername(), requestId, true);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            log.warn("Accept failed for user {}: {}", userDetails.getUsername(), e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/requests/{requestId}/decline")
+    public ResponseEntity<?> declineMatch(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long requestId) {
+        if (userDetails == null) {
+            return ResponseEntity.status(401).body("인증 정보가 필요합니다.");
+        }
+        try {
+            MatchDecisionResponseDto response = matchService.respondToMatch(userDetails.getUsername(), requestId, false);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            log.warn("Decline failed for user {}: {}", userDetails.getUsername(), e.getMessage());
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
