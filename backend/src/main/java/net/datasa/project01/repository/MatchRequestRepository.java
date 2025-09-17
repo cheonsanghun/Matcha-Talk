@@ -22,12 +22,16 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
             "AND (:myChoiceGender = 'A' OR u.gender = :myChoiceGender) " +
             // 상대방의 나이가 나의 희망 나이 범위에 속함
             "AND FUNCTION('TIMESTAMPDIFF', YEAR, u.birthDate, CURRENT_DATE) BETWEEN :myMinAge AND :myMaxAge " +
+            "AND mr.regionCode = :myRegionCode " +
             "ORDER BY mr.requestedAt ASC")
     List<MatchRequest> findPotentialMatches(
             @Param("myPid") Long myPid,
             @Param("myChoiceGender") String myChoiceGender,
             @Param("myMinAge") Integer myMinAge,
             @Param("myMaxAge") Integer myMaxAge,
+            @Param("myRegionCode") String myRegionCode,
             @Param("status") MatchRequest.MatchStatus status
     );
+
+    boolean existsByStatusAndRegionCode(MatchRequest.MatchStatus status, String regionCode);
 }

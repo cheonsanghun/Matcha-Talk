@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.MatchFoundResponseDto;
 import net.datasa.project01.domain.dto.MatchRequestDto;
+import net.datasa.project01.domain.dto.MatchStartResponseDto;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
@@ -17,8 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -39,16 +42,26 @@ public class MatchService {
      * 주요 로직들이 다수 들어가있으므로 매우 중요함
      * 작동 안할 시 로직에 대해 다시 고려해볼 것
      */
-    public void startOrFindMatch(String loginId, MatchRequestDto requestDto) throws JsonProcessingException {
+    public MatchStartResponseDto startOrFindMatch(String loginId, MatchRequestDto requestDto) throws JsonProcessingException {
         User me = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         // 1. 이미 대기열에 있는지 확인
-        Optional<MatchRequest> existingRequest = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
+        Optional<MatchRequest> existingRequest =
+                matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
         if (existingRequest.isPresent()) {
             log.info("User {} is already in the matching queue.", loginId);
-            return; // 이미 대기 중이므로 아무것도 하지 않음
+            return MatchStartResponseDto.builder()
+                    .status(MatchStartResponseDto.Status.ALREADY_IN_QUEUE)
+                    .queueState(MatchStartResponseDto.QueueState.WAITING)
+                    .message("이미 대기열에 등록된 상태입니다. 잠시만 기다려 주세요.")
+                    .build();
         }
+
+        boolean hasWaitingInRegion = matchRequestRepository.existsByStatusAndRegionCode(
+                MatchRequest.MatchStatus.WAITING,
+                requestDto.getRegionCode()
+        );
 
         // 2. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
         List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
@@ -56,23 +69,42 @@ public class MatchService {
                 requestDto.getChoiceGender(),
                 requestDto.getMinAge(),
                 requestDto.getMaxAge(),
+                requestDto.getRegionCode(),
                 MatchRequest.MatchStatus.WAITING
         );
 
         // 3. Java 코드로 최종 매칭 상대 결정 (역방향 검증)
         MatchRequest matchedOpponentRequest = null;
+        long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
+        List<String> myInterestsList = requestDto.getInterests();
+        // 관심사가 null일 경우를 대비해 방어적으로 처리
+        List<String> safeInterests = myInterestsList != null ? myInterestsList : List.of();
+        Set<String> myInterests = new HashSet<>(safeInterests);
         for (MatchRequest opponentRequest : potentialMatches) {
             User opponent = opponentRequest.getUser();
-            long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
 
             // 상대방의 희망 성별이 '모두(A)'이거나 '나의 성별'과 일치하는지 확인
             boolean isGenderMatch = opponentRequest.getChoiceGender() == MatchRequest.Gender.A ||
                                     opponentRequest.getChoiceGender().name().equals(me.getGender().toString());
-            
+
             // 나의 나이가 상대방의 희망 나이 범위에 속하는지 확인
             boolean isAgeMatch = myAge >= opponentRequest.getMinAge() && myAge <= opponentRequest.getMaxAge();
 
-            if (isGenderMatch && isAgeMatch) {
+            boolean hasCommonInterest = false;
+            if (!myInterests.isEmpty() && opponentRequest.getInterestsJson() != null) {
+                List<String> opponentInterests = objectMapper.readValue(
+                        opponentRequest.getInterestsJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}
+                );
+                for (String interest : opponentInterests) {
+                    if (myInterests.contains(interest)) {
+                        hasCommonInterest = true;
+                        break;
+                    }
+                }
+            }
+
+            if (isGenderMatch && isAgeMatch && hasCommonInterest) {
                 matchedOpponentRequest = opponentRequest;
                 break; // 첫 번째로 찾은 짝과 매칭
             }
@@ -104,19 +136,38 @@ public class MatchService {
             messagingTemplate.convertAndSendToUser(me.getLoginId(), "/queue/match-results", myResponse);
             messagingTemplate.convertAndSendToUser(opponent.getLoginId(), "/queue/match-results", opponentResponse);
 
-        } else {
-            // 5. 매칭 실패 -> 대기열에 등록
-            log.info("No match found for user {}. Adding to queue.", loginId);
-            MatchRequest newRequest = MatchRequest.builder()
-                    .user(me)
-                    .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
-                    .minAge(requestDto.getMinAge())
-                    .maxAge(requestDto.getMaxAge())
-                    .regionCode(requestDto.getRegionCode())
-                    .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
-                    .status(MatchRequest.MatchStatus.WAITING)
+            return MatchStartResponseDto.builder()
+                    .status(MatchStartResponseDto.Status.MATCHED)
+                    .match(myResponse)
+                    .message("조건에 맞는 상대를 찾았습니다.")
                     .build();
-            matchRequestRepository.save(newRequest);
         }
+
+        // 5. 매칭 실패 -> 대기열에 등록
+        log.info("No match found for user {}. Adding to queue.", loginId);
+        MatchRequest newRequest = MatchRequest.builder()
+                .user(me)
+                .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
+                .minAge(requestDto.getMinAge())
+                .maxAge(requestDto.getMaxAge())
+                .regionCode(requestDto.getRegionCode())
+                .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
+                .status(MatchRequest.MatchStatus.WAITING)
+                .build();
+        matchRequestRepository.save(newRequest);
+
+        MatchStartResponseDto.QueueState queueState = hasWaitingInRegion
+                ? MatchStartResponseDto.QueueState.WAITING
+                : MatchStartResponseDto.QueueState.EMPTY;
+
+        String message = hasWaitingInRegion
+                ? "조건에 맞는 사용자를 찾지 못했습니다. 대기열에서 기다립니다."
+                : "현재 해당 지역 대기열에 다른 사용자가 없습니다. 대기열에 등록되었습니다.";
+
+        return MatchStartResponseDto.builder()
+                .status(MatchStartResponseDto.Status.QUEUED)
+                .queueState(queueState)
+                .message(message)
+                .build();
     }
 }
