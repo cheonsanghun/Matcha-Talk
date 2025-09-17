@@ -53,10 +53,13 @@
 import { ref, nextTick, onMounted } from 'vue';
 import { translate } from '../services/translator';
 import { useVocabularyStore } from '../stores/vocabulary';
-import { useFriendsStore } from '../stores/friends';
+// import { useFriendsStore } from '../stores/friends'; // No longer needed for backend follow
+import followService from '../services/follow'; // Import the new follow service
 
 const props = defineProps({
-  partner: { type: String, default: '' }
+  partner: { type: String, default: '' }, // Assuming partner is the userPid for follow actions
+  // If partner is nickName, you'd need to fetch userPid first.
+  // For now, we'll treat props.partner as the followeeId (userPid).
 })
 
 const messages = ref([
@@ -68,7 +71,7 @@ const file = ref(null);
 const messagesContainer = ref(null);
 const useTranslate = ref(false);
 const vocab = useVocabularyStore();
-const friends = useFriendsStore();
+// const friends = useFriendsStore(); // No longer needed for backend follow
 
 function scrollToBottom() {
   nextTick(() => {
@@ -118,8 +121,19 @@ function sendFile() {
   reader.readAsDataURL(f);
 }
 
-function addFriend() {
-  friends.add(props.partner);
+async function addFriend() {
+  if (!props.partner) {
+    alert('친구 추가할 대상을 알 수 없습니다.');
+    return;
+  }
+  try {
+    // Assuming props.partner is the userPid of the followee
+    await followService.requestFollow(props.partner);
+    alert(`${props.partner}님에게 팔로우 요청을 보냈습니다.`);
+  } catch (error) {
+    console.error('팔로우 요청 실패:', error);
+    alert('팔로우 요청에 실패했습니다: ' + (error.response?.data?.message || error.message));
+  }
 }
 
 onMounted(scrollToBottom);

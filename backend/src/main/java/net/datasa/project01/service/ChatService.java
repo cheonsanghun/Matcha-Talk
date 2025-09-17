@@ -1,10 +1,11 @@
 package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
+import net.datasa.project01.domain.dto.RoomDetailResponseDto;
+import net.datasa.project01.domain.dto.RoomListResponseDto;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.RoomMember;
 import net.datasa.project01.domain.entity.User;
-
 import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.RoomMessageRepository;
 import net.datasa.project01.repository.RoomRepository;
@@ -12,10 +13,10 @@ import net.datasa.project01.repository.UserRepository;
 import net.datasa.project01.domain.dto.ChatMessageRequestDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.RoomMessage;
-
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import net.datasa.project01.domain.entity.Room.RoomType;
 
@@ -40,12 +41,10 @@ public class ChatService {
         // private final RedisTemplate<String, Object> redisTemplate;
 
         @Transactional
-        public Room createGroupRoom() {
+        public Room createGroupRoom(String loginId) {
                 // TODO: 방 이름 설정 기능 추가
                 // TODO: 비밀번호 보호 기능 추가
                 // TODO: 초대 전용 방 기능 추가
-                // 1. 요청을 보낸 사용자의 정보를 SecurityContextHolder에서 가져오기
-                String loginId = SecurityContextHolder.getContext().getAuthentication().getName();
                 User creator = userRepository.findByLoginId(loginId)
                         .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
@@ -134,6 +133,43 @@ public class ChatService {
                 roomMemberRepository.saveAll(java.util.List.of(member1, member2)); // 두 멤버를 한 번에 저장
 
                 return newRoom;
+        }
+
+        @Transactional(readOnly = true)
+        public List<RoomListResponseDto> findRoomsByUser(String loginId) {
+                User user = userRepository.findByLoginId(loginId)
+                        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+                // 사용자가 속한 모든 RoomMember 엔티티를 찾음
+                List<RoomMember> roomMembers = roomMemberRepository.findByUser(user);
+
+                // 각 RoomMember에서 Room을 가져와 DTO로 변환
+                return roomMembers.stream()
+                        .map(RoomMember::getRoom)
+                        .map(room -> {
+                                // 각 방의 멤버 목록을 다시 조회하여 DTO 생성
+                                List<RoomMember> membersOfRoom = roomMemberRepository.findByRoom(room);
+                                return RoomListResponseDto.fromEntity(room, membersOfRoom);
+                        })
+                        .collect(Collectors.toList());
+        }
+
+        @Transactional(readOnly = true)
+        public RoomDetailResponseDto findRoomDetailsById(Long roomId, String loginId) {
+                User user = userRepository.findByLoginId(loginId)
+                        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+                Room room = roomRepository.findById(roomId)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+                // 사용자가 해당 방의 멤버인지 확인 (권한 검사)
+                roomMemberRepository.findByRoomAndUser(room, user)
+                        .orElseThrow(() -> new IllegalArgumentException("해당 채팅방에 접근할 권한이 없습니다."));
+
+                // 방의 모든 멤버를 조회하여 상세 DTO 생성
+                List<RoomMember> members = roomMemberRepository.findByRoom(room);
+
+                return RoomDetailResponseDto.fromEntity(room, members);
         }
 
     // TODO: 추가 필요한 메서드들

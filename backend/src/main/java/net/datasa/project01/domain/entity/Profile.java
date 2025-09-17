@@ -33,6 +33,7 @@ public class Profile {
     private String languagesJson;
 
     @Column(length = 10, nullable = false)
+    @Builder.Default
     private String visibility = "PUBLIC";
 
     @UpdateTimestamp

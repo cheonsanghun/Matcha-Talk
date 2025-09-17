@@ -14,6 +14,7 @@ public class UserResponse {
     private final String nickName;
     private final String email;
     private final String countryCode;
+    private final String languageCode;
     private final Character gender;
     private final LocalDate birthDate;
     private final String rolename;
@@ -31,6 +32,7 @@ public class UserResponse {
                 .nickName(user.getNickName())
                 .email(user.getEmail())
                 .countryCode(user.getCountryCode())
+                .languageCode(user.getLanguageCode())
                 .gender(user.getGender())
                 .birthDate(user.getBirthDate())
                 .rolename(user.getRolename())

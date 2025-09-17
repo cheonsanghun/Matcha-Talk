@@ -17,7 +17,7 @@ import jakarta.mail.internet.MimeMessage; // MIME 형식 이메일 메시지 클
 @Component // 스프링이 관리하는 컴포넌트(빈)로 등록
 @Profile("db") // "db" 프로필일 때만 활성화됨
 @RequiredArgsConstructor // final 필드(mailSender)에 대한 생성자 자동 생성
-@ConditionalOnProperty(name="spring.mail.username", matchIfMissing=false)
+@ConditionalOnProperty(name = "spring.mail.host", matchIfMissing = false)
 public class SmtpEmailSender implements EmailSender { // EmailSender 인터페이스 구현
 
     // 실제 메일 전송을 담당하는 스프링의 JavaMailSender (생성자 주입)

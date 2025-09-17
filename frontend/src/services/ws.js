@@ -6,7 +6,7 @@ import SockJS from 'sockjs-client'
 const WS_PATH = import.meta.env.VITE_WS_PATH || '/ws-stomp'
 
 // axios baseURL에서 호스트 추출
-const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9999/api'
 const origin = apiBase.replace(/\/api\/?$/, '')
 
 export function createStompClient(token) {

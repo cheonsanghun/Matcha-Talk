@@ -25,6 +25,7 @@ public class Room {
     private RoomType roomType;
 
     @Column(nullable = false)
+    @Builder.Default
     private Integer capacity = 2; // TINYINT는 Integer로 매핑, 기본값 설정
 
     // 1:1 방이 그룹 방으로 전환되었을 때, 원본 방을 참조하기 위한 자기 자신과의 관계

@@ -53,9 +53,6 @@ public class MatchService {
         // 2. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
         List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
                 me.getUserPid(),
-                MatchRequest.Gender.valueOf(requestDto.getChoiceGender()),
-                requestDto.getMinAge(),
-                requestDto.getMaxAge(),
                 MatchRequest.MatchStatus.WAITING
         );
 

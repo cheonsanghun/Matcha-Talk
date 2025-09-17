@@ -26,6 +26,7 @@ public class RoomMember {
     private User user;
 
     @Column(length = 10, nullable = false)
+    @Builder.Default
     private String role = "MEMBER";
 
     @ManyToOne(fetch = FetchType.LAZY)

@@ -1,18 +1,32 @@
 package net.datasa.project01.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
+import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.UserResponse;
 import net.datasa.project01.domain.dto.UserSignUpRequestDto;
 import net.datasa.project01.service.UserService;
+import net.datasa.project01.service.EmailVerificationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
 
+import net.datasa.project01.domain.dto.EmailRequestDto;
+import net.datasa.project01.domain.dto.EmailTokenRequestDto;
+
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -21,17 +35,55 @@ import java.util.Map;
 public class UserController {
     
     private final UserService userService;
+    private final EmailVerificationService emailVerificationService;
+    private final ObjectMapper objectMapper;
+    private final Validator validator; // Inject Validator
 
     /**
      * 회원가입 API
-     * @param requestDto 회원가입 요청 데이터
+     * @param request HTTP 요청
      * @return 생성된 사용자 정보
      */
     @PostMapping("/signup")
-    public ResponseEntity<UserResponse> signUp(@Valid @RequestBody UserSignUpRequestDto requestDto) {
+    public ResponseEntity<UserResponse> signUp(HttpServletRequest request) {
+        UserSignUpRequestDto requestDto;
+        String body;
+        try {
+            body = request.getReader().lines().collect(Collectors.joining(System.lineSeparator()));
+            log.info("Raw /signup request body: {}", body);
+            requestDto = objectMapper.readValue(body, UserSignUpRequestDto.class);
+        } catch (IOException e) {
+            log.error("Error reading or deserializing raw request body in signUp", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        } catch (Exception e) { // Catch any other deserialization errors
+            log.error("Error during JSON deserialization in signUp", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null); // Return 400 with null body
+        }
+
+        // Manually validate the DTO
+        Set<jakarta.validation.ConstraintViolation<UserSignUpRequestDto>> violations = validator.validate(requestDto);
+        if (!violations.isEmpty()) {
+            // If there are validation errors, construct a response similar to MethodArgumentNotValidException
+            // For simplicity, we'll just log and return 400 for now.
+            violations.forEach(violation -> log.error("Validation error: {} - {}", violation.getPropertyPath(), violation.getMessage()));
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
         UserResponse response = userService.signUp(requestDto);
         // 회원가입 성공 시, HTTP 201 Created 상태와 함께 생성된 사용자 정보 반환
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/signup/debug")
+    public ResponseEntity<String> debugSignUp(HttpServletRequest request) {
+        try {
+            String body = request.getReader().lines().collect(Collectors.joining(System.lineSeparator()));
+            log.info("Raw /signup/debug request body: {}", body);
+            return ResponseEntity.ok("Raw body logged.");
+        } catch (IOException e) {
+            log.error("Error reading raw request body", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error reading raw body.");
+        }
     }
 
     /**
@@ -71,4 +123,48 @@ public class UserController {
     }
     
     // 참고: getUser(Long pid)와 같은 다른 메소드들은 필요에 따라 계속 추가할 수 있음
+
+    /**
+     * 특정 사용자의 팔로잉 목록 조회 API
+     * @param userId 조회할 사용자의 ID
+     * @return 팔로잉 목록
+     */
+    @GetMapping("/{userId}/following")
+    public ResponseEntity<List<UserResponse>> getFollowingList(@PathVariable Long userId) {
+        List<UserResponse> followingList = userService.getFollowingList(userId);
+        return ResponseEntity.ok(followingList);
+    }
+
+    /**
+     * 특정 사용자의 팔로워 목록 조회 API
+     * @param userId 조회할 사용자의 ID
+     * @return 팔로워 목록
+     */
+    @GetMapping("/{userId}/followers")
+    public ResponseEntity<List<UserResponse>> getFollowerList(@PathVariable Long userId) {
+        List<UserResponse> followerList = userService.getFollowerList(userId);
+        return ResponseEntity.ok(followerList);
+    }
+
+    /**
+     * 이메일 인증 요청 API
+     * @param dto 이메일 주소
+     * @return 인증번호 전송 결과
+     */
+    @PostMapping("/email/verify/request")
+    public ResponseEntity<Map<String, Object>> requestEmailVerify(@Valid @RequestBody EmailRequestDto dto) {
+        Map<String, Object> response = emailVerificationService.requestVerifyEmail(dto.getEmail());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 이메일 인증 확인 API
+     * @param dto 이메일 주소와 인증 토큰
+     * @return 인증 확인 결과
+     */
+    @PostMapping("/email/verify/confirm")
+    public ResponseEntity<Map<String, Object>> confirmEmailVerify(@Valid @RequestBody EmailTokenRequestDto dto) {
+        Map<String, Object> response = emailVerificationService.confirmVerifyEmail(dto.getEmail(), dto.getToken());
+        return ResponseEntity.ok(response);
+    }
 }

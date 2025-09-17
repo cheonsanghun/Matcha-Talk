@@ -47,18 +47,22 @@ public class User {
     private LocalDate birthDate;
 
     @Column(name = "email_verified")
+    @Builder.Default
     private boolean emailVerified = false;
 
     @Column(name = "failed_login_count")
+    @Builder.Default
     private int failedLoginCount = 0;
 
     @Column(name = "locked_until")
     private LocalDateTime lockedUntil;
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean enabled = true;
 
     @Column(length = 30)
+    @Builder.Default
     private String rolename = "ROLE_USER";
 
     @CreationTimestamp
