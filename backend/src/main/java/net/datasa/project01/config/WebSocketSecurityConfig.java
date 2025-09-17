@@ -18,6 +18,7 @@ public class WebSocketSecurityConfig {
         messages
             .simpDestMatchers("/app/**").authenticated()
             .simpDestMatchers("/topic/**", "/queue/**").authenticated()
+                .simpSubscribeDestMatchers("/user/queue/**", "/user/topic/**").authenticated()
             .simpTypeMatchers(
                 SimpMessageType.CONNECT, 
                 SimpMessageType.HEARTBEAT, 
