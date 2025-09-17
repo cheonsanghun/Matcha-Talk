@@ -1,6 +1,6 @@
 package net.datasa.project01.service;
 
-import net.datasa.project01.domain.dto.UserSummary;
+import net.datasa.project01.domain.dto.LoginResponse;
 
 /**
  * 로그인 기능 "계약" (저장소가 mock이든 JPA든 동일 규칙)
@@ -14,5 +14,5 @@ public interface AuthService {
      * @return 로그인 성공한 User의 안전한 요약
      * @throws IllegalArgumentException 인증 실패/잠금/비활성 등
      */
-    UserSummary loginLocal(String loginId, String rawPassword);
+    LoginResponse loginLocal(String loginId, String rawPassword);
 }

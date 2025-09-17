@@ -5,8 +5,9 @@ import net.datasa.project01.service.UserDetailsServiceImpl;
 import net.datasa.project01.util.JwtUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -24,6 +25,7 @@ public class SecurityConfig {
 
     private final JwtUtil jwtUtil;
     private final UserDetailsServiceImpl userDetailsService;
+    private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
     /**
      * SecurityFilterChain 빈 등록
@@ -37,20 +39,26 @@ public class SecurityConfig {
     SecurityFilterChain http(HttpSecurity http) throws Exception {
         http
                 // CSRF 보호 비활성화 (REST API나 테스트 환경에서는 불필요)
-                .csrf(csrf -> csrf.disable())
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // HTTP 요청 권한 설정
                 .authorizeHttpRequests(reg -> reg
-                        // actuator, api/users 경로는 모두 허용
+                        .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/actuator/**", "/api/users/**").permitAll()
-                        // 그 외 모든 요청도 허용
+                        .requestMatchers("/api/match/**", "/ws-stomp/**").authenticated()
                         .anyRequest().permitAll()
                 )
-                // HTTP Basic 인증 활성화 (테스트용, 실제 서비스에서는 비활성화 권장)
-                .httpBasic(Customizer.withDefaults())
-                // 폼 로그인 비활성화 (REST API 환경에서는 사용하지 않음)
-                .formLogin(form -> form.disable());
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
+                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
         // 최종 SecurityFilterChain 반환
         return http.build();
+    }
+
+    @Bean
+    JwtAuthenticationFilter jwtAuthenticationFilter() {
+        return new JwtAuthenticationFilter(jwtUtil, userDetailsService);
     }
 
     /**
