@@ -25,6 +25,7 @@ public class JwtHandshakeHandler extends DefaultHandshakeHandler {
 
         if (principal instanceof Principal resolvedPrincipal) {
             log.debug("핸드셰이크 속성에서 인증 정보를 확인했습니다. user={}", resolvedPrincipal.getName());
+
             return resolvedPrincipal;
         }
 

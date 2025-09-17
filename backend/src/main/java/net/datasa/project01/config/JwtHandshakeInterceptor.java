@@ -46,6 +46,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
 
         if (!StringUtils.hasText(token)) {
             log.debug("WebSocket 핸드셰이크 요청에 JWT가 포함되지 않았습니다. uri={}", request.getURI());
+
             return true;
         }
 
@@ -74,6 +75,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             }
         } catch (Exception ex) {
             log.error("WebSocket 핸드셰이크 인증 처리 중 예기치 못한 오류가 발생했습니다.", ex);
+
         }
 
         return true;
