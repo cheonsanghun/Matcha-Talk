@@ -8,6 +8,9 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -70,33 +73,40 @@ public class StompHandler implements ChannelInterceptor {
         }
 
         if (!StringUtils.hasText(authHeader) || !authHeader.startsWith(BEARER_PREFIX)) {
+            SecurityContextHolder.clearContext();
             log.warn("STOMP CONNECT 요청에서 Authorization 헤더를 찾을 수 없습니다. sessionId={}",
                     accessor.getSessionId());
-            return;
+            throw new AuthenticationCredentialsNotFoundException("STOMP CONNECT 요청에는 Authorization 헤더가 필요합니다.");
         }
 
         String token = authHeader.substring(BEARER_PREFIX.length());
 
         try {
-            if (jwtUtil.validateToken(token)) {
-                String loginId = jwtUtil.getUsernameFromToken(token);
-                UserDetails userDetails = userDetailsService.loadUserByUsername(loginId);
-                
-                UsernamePasswordAuthenticationToken authentication = 
-                    new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-                        
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-                accessor.setUser(authentication);
-
-                log.info("STOMP CONNECT JWT 인증 성공: sessionId={}, user={}",
-                        accessor.getSessionId(), loginId);
-            } else {
+            if (!jwtUtil.validateToken(token)) {
+                SecurityContextHolder.clearContext();
                 log.warn("STOMP CONNECT에서 JWT 토큰이 유효하지 않습니다. sessionId={}", accessor.getSessionId());
+                throw new BadCredentialsException("유효하지 않은 JWT 토큰입니다.");
             }
+
+            String loginId = jwtUtil.getUsernameFromToken(token);
+            UserDetails userDetails = userDetailsService.loadUserByUsername(loginId);
+
+            UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                    userDetails, null, userDetails.getAuthorities());
+
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            accessor.setUser(authentication);
+
+            log.info("STOMP CONNECT JWT 인증 성공: sessionId={}, user={}",
+                    accessor.getSessionId(), loginId);
+        } catch (AuthenticationCredentialsNotFoundException | BadCredentialsException authEx) {
+            throw authEx;
         } catch (Exception e) {
+            SecurityContextHolder.clearContext();
             log.error("STOMP CONNECT JWT 인증 처리 중 오류가 발생했습니다. sessionId={}",
                     accessor.getSessionId(), e);
+            throw new AuthenticationServiceException("STOMP CONNECT 처리 중 내부 오류가 발생했습니다.", e);
         }
     }
 }
