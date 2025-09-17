@@ -8,8 +8,9 @@ import java.time.LocalDateTime;
 @Getter
 @AllArgsConstructor
 public class ChatMessageResponseDto {
-    private Long roomId;
-    private String senderNickName;
-    private String content;
-    private LocalDateTime sentAt;
+    private final Long roomId;
+    private final String senderNickName;
+    private final String content;
+    private final String translatedContent; // 번역된 메시지를 담을 필드
+    private final LocalDateTime sentAt;
 }

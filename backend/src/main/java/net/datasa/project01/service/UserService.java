@@ -1,11 +1,11 @@
 package net.datasa.project01.service;
 
+import jakarta.validation.Valid;
 import net.datasa.project01.domain.dto.UserResponse;         // 회원 정보 응답 DTO
-import net.datasa.project01.domain.dto.UserSignUpRequest;     // 회원 가입 요청 DTO
+import net.datasa.project01.domain.dto.UserSignUpRequestDto;
 import net.datasa.project01.domain.entity.User;               // 회원 엔티티
 import net.datasa.project01.repository.UserRepository;        // 회원 저장소(인터페이스)
 import lombok.RequiredArgsConstructor;
-import net.datasa.project01.service.EmailVerificationService; // 이메일 인증 서비스
 import org.springframework.security.crypto.password.PasswordEncoder; // 비밀번호 해시 인코더
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,7 +41,7 @@ public class UserService {
      * @return UserResponse 회원 정보 응답 DTO
      */
     @Transactional // DB 저장 시 트랜잭션 처리(mock에선 영향 없음)
-    public UserResponse signUp(UserSignUpRequest req) {
+    public UserResponse signUp(@Valid UserSignUpRequestDto req) {
 
         // (1) 아이디 중복 체크
         if (userRepository.existsByLoginId(req.getLoginId())) {

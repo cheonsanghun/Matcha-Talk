@@ -17,6 +17,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import net.datasa.project01.domain.entity.Room.RoomType;
+
+import net.datasa.project01.service.TranslationService;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +29,8 @@ public class ChatService {
     private final RoomMemberRepository roomMemberRepository;
     private final UserRepository userRepository;
     private final RoomMessageRepository roomMessageRepository;
+    private final TranslationService translationService;
+
     // TODO: 알림 서비스 추가 (Push Notification)
     // private final NotificationService notificationService;
     // TODO: 파일 업로드 서비스 추가
@@ -65,16 +70,12 @@ public class ChatService {
 
     @Transactional
     public ChatMessageResponseDto processMessage(ChatMessageRequestDto requestDto, String loginId) {
-        // TODO: 메시지 내용 필터링 (욕설, 스팸 등)
-        // TODO: 메시지 길이 제한 검증
-        // TODO: 사용자 참여 권한 확인
-        // 1. 보낸 사람과 채팅방 엔티티를 DB에서 조회합니다.
         User sender = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
         Room room = roomRepository.findById(requestDto.getRoomId())
                 .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
 
-        // 2. RoomMessage 엔티티를 생성하고 DB에 저장합니다.
+        // 1. 원본 메시지를 DB에 저장
         RoomMessage message = RoomMessage.builder()
                 .room(room)
                 .sender(sender)
@@ -83,15 +84,55 @@ public class ChatService {
                 .build();
         roomMessageRepository.save(message);
 
-        // 3. 다른 클라이언트들에게 전달할 응답 DTO를 생성하여 반환합니다.
-        // TODO: 오프라인 사용자에게 푸시 알림 전송
-        // TODO: 메시지 읽음 여부 추적
-        return new ChatMessageResponseDto(
-                room.getRoomId(),
-                sender.getNickName(),
-                message.getTextContent(),
-                message.getCreatedAt()
-        );
+        // 2. [수정됨] 보낸 사람의 언어 설정에 따라 번역 방향을 동적으로 결정
+        String originalText = message.getTextContent();
+        String translatedText;
+        String sourceLang = sender.getLanguageCode(); // 예: "ko"
+
+        if ("ko".equalsIgnoreCase(sourceLang)) {
+            // 보낸 사람이 한국어 사용자인 경우 -> 일본어로 번역
+            translatedText = translationService.translate(originalText, "ko", "ja");
+        } else if ("ja".equalsIgnoreCase(sourceLang)) {
+            // 보낸 사람이 일본어 사용자인 경우 -> 한국어로 번역
+            translatedText = translationService.translate(originalText, "ja", "ko");
+        } else {
+            // 그 외 언어 사용자인 경우, 일단 번역하지 않음 (또는 기본 번역 설정 적용)
+            translatedText = originalText;
+        }
+        // 3. 응답 DTO에 원본 메시지와 번역된 메시지를 모두 담아 반환
+        return ChatMessageResponseDto.builder()
+                .roomId(room.getRoomId())
+                .senderNickName(sender.getNickName())
+                .content(message.getTextContent())
+                .translatedContent(translatedText) // 번역된 내용 추가
+                .sentAt(message.getCreatedAt())
+                .build();
+    }
+    @Transactional
+    public Room createPrivateRoom(User user1, User user2) {
+        // 1. 새로운 PRIVATE 타입의 방 생성
+        Room newRoom = Room.builder()
+                .roomType(Room.RoomType.PRIVATE)
+                .capacity(2)
+                .build();
+        roomRepository.save(newRoom);
+
+        // 2. 두 명의 사용자를 멤버로 추가
+        RoomMember member1 = RoomMember.builder()
+                .room(newRoom)
+                .user(user1)
+                .role("MEMBER")
+                .build();
+
+        RoomMember member2 = RoomMember.builder()
+                .room(newRoom)
+                .user(user2)
+                .role("MEMBER")
+                .build();
+
+        roomMemberRepository.saveAll(java.util.List.of(member1, member2)); // 두 멤버를 한 번에 저장
+
+        return newRoom;
     }
 
     // TODO: 추가 필요한 메서드들
