@@ -3,9 +3,11 @@ package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.datasa.project01.domain.dto.LoginResponse;
 import net.datasa.project01.domain.dto.UserSummary;
 import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.repository.UserRepository;
+import net.datasa.project01.util.JwtUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,13 +26,14 @@ public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;   // mock/db 공용 저장소
     private final PasswordEncoder passwordEncoder; // BCrypt
+    private final JwtUtil jwtUtil;
 
     // === 잠금 정책 (원하면 properties로 뺄 수 있음) ===
     private static final int  LOCK_THRESHOLD = 5;   // 연속 5회 실패
     private static final long LOCK_MINUTES   = 10;  // 10분 잠금
 
     @Override
-    public UserSummary loginLocal(String loginId, String rawPassword) {
+    public LoginResponse loginLocal(String loginId, String rawPassword) {
         // 0) 사용자 조회 (아이디/비번 노출 방지: 동일한 문구 사용)
         User u = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("아이디 또는 비밀번호가 올바르지 않습니다."));
@@ -78,11 +81,18 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // 4) 안전한 요약으로 응답 (민감정보 제외)
-        return UserSummary.builder()
+        UserSummary summary = UserSummary.builder()
                 .id(u.getUserPid())
                 .loginId(u.getLoginId())
                 .nickname(u.getNickName())
                 .email(u.getEmail())
+                .build();
+
+        String token = jwtUtil.createToken(u.getLoginId());
+
+        return LoginResponse.builder()
+                .token(token)
+                .user(summary)
                 .build();
     }
 }

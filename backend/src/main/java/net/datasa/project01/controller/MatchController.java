@@ -1,24 +1,17 @@
 package net.datasa.project01.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.MatchDecisionResponseDto;
 import net.datasa.project01.domain.dto.MatchRequestDto;
 import net.datasa.project01.domain.dto.MatchStartResponseDto;
-import net.datasa.project01.domain.entity.MatchRequest;
-import net.datasa.project01.domain.entity.User;
-import net.datasa.project01.repository.MatchRequestRepository;
-import net.datasa.project01.repository.UserRepository;
 import net.datasa.project01.service.MatchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/match")
@@ -35,24 +28,44 @@ public class MatchController {
      * @return 요청 접수 결과
      */
     @PostMapping("/requests")
-    public ResponseEntity<String> startRandomMatch(
+    public ResponseEntity<MatchStartResponseDto> startRandomMatch(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody MatchRequestDto dto) {
 
         try {
             String loginId = userDetails.getUsername();
             log.info("Match request received from user: {}", loginId);
-            matchService.startOrFindMatch(loginId, dto);
+            MatchStartResponseDto response = matchService.startOrFindMatch(loginId, dto);
 
-            // TODO: MatchService의 결과에 따라 다른 응답 반환 (대기열 등록 or 매칭 성공)
-            return ResponseEntity.ok("매칭 요청이 성공적으로 접수되었습니다.");
+            return ResponseEntity.ok(response);
 
         } catch (JsonProcessingException e) {
             log.error("JSON processing error during match request for user: {}", userDetails.getUsername(), e);
-            return ResponseEntity.internalServerError().body("매칭 요청 처리 중 오류가 발생했습니다.");
-        } catch (IllegalArgumentException e) {
-            log.warn("Invalid match request from user: {}. Reason: {}", userDetails.getUsername(), e.getMessage());
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.internalServerError().body(
+                    MatchStartResponseDto.builder()
+                            .message("매칭 요청 처리 중 오류가 발생했습니다.")
+                            .build()
+            );
         }
+    }
+
+    @PostMapping("/requests/{requestId}/accept")
+    public ResponseEntity<MatchDecisionResponseDto> acceptMatch(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long requestId) {
+        String loginId = userDetails.getUsername();
+        log.info("Match accept request from user: {} for requestId {}", loginId, requestId);
+        MatchDecisionResponseDto response = matchService.acceptMatch(loginId, requestId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/requests/{requestId}/decline")
+    public ResponseEntity<MatchDecisionResponseDto> declineMatch(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long requestId) {
+        String loginId = userDetails.getUsername();
+        log.info("Match decline request from user: {} for requestId {}", loginId, requestId);
+        MatchDecisionResponseDto response = matchService.declineMatch(loginId, requestId);
+        return ResponseEntity.ok(response);
     }
 }

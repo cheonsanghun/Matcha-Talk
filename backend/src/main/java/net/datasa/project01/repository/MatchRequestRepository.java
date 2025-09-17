@@ -13,6 +13,9 @@ import java.util.Optional;
 public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long> {
     // 현재 사용자가 대기열에 있는지 확인하는 메소드는 그대로 유지합니다.
     Optional<MatchRequest> findByUserAndStatus(User user, MatchRequest.MatchStatus status);
+    Optional<MatchRequest> findTopByUserAndStatusOrderByRequestedAtDesc(User user, MatchRequest.MatchStatus status);
+    Optional<MatchRequest> findFirstByRoomAndUserNot(Room room, User user);
+    long countByStatus(MatchRequest.MatchStatus status);
 
     // [수정됨] '나의 조건'에 맞는 잠재적 매칭 상대를 찾는 더 간단한 쿼리
     @Query("SELECT mr FROM MatchRequest mr JOIN FETCH mr.user u " +
