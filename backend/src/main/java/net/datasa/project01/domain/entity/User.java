@@ -59,7 +59,7 @@ public class User {
     private boolean enabled = true;
 
     @Column(length = 30)
-    private String rolename = "ROLE_USER";
+    private String roleName = "ROLE_USER";
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

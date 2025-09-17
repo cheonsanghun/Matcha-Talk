@@ -21,7 +21,7 @@ public class UserResponse {
     private final String countryCode;
     private final Character gender;
     private final LocalDate birthDate;
-    private final String rolename;
+    private final String roleName;
     private final boolean enabled;
 
     /**
@@ -38,8 +38,8 @@ public class UserResponse {
                 .countryCode(user.getCountryCode())
                 .gender(user.getGender())
                 .birthDate(user.getBirthDate())
-                .rolename(user.getRolename())
+                .roleName(user.getRoleName())
                 .enabled(user.isEnabled())
                 .build();
     }
-}}
+}
