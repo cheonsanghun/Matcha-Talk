@@ -2,28 +2,25 @@ package net.datasa.project01.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
-import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.UserResponse;
 import net.datasa.project01.domain.dto.UserSignUpRequestDto;
 import net.datasa.project01.service.UserService;
 import net.datasa.project01.service.EmailVerificationService;
+import net.datasa.project01.util.JwtUtil;
+import net.datasa.project01.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.validation.BindingResult;
-import org.springframework.validation.FieldError;
 
 import net.datasa.project01.domain.dto.EmailRequestDto;
 import net.datasa.project01.domain.dto.EmailTokenRequestDto;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.stream.Collectors;
@@ -37,38 +34,16 @@ public class UserController {
     private final UserService userService;
     private final EmailVerificationService emailVerificationService;
     private final ObjectMapper objectMapper;
-    private final Validator validator; // Inject Validator
+    private final JwtUtil jwtUtil; // Inject JwtUtil
+    private final UserRepository userRepository; // Inject UserRepository
 
     /**
      * 회원가입 API
-     * @param request HTTP 요청
+     * @param requestDto 회원가입 요청 데이터
      * @return 생성된 사용자 정보
      */
     @PostMapping("/signup")
-    public ResponseEntity<UserResponse> signUp(HttpServletRequest request) {
-        UserSignUpRequestDto requestDto;
-        String body;
-        try {
-            body = request.getReader().lines().collect(Collectors.joining(System.lineSeparator()));
-            log.info("Raw /signup request body: {}", body);
-            requestDto = objectMapper.readValue(body, UserSignUpRequestDto.class);
-        } catch (IOException e) {
-            log.error("Error reading or deserializing raw request body in signUp", e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        } catch (Exception e) { // Catch any other deserialization errors
-            log.error("Error during JSON deserialization in signUp", e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null); // Return 400 with null body
-        }
-
-        // Manually validate the DTO
-        Set<jakarta.validation.ConstraintViolation<UserSignUpRequestDto>> violations = validator.validate(requestDto);
-        if (!violations.isEmpty()) {
-            // If there are validation errors, construct a response similar to MethodArgumentNotValidException
-            // For simplicity, we'll just log and return 400 for now.
-            violations.forEach(violation -> log.error("Validation error: {} - {}", violation.getPropertyPath(), violation.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        }
-
+    public ResponseEntity<UserResponse> signUp(@Valid @RequestBody UserSignUpRequestDto requestDto) {
         UserResponse response = userService.signUp(requestDto);
         // 회원가입 성공 시, HTTP 201 Created 상태와 함께 생성된 사용자 정보 반환
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -166,5 +141,21 @@ public class UserController {
     public ResponseEntity<Map<String, Object>> confirmEmailVerify(@Valid @RequestBody EmailTokenRequestDto dto) {
         Map<String, Object> response = emailVerificationService.confirmVerifyEmail(dto.getEmail(), dto.getToken());
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 개발/테스트용 임시 로그인 엔드포인트 (절대 프로덕션에 배포 금지!)
+     * 주어진 loginId로 JWT 토큰을 생성하여 반환합니다.
+     * @param loginId 로그인할 사용자의 ID
+     * @return JWT 토큰
+     */
+    @GetMapping("/test-login")
+    public ResponseEntity<Map<String, String>> testLogin(@RequestParam String loginId) {
+        return userRepository.findByLoginId(loginId)
+                .map(user -> {
+                    String token = jwtUtil.createToken(user.getLoginId());
+                    return ResponseEntity.ok(Map.of("token", token));
+                })
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "User not found")));
     }
 }

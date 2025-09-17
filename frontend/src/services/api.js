@@ -4,7 +4,7 @@ const api = axios.create({
   withCredentials: true,
 })
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = 'YOUR_COPIED_JWT_TOKEN_HERE'; // PASTE YOUR ACTUAL JWT TOKEN HERE
   if (token) config.headers.Authorization = `Bearer ${token}`
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   if (user?.id) config.headers['X-USER-PID'] = user.id
