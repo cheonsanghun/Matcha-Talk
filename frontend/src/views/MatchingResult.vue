@@ -95,6 +95,41 @@ const remoteVideo = ref(null)
 const auth = useAuthStore()
 let client, signal, subs = []
 
+const confirmAction = (message) => {
+  if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+    return window.confirm(message)
+  }
+
+  console.info('Confirm dialog skipped in non-browser environment:', message)
+  return true
+}
+
+function acceptMatch () {
+  if (!confirmAction('매칭을 수락하시겠습니까?')) {
+    return
+  }
+
+  sessionStatus.value = '매칭 수락됨'
+  console.info('Match accepted', {
+    me: me.value,
+    partner: partner.value
+  })
+  // TODO: 필요한 경우 매칭 수락 관련 API 호출 추가
+}
+
+function declineMatch () {
+  if (!confirmAction('매칭을 거절하시겠습니까?')) {
+    return
+  }
+
+  sessionStatus.value = '매칭 거절됨'
+  console.info('Match declined', {
+    me: me.value,
+    partner: partner.value
+  })
+  // TODO: 필요한 경우 매칭 거절 관련 API 호출 추가
+}
+
 onMounted(async () => {
   // 1) STOMP 연결
   client = createStompClient(auth.token)
