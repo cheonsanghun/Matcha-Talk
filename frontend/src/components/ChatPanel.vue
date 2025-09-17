@@ -4,48 +4,53 @@
       <v-btn size="small" variant="outlined" @click="addFriend">친구 추가</v-btn>
     </div>
     <div class="flex-grow-1 overflow-y-auto pe-2" ref="messagesContainer">
-      <div
-          v-for="msg in messages"
-          :key="msg.id"
-          :class="['chat-message', msg.isMine ? 'chat-message--mine' : 'chat-message--partner']"
-      >
-        <div v-if="!msg.isMine && msg.senderName" class="chat-message__sender">
-          {{ msg.senderName }}
-        </div>
-        <div v-if="msg.fileUrl" class="chat-message__file">
-          <img
-              v-if="msg.isImage"
-              :src="msg.fileUrl"
-              :alt="msg.fileName"
-              class="chat-image"
-          />
-          <a
+      <template v-if="props.enabled">
+        <div
+            v-for="msg in messages"
+            :key="msg.id"
+            :class="['chat-message', msg.isMine ? 'chat-message--mine' : 'chat-message--partner']"
+        >
+          <div v-if="!msg.isMine && msg.senderName" class="chat-message__sender">
+            {{ msg.senderName }}
+          </div>
+          <div v-if="msg.fileUrl" class="chat-message__file">
+            <img
+                v-if="msg.isImage"
+                :src="msg.fileUrl"
+                :alt="msg.fileName"
+                class="chat-image"
+            />
+            <a
+                v-else
+                :href="msg.fileUrl"
+                target="_blank"
+                rel="noopener"
+                :download="msg.fileName"
+            >
+              {{ msg.fileName }}
+            </a>
+          </div>
+          <div
               v-else
-              :href="msg.fileUrl"
-              target="_blank"
-              rel="noopener"
-              :download="msg.fileName"
+              class="chat-bubble"
+              :class="msg.isMine ? 'chat-bubble--mine' : 'chat-bubble--partner'"
           >
-            {{ msg.fileName }}
-          </a>
+            {{ msg.original }}
+          </div>
+          <div
+              v-if="msg.translated"
+              class="chat-translation d-flex align-center"
+              :class="msg.isMine ? 'justify-end' : ''"
+          >
+            <span class="me-1">{{ msg.translated }}</span>
+            <v-icon size="small" class="cursor-pointer" @click="saveWord(msg)">
+              mdi-content-save
+            </v-icon>
+          </div>
         </div>
-        <div
-            v-else
-            class="chat-bubble"
-            :class="msg.isMine ? 'chat-bubble--mine' : 'chat-bubble--partner'"
-        >
-          {{ msg.original }}
-        </div>
-        <div
-            v-if="msg.translated"
-            class="chat-translation d-flex align-center"
-            :class="msg.isMine ? 'justify-end' : ''"
-        >
-          <span class="me-1">{{ msg.translated }}</span>
-          <v-icon size="small" class="cursor-pointer" @click="saveWord(msg)">
-            mdi-content-save
-          </v-icon>
-        </div>
+      </template>
+      <div v-else class="chat-placeholder text-center text-caption pa-4">
+        매칭을 서로 수락하면 채팅이 시작됩니다.
       </div>
     </div>
     <v-file-input
@@ -90,6 +95,7 @@ const props = defineProps({
   roomId: { type: Number, default: null },
   stompClient: { type: Object, default: null },
   connected: { type: Boolean, default: false },
+  enabled: { type: Boolean, default: false },
 })
 
 const messages = ref([])
@@ -103,7 +109,7 @@ const auth = useAuthStore()
 
 const myLoginId = computed(() => auth.user?.loginId ?? null)
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
-const isReady = computed(() => !!props.roomId && !!props.stompClient && props.connected)
+const isReady = computed(() => props.enabled && !!props.roomId && !!props.stompClient && props.connected)
 
 let subscription = null
 const seenMessageIds = new Set()
@@ -363,5 +369,11 @@ onBeforeUnmount(() => {
 
 .max-w-100 {
   max-width: 100%;
+}
+
+.chat-placeholder {
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background-color: #fff5f8;
 }
 </style>

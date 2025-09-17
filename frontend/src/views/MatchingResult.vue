@@ -19,12 +19,18 @@
           <v-row>
             <v-col cols="12" md="9">
               <div
-                  v-if="isMatched"
+                  v-if="chatEnabled"
                   class="rounded-lg bg-grey-lighten-2 media-wrapper d-flex align-center justify-center overflow-hidden"
               >
                 <video ref="remoteVideo" autoplay playsinline class="remote-video"></video>
                 <video ref="localVideo" autoplay muted playsinline class="local-video"></video>
               </div>
+              <v-sheet
+                  v-else-if="isMatched"
+                  class="rounded-lg bg-pink-lighten-5 d-flex align-center justify-center media-wrapper"
+              >
+                <div class="text-subtitle-1 text-center px-4">{{ matchPreviewMessage }}</div>
+              </v-sheet>
               <v-img
                   v-else-if="mediaUrl"
                   :src="mediaUrl"
@@ -53,14 +59,37 @@
                     :room-id="match.roomId"
                     :stomp-client="stompClient"
                     :connected="clientConnected"
+                    :enabled="chatEnabled"
                 />
               </v-card>
             </v-col>
           </v-row>
 
-          <div class="d-flex justify-center gap-4 mt-6">
-            <v-btn color="pink" variant="tonal" @click="acceptMatch">수락</v-btn>
-            <v-btn color="grey" variant="outlined" @click="declineMatch">거절</v-btn>
+          <div
+              v-if="showDecisionButtons || showCancelButton"
+              class="d-flex justify-center gap-4 mt-6"
+          >
+            <template v-if="showDecisionButtons">
+              <v-btn
+                  color="pink"
+                  variant="tonal"
+                  :disabled="!canAccept"
+                  @click="acceptMatch"
+              >수락</v-btn>
+              <v-btn
+                  color="grey"
+                  variant="outlined"
+                  :disabled="!canDecline"
+                  @click="declineMatch"
+              >{{ declineLabel }}</v-btn>
+            </template>
+            <v-btn
+                v-else-if="showCancelButton"
+                color="grey"
+                variant="outlined"
+                :disabled="!canDecline"
+                @click="declineMatch"
+            >{{ declineLabel }}</v-btn>
           </div>
         </v-card>
       </v-col>
@@ -105,8 +134,9 @@ const partnerAvatar = computed(() => {
     : 'https://via.placeholder.com/150'
 })
 const isMatched = computed(() => match.isMatched)
+const chatEnabled = computed(() => match.bothConfirmed && !match.sessionClosed && !!match.roomId)
 const connectionReady = computed(() =>
-  clientConnected.value && match.isMatched && !!partner.value && !!me.value && !!signalRef.value
+  clientConnected.value && chatEnabled.value && !!partner.value && !!me.value && !!signalRef.value
 )
 const sessionStatus = computed(() => {
   if (match.statusMessage) return match.statusMessage
@@ -114,16 +144,43 @@ const sessionStatus = computed(() => {
   if (match.partnerDecision === 'DECLINED') return '상대방이 매칭을 거절했습니다.'
   if (match.myDecision === 'DECLINED') return '매칭을 거절했습니다.'
   if (match.bothConfirmed) return '서로 매칭을 확정했습니다. 대화를 시작하세요!'
-  if (match.myDecision === 'ACCEPTED') return '매칭을 수락했습니다. 상대방의 응답을 기다리는 중...'
+  if (match.isMatched) {
+    if (match.myDecision === 'ACCEPTED') {
+      return '매칭을 수락했습니다. 상대방의 응답을 기다리고 있습니다.'
+    }
+    if (match.partnerDecision === 'ACCEPTED') {
+      return '상대방이 매칭을 수락했습니다. 수락하면 대화를 시작할 수 있어요.'
+    }
+    return '새로운 상대를 찾았습니다. 수락 후 대화를 시작하세요.'
+  }
   if (match.isWaiting) {
     const waiters = match.waitingCount || 0
     return waiters > 0
       ? `대기 중... 현재 ${waiters}명이 기다리고 있습니다.`
       : '대기열에서 상대를 찾고 있습니다.'
   }
-  if (match.isMatched) return '연결을 준비 중입니다.'
   return '매칭 정보를 불러오는 중입니다.'
 })
+const matchPreviewMessage = computed(() => {
+  if (match.sessionClosed) {
+    return '매칭이 종료되었습니다.'
+  }
+  if (!match.isMatched) {
+    return '랜덤 매칭이 시작되면 영상이 여기에 표시됩니다.'
+  }
+  if (match.myDecision === 'ACCEPTED' && match.partnerDecision !== 'ACCEPTED') {
+    return '상대방의 응답을 기다리고 있습니다. 잠시만 기다려 주세요.'
+  }
+  if (match.partnerDecision === 'ACCEPTED' && match.myDecision !== 'ACCEPTED') {
+    return '상대방이 매칭을 수락했습니다. 수락 버튼을 눌러 대화를 시작해보세요.'
+  }
+  return '수락 버튼을 누르면 영상 채팅이 시작됩니다.'
+})
+const showDecisionButtons = computed(() => match.isMatched && !match.sessionClosed && !match.bothConfirmed)
+const showCancelButton = computed(() => match.isWaiting && !match.sessionClosed)
+const canAccept = computed(() => showDecisionButtons.value && match.myDecision !== 'ACCEPTED')
+const canDecline = computed(() => (showDecisionButtons.value || showCancelButton.value) && match.myDecision !== 'DECLINED')
+const declineLabel = computed(() => (match.isWaiting ? '대기 취소' : '거절'))
 
 const confirmAction = (message) => {
   if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
@@ -188,7 +245,7 @@ async function ensureLocalMedia() {
 }
 
 async function maybeSendOffer() {
-  if (!connectionReady.value || !match.shouldCreateOffer || hasSentOffer.value) {
+  if (!connectionReady.value || !chatEnabled.value || !match.shouldCreateOffer || hasSentOffer.value) {
     return
   }
 
@@ -279,13 +336,24 @@ function cleanupPeerConnection() {
 }
 
 async function acceptMatch() {
-  if (!confirmAction('매칭을 수락하시겠습니까?') || !match.requestId) {
+  if (!showDecisionButtons.value || !canAccept.value || !match.requestId) {
+    return
+  }
+
+  if (!confirmAction('매칭을 수락하시겠습니까?')) {
     return
   }
 
   try {
     const { data } = await api.post(`/match/requests/${match.requestId}/accept`)
-    match.setMyDecision('ACCEPTED', data?.message || '매칭을 수락했습니다.', !!data?.bothAccepted)
+    match.setMyDecision(
+      'ACCEPTED',
+      data?.message || '매칭을 수락했습니다.',
+      {
+        bothAccepted: !!data?.bothAccepted,
+        shouldCreateOffer: data?.shouldCreateOffer ?? null
+      }
+    )
   } catch (error) {
     console.error('매칭 수락 실패:', error)
     alert(error?.response?.data?.message || '매칭 수락에 실패했습니다.')
@@ -293,14 +361,29 @@ async function acceptMatch() {
 }
 
 async function declineMatch() {
-  if (!confirmAction('매칭을 거절하시겠습니까?') || !match.requestId) {
+  if ((!showDecisionButtons.value && !showCancelButton.value) || !canDecline.value || !match.requestId) {
+    return
+  }
+
+  const wasWaiting = match.isWaiting
+  const confirmMessage = wasWaiting
+    ? '대기열에서 나가시겠습니까?'
+    : '매칭을 거절하시겠습니까?'
+
+  if (!confirmAction(confirmMessage)) {
     return
   }
 
   try {
     const { data } = await api.post(`/match/requests/${match.requestId}/decline`)
-    match.setMyDecision('DECLINED', data?.message || '매칭을 거절했습니다.', false)
-    cleanupPeerConnection()
+    match.setMyDecision(
+      'DECLINED',
+      data?.message || (wasWaiting ? '대기열에서 제외되었습니다.' : '매칭을 거절했습니다.'),
+      { bothAccepted: false, shouldCreateOffer: false }
+    )
+    if (!wasWaiting) {
+      cleanupPeerConnection()
+    }
   } catch (error) {
     console.error('매칭 거절 실패:', error)
     alert(error?.response?.data?.message || '매칭 거절에 실패했습니다.')
@@ -313,8 +396,6 @@ onMounted(() => {
     router.replace({ name: 'match' })
     return
   }
-
-  ensurePeerConnection()
 
   client = createStompClient(auth.token)
   stompClient.value = client
@@ -351,16 +432,30 @@ watch(connectionReady, (ready) => {
   }
 })
 
+watch(chatEnabled, (enabled, previous) => {
+  if (!enabled && previous) {
+    cleanupPeerConnection()
+  }
+  if (enabled) {
+    hasSentOffer.value = false
+  }
+})
+
 watch(() => match.shouldCreateOffer, (should) => {
   if (should && connectionReady.value) {
     hasSentOffer.value = false
     maybeSendOffer()
+  } else if (!should) {
+    hasSentOffer.value = false
   }
 })
 
 watch(partner, (loginId, previous) => {
-  if (loginId && loginId !== previous && connectionReady.value) {
-    hasSentOffer.value = false
+  if (!loginId || loginId === previous) {
+    return
+  }
+  hasSentOffer.value = false
+  if (connectionReady.value) {
     maybeSendOffer()
   }
 })

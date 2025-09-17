@@ -151,6 +151,7 @@ public class MatchService {
                 .orElseThrow(() -> new IllegalArgumentException("상대방 매칭 정보를 찾을 수 없습니다."));
 
         boolean bothAccepted = partnerRequest.getStatus() == MatchRequest.MatchStatus.CONFIRMED;
+        boolean myOfferRole = shouldCreateOffer(me, partnerRequest.getUser());
         Room room = myRequest.getRoom();
 
         sendMatchEvent(
@@ -165,7 +166,7 @@ public class MatchService {
 
         if (bothAccepted) {
             String confirmedMessage = "매칭이 확정되었습니다.";
-            sendMatchEvent(me, myRequest, partnerRequest, room, MatchEventMessage.EventType.BOTH_CONFIRMED, confirmedMessage, shouldCreateOffer(me, partnerRequest.getUser()));
+            sendMatchEvent(me, myRequest, partnerRequest, room, MatchEventMessage.EventType.BOTH_CONFIRMED, confirmedMessage, myOfferRole);
             sendMatchEvent(partnerRequest.getUser(), partnerRequest, myRequest, room, MatchEventMessage.EventType.BOTH_CONFIRMED, confirmedMessage, shouldCreateOffer(partnerRequest.getUser(), me));
         }
 
@@ -177,6 +178,7 @@ public class MatchService {
                 .myStatus(myRequest.getStatus())
                 .partnerStatus(partnerRequest.getStatus())
                 .bothAccepted(bothAccepted)
+                .shouldCreateOffer(bothAccepted && myOfferRole)
                 .message(bothAccepted ? "상대와 연결이 확정되었습니다." : "매칭을 수락했습니다. 상대 응답을 기다리는 중입니다.")
                 .build();
     }
@@ -199,6 +201,7 @@ public class MatchService {
                     .decision(MatchDecisionResponseDto.Decision.DECLINED)
                     .message("대기열에서 제외되었습니다.")
                     .myRequestId(requestId)
+                    .shouldCreateOffer(false)
                     .build();
         }
 
@@ -246,6 +249,7 @@ public class MatchService {
                 .myStatus(myRequest.getStatus())
                 .partnerStatus(partnerRequest != null ? partnerRequest.getStatus() : MatchRequest.MatchStatus.CANCELLED)
                 .bothAccepted(false)
+                .shouldCreateOffer(false)
                 .message(message)
                 .build();
     }

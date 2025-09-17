@@ -24,5 +24,6 @@ public class MatchDecisionResponseDto {
     private MatchRequest.MatchStatus myStatus;
     private MatchRequest.MatchStatus partnerStatus;
     private boolean bothAccepted;
+    private boolean shouldCreateOffer;
     private String message;
 }
