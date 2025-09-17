@@ -265,6 +265,7 @@ public class MatchService {
                 .roomId(room != null ? room.getRoomId() : null)
                 .partnerLoginId(partnerRequest != null ? partnerRequest.getUser().getLoginId() : null)
                 .partnerNickName(partnerRequest != null ? partnerRequest.getUser().getNickName() : null)
+                .partnerUserPid(partnerRequest != null ? partnerRequest.getUser().getUserPid() : null)
                 .message(message)
                 .shouldCreateOffer(shouldCreateOffer)
                 .build();
@@ -333,6 +334,7 @@ public class MatchService {
                 .partnerRequestId(partnerRequest != null ? partnerRequest.getRequestId() : null)
                 .partnerLoginId(partnerRequest != null ? partnerRequest.getUser().getLoginId() : null)
                 .partnerNickName(partnerRequest != null ? partnerRequest.getUser().getNickName() : null)
+                .partnerUserPid(partnerRequest != null ? partnerRequest.getUser().getUserPid() : null)
                 .shouldCreateOffer(shouldCreateOffer)
                 .message(message)
                 .build();

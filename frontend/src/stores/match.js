@@ -8,6 +8,7 @@ export const useMatchStore = defineStore('match', {
     roomId: null,
     partnerLoginId: null,
     partnerNickName: null,
+    partnerUserPid: null,
     waitingCount: 0,
     shouldCreateOffer: false,
     statusMessage: '',
@@ -28,6 +29,7 @@ export const useMatchStore = defineStore('match', {
       this.roomId = payload.roomId ?? null
       this.partnerLoginId = payload.partnerLoginId ?? null
       this.partnerNickName = payload.partnerNickName ?? null
+      this.partnerUserPid = payload.partnerUserPid ?? null
       this.waitingCount = payload.waitingCount ?? 0
       this.shouldCreateOffer = !!payload.shouldCreateOffer
       this.statusMessage = payload.message || ''
@@ -51,6 +53,7 @@ export const useMatchStore = defineStore('match', {
           this.roomId = event.roomId ?? this.roomId
           this.partnerLoginId = event.partnerLoginId ?? this.partnerLoginId
           this.partnerNickName = event.partnerNickName ?? this.partnerNickName
+          this.partnerUserPid = event.partnerUserPid ?? this.partnerUserPid
           this.shouldCreateOffer = !!event.shouldCreateOffer
           this.myDecision = null
           this.partnerDecision = null
@@ -97,6 +100,7 @@ export const useMatchStore = defineStore('match', {
       this.roomId = null
       this.partnerLoginId = null
       this.partnerNickName = null
+      this.partnerUserPid = null
       this.waitingCount = 0
       this.shouldCreateOffer = false
       this.statusMessage = ''

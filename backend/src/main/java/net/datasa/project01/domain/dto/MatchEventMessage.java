@@ -25,6 +25,7 @@ public class MatchEventMessage {
     private Long partnerRequestId;
     private String partnerLoginId;
     private String partnerNickName;
+    private Long partnerUserPid;
     private String message;
     private boolean shouldCreateOffer;
 }
