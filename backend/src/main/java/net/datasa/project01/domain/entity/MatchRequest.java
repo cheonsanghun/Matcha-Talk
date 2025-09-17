@@ -2,13 +2,12 @@ package net.datasa.project01.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import net.datasa.project01.domain.entity.Room;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
 /**
- * 매칭 요청 정보를 저장하는 엔티티
+ * 랜덤 매칭 요청 정보를 저장하는 엔티티
  */
 @Getter
 @Setter
@@ -47,10 +46,6 @@ public class MatchRequest {
     @Column(name = "interests_json", columnDefinition = "JSON", nullable = false)
     private String interestsJson;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "room_id")
-    private Room room;
-
     // [수정됨] String -> Enum
     @Builder.Default
     @Enumerated(EnumType.STRING)
@@ -67,10 +62,6 @@ public class MatchRequest {
     }
 
     public enum MatchStatus {
-        WAITING,
-        MATCHED,
-        CONFIRMED,
-        DECLINED,
-        CANCELLED
+        WAITING, MATCHED, CANCELLED
     }
 }
