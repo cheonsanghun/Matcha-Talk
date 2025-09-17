@@ -13,7 +13,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
+import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 
@@ -52,13 +54,23 @@ public class StompHandler implements ChannelInterceptor {
     private void authenticateWebSocketConnection(StompHeaderAccessor accessor) {
         String authHeader = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
 
+        Principal handshakePrincipal = accessor.getUser();
+
+        if (handshakePrincipal instanceof UsernamePasswordAuthenticationToken authentication
+                && authentication.isAuthenticated()) {
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            log.info("STOMP CONNECT 요청이 핸드셰이크 Principal로 인증되었습니다. sessionId={}, user={}",
+                    accessor.getSessionId(), authentication.getName());
+            return;
+        }
+
         if (log.isDebugEnabled()) {
-            log.debug("CONNECT frame headers after sanitization: {}",
+            log.debug("CONNECT 프레임 헤더 정보: {}",
                     StompLoggingUtils.sanitizeHeaders(accessor.toNativeHeaderMap()));
         }
 
-        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
-            log.warn("No valid authorization header found for WebSocket connection. sessionId={}",
+        if (!StringUtils.hasText(authHeader) || !authHeader.startsWith(BEARER_PREFIX)) {
+            log.warn("STOMP CONNECT 요청에서 Authorization 헤더를 찾을 수 없습니다. sessionId={}",
                     accessor.getSessionId());
             return;
         }
@@ -77,12 +89,14 @@ public class StompHandler implements ChannelInterceptor {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 accessor.setUser(authentication);
 
-                log.info("WebSocket authentication successful for user: {}", loginId);
+                log.info("STOMP CONNECT JWT 인증 성공: sessionId={}, user={}",
+                        accessor.getSessionId(), loginId);
             } else {
-                log.warn("Invalid JWT token for WebSocket connection. sessionId={}", accessor.getSessionId());
+                log.warn("STOMP CONNECT에서 JWT 토큰이 유효하지 않습니다. sessionId={}", accessor.getSessionId());
             }
         } catch (Exception e) {
-            log.error("Error during WebSocket authentication. sessionId={}", accessor.getSessionId(), e);
+            log.error("STOMP CONNECT JWT 인증 처리 중 오류가 발생했습니다. sessionId={}",
+                    accessor.getSessionId(), e);
         }
     }
 }

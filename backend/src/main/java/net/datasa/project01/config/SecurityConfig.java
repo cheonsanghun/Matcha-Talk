@@ -31,7 +31,8 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/actuator/**",
             "/api/users/**",
-            "/api/auth/**"
+            "/api/auth/**",
+            "/ws-stomp/**"
     };
 
     private static final String[] PROTECTED_ENDPOINTS = {

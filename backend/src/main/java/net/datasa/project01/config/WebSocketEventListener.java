@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
@@ -44,10 +45,14 @@ public class WebSocketEventListener {
     @EventListener
     public void handleSessionDisconnect(SessionDisconnectEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
-        log.info("WebSocket DISCONNECT: sessionId={}, user={}, status={}",
+        CloseStatus closeStatus = event.getCloseStatus();
+        String reason = closeStatus != null ? closeStatus.getReason() : null;
+        log.info("WebSocket DISCONNECT: sessionId={}, user={}, closeCode={}, reason={}, headers={}",
                 accessor.getSessionId(),
                 StompLoggingUtils.extractUser(accessor.getUser()),
-                event.getCloseStatus());
+                closeStatus != null ? closeStatus.getCode() : null,
+                reason,
+                StompLoggingUtils.sanitizeHeaders(accessor.toNativeHeaderMap()));
     }
 }
 
