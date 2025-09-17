@@ -51,9 +51,12 @@ public class MatchService {
         }
 
         // 2. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
+        MatchRequest.Gender myChoiceGender = MatchRequest.Gender.valueOf(requestDto.getChoiceGender());
+        Character myChoiceGenderChar = requestDto.getChoiceGender().charAt(0);
+
         List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
                 me.getUserPid(),
-                MatchRequest.Gender.valueOf(requestDto.getChoiceGender()),
+                myChoiceGenderChar,
                 requestDto.getMinAge(),
                 requestDto.getMaxAge(),
                 MatchRequest.MatchStatus.WAITING
@@ -89,7 +92,7 @@ public class MatchService {
             // [수정됨] 나의 매칭 요청도 'MATCHED' 상태로 생성하여 기록을 남김
             MatchRequest myMatchedRequest = MatchRequest.builder()
                     .user(me)
-                    .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
+                    .choiceGender(myChoiceGender)
                     .minAge(requestDto.getMinAge())
                     .maxAge(requestDto.getMaxAge())
                     .regionCode(requestDto.getRegionCode())
@@ -113,7 +116,7 @@ public class MatchService {
             log.info("No match found for user {}. Adding to queue.", loginId);
             MatchRequest newRequest = MatchRequest.builder()
                     .user(me)
-                    .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
+                    .choiceGender(myChoiceGender)
                     .minAge(requestDto.getMinAge())
                     .maxAge(requestDto.getMaxAge())
                     .regionCode(requestDto.getRegionCode())
