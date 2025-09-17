@@ -17,12 +17,12 @@
 
             <div class="d-flex align-end mb-4">
               <v-text-field
-                  v-model="form.login_id"
+                  v-model="form.loginId"
                   label="아이디"
                   variant="outlined"
                   class="flex-grow-1 me-2"
-                  :error-messages="errors.login_id"
-                  @blur="validate('login_id')"
+                  :error-messages="errors.loginId"
+                  @blur="validate('loginId')"
               />
               <v-btn variant="outlined" color="pink" @click="checkLoginId" :disabled="loginIdAvailable">중복 확인</v-btn>
             </div>
@@ -146,7 +146,7 @@ const genderItems = ['M', 'F']
 const countryItems = ['KR', 'JP']
 
 const form = ref({
-  nick_name: '', login_id: '', email: '',
+  nick_name: '', loginId: '', email: '',
   password: '', password2: '',
   gender: null, country_code: null
 })
@@ -157,7 +157,7 @@ const monthItems = Array.from({length: 12}, (_, i) => i + 1)
 const dayItems = Array.from({length: 31}, (_, i) => i + 1)
 
 const errors = ref({
-  nick_name: '', login_id: '', email: '', password: '', password2: '',
+  nick_name: '', loginId: '', email: '', password: '', password2: '',
   birth: '', gender: '', country_code: ''
 })
 
@@ -190,8 +190,8 @@ function validate(field) {
     case 'nick_name':
       errors.value.nick_name = checkRules(form.value.nick_name, [r.required, r.len(2, 30)])
       break
-    case 'login_id':
-      errors.value.login_id = checkRules(form.value.login_id, [r.required, r.len(4, 30)])
+    case 'loginId':
+      errors.value.loginId = checkRules(form.value.loginId, [r.required, r.len(4, 30)])
       break
     case 'email':
       errors.value.email = checkRules(form.value.email, [r.required, r.email])
@@ -215,17 +215,17 @@ function validate(field) {
   }
 }
 
-watch(() => form.value.login_id, () => {
+watch(() => form.value.loginId, () => {
   loginIdAvailable.value = false
 })
 
 async function onSubmit() {
-  ;['nick_name', 'login_id', 'email', 'password', 'password2', 'birth', 'gender', 'country_code'].forEach(validate)
+  ;['nick_name', 'loginId', 'email', 'password', 'password2', 'birth', 'gender', 'country_code'].forEach(validate)
   if (!valid.value) return
 
   const birth_date = `${birth.value.year}-${String(birth.value.month).padStart(2, '0')}-${String(birth.value.day).padStart(2, '0')}`
   const payload = {
-    login_id: form.value.login_id,
+    loginId: form.value.loginId,
     password: form.value.password,
     confirm_password: form.value.password2,
     nick_name: form.value.nick_name,
@@ -258,16 +258,16 @@ async function requestEmailVerify() {
 }
 
 async function checkLoginId() {
-  validate('login_id')
-  if (errors.value.login_id) return
+  validate('loginId')
+  if (errors.value.loginId) return
   try {
-    const {data} = await api.get('/users/exists', {params: {loginId: form.value.login_id}})
+    const {data} = await api.get('/users/exists', {params: {loginId: form.value.loginId}})
     if (data.exists) {
-      errors.value.login_id = '이미 사용 중인 아이디입니다.'
+      errors.value.loginId = '이미 사용 중인 아이디입니다.'
       loginIdAvailable.value = false
       alert('이미 사용 중인 아이디입니다.')
     } else {
-      errors.value.login_id = ''
+      errors.value.loginId = ''
       loginIdAvailable.value = true
       alert('사용 가능한 아이디입니다.')
     }
