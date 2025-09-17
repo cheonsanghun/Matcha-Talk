@@ -23,6 +23,7 @@ public class MatchStartResponseDto {
     private Long roomId;
     private String partnerLoginId;
     private String partnerNickName;
+    private Long partnerUserPid;
     private long waitingCount;
     private String message;
     private boolean shouldCreateOffer;

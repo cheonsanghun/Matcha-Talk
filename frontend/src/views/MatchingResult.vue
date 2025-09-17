@@ -46,7 +46,14 @@
             </v-col>
             <v-col cols="12" md="3">
               <v-card variant="outlined" class="pa-4 h-100 chat-wrapper d-flex flex-column">
-                <ChatPanel class="flex-grow-1" :partner="partner || ''" />
+                <ChatPanel
+                    class="flex-grow-1"
+                    :partner-login-id="partner || ''"
+                    :partner-user-pid="match.partnerUserPid"
+                    :room-id="match.roomId"
+                    :stomp-client="stompClient"
+                    :connected="clientConnected"
+                />
               </v-card>
             </v-col>
           </v-row>
@@ -62,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../services/api'
 import { createStompClient } from '../services/ws'
@@ -81,6 +88,7 @@ const mediaUrl = ref('')
 const clientConnected = ref(false)
 const hasSentOffer = ref(false)
 const signalRef = ref(null)
+const stompClient = shallowRef(null)
 
 let client = null
 let pc = null
@@ -309,6 +317,7 @@ onMounted(() => {
   ensurePeerConnection()
 
   client = createStompClient(auth.token)
+  stompClient.value = client
   client.onConnect = () => {
     clientConnected.value = true
 
@@ -366,6 +375,7 @@ onBeforeUnmount(() => {
   subs.forEach((sub) => sub?.unsubscribe?.())
   subs.length = 0
   client?.deactivate?.()
+  stompClient.value = null
   signalRef.value = null
   cleanupPeerConnection()
 })
