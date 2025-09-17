@@ -13,12 +13,12 @@
         </div>
         <div class="px-4 pb-2">
           <v-text-field
-            v-model="query"
-            placeholder="채팅방 검색 바"
-            prepend-inner-icon="mdi-magnify"
-            variant="solo"
-            density="comfortable"
-            hide-details
+              v-model="query"
+              placeholder="채팅방 검색 바"
+              prepend-inner-icon="mdi-magnify"
+              variant="solo"
+              density="comfortable"
+              hide-details
           />
         </div>
         <v-tabs v-model="tab" density="comfortable" class="px-4">
@@ -29,10 +29,10 @@
         <div class="flex-grow-1 overflow-y-auto">
           <v-list v-if="tab === 'direct'">
             <v-list-item
-              v-for="item in filteredChats"
-              :key="item.id"
-              @click="openChat(item)"
-              lines="two"
+                v-for="item in filteredChats"
+                :key="item.id"
+                @click="openChat(item)"
+                lines="two"
             >
               <template #prepend>
                 <v-avatar size="40"><v-icon color="primary">mdi-account</v-icon></v-avatar>
@@ -43,10 +43,10 @@
           </v-list>
           <v-list v-else>
             <v-list-item
-              v-for="item in filteredGroups"
-              :key="item.id"
-              @click="openChat(item)"
-              lines="two"
+                v-for="item in filteredGroups"
+                :key="item.id"
+                @click="openChat(item)"
+                lines="two"
             >
               <template #prepend>
                 <v-avatar size="40"><v-icon color="primary">mdi-account-group</v-icon></v-avatar>
@@ -78,10 +78,10 @@
         <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto" ref="chatMessagesContainer">
           <div class="text-center my-4 text-caption text-grey">2023년 1월 18일</div>
           <div
-            v-for="(m, i) in messages"
-            :key="i"
-            class="d-flex mb-4"
-            :class="{ 'justify-end': m.me }"
+              v-for="(m, i) in messages"
+              :key="i"
+              class="d-flex mb-4"
+              :class="{ 'justify-end': m.me }"
           >
             <template v-if="!m.me">
               <v-avatar size="32" class="mr-2"><v-icon color="primary">mdi-account</v-icon></v-avatar>
@@ -102,13 +102,13 @@
         <div class="chat-input d-flex align-center pa-4 ga-2">
           <v-btn icon variant="outlined" color="success"><v-icon>mdi-plus</v-icon></v-btn>
           <v-text-field
-            v-model="draft"
-            variant="outlined"
-            density="comfortable"
-            hide-details
-            placeholder="메시지를 입력하세요..."
-            class="flex-grow-1"
-            @keydown.enter.prevent="send"
+              v-model="draft"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+              placeholder="메시지를 입력하세요..."
+              class="flex-grow-1"
+              @keydown.enter.prevent="send"
           />
           <v-btn icon variant="text"><v-icon>mdi-emoticon-outline</v-icon></v-btn>
           <v-btn icon color="success" @click="send"><v-icon>mdi-send</v-icon></v-btn>
@@ -120,8 +120,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch, onUnmounted } from 'vue' // Added onUnmounted
 import { useFriendsStore } from '../stores/friends'
+import { createStompClient } from '../services/ws' // Added import for createStompClient
 
 const query = ref('')
 const tab = ref('direct')
@@ -137,6 +138,7 @@ const conversations = ref({
 })
 
 const chatMessagesContainer = ref(null)
+const stompClient = ref(null); // Declared stompClient ref
 
 const friendsStore = useFriendsStore()
 
@@ -144,6 +146,48 @@ onMounted(() => {
   chats.value = friendsStore.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
   current.value = chats.value[0] || groups.value[0]
   scrollToBottom()
+
+  // WebSocket Connection Logic
+  const token = localStorage.getItem('token'); // Get token from localStorage
+  if (!token) {
+    console.error("JWT token not found in localStorage. Cannot establish WebSocket connection.");
+    return;
+  }
+
+  stompClient.value = createStompClient(token);
+
+  stompClient.value.onConnect = () => {
+    console.log('Connected to WebSocket');
+    // Subscribe to public chat topic
+    stompClient.value.subscribe('/topic/public', onMessageReceived);
+    // Subscribe to user-specific queue for private messages/notifications
+    // Assuming user's loginId is available, e.g., from a user store or decoded from token
+    // For now, we'll use a placeholder or assume it's part of the user object in localStorage
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    if (user && user.loginId) {
+      stompClient.value.subscribe(`/user/${user.loginId}/queue/messages`, onMessageReceived);
+    } else {
+      console.warn("User loginId not found in localStorage. Cannot subscribe to private queue.");
+    }
+  };
+
+  stompClient.value.onStompError = (frame) => {
+    console.error('Broker reported error: ' + frame.headers['message']);
+    console.error('Details: ' + frame.body);
+  };
+
+  stompClient.value.onWebSocketError = (event) => {
+    console.error('WebSocket Error: ', event);
+  };
+
+  stompClient.value.activate();
+})
+
+onUnmounted(() => {
+  if (stompClient.value && stompClient.value.connected) {
+    stompClient.value.deactivate();
+    console.log('Disconnected from WebSocket');
+  }
 })
 
 friendsStore.$subscribe((_, state) => {
@@ -152,14 +196,14 @@ friendsStore.$subscribe((_, state) => {
 
 
 const filteredChats = computed(() =>
-  chats.value.filter(c =>
-    c.name.includes(query.value) || c.last?.includes(query.value)
-  )
+    chats.value.filter(c =>
+        c.name.includes(query.value) || c.last?.includes(query.value)
+    )
 )
 const filteredGroups = computed(() =>
-  groups.value.filter(c =>
-    c.name.includes(query.value) || c.last?.includes(query.value)
-  )
+    groups.value.filter(c =>
+        c.name.includes(query.value) || c.last?.includes(query.value)
+    )
 )
 
 const isGroup = computed(() =>
@@ -219,6 +263,32 @@ function send() {
   scrollToBottom()
 }
 
+function onMessageReceived(payload) {
+  const message = JSON.parse(payload.body);
+  console.log("Received message:", message);
+
+  // Determine if it's a message for the current chat or another chat
+  // This logic needs to be refined based on your backend message structure
+  // For now, let's assume all messages are for the current chat for simplicity
+  const formattedTime = new Date().toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  const msg = {
+    text: message.content, // Assuming message has a 'content' field
+    time: formattedTime,
+    me: message.senderId === JSON.parse(localStorage.getItem('user') || 'null').id // Assuming senderId and user.id
+  };
+
+  // Add message to the correct conversation
+  // This part needs to be dynamic based on message.roomId or message.senderId
+  // For now, adding to current chat
+  conversations.value[current.value.id] = conversations.value[current.value.id] || [];
+  conversations.value[current.value.id].push(msg);
+  scrollToBottom();
+}
+
 watch(messages, () => scrollToBottom())
 </script>
 
@@ -245,4 +315,3 @@ watch(messages, () => scrollToBottom())
 
 }
 </style>
-

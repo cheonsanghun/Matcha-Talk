@@ -8,13 +8,13 @@
           <v-sheet class="mb-6 pa-4 selection-box">
             <div class="text-subtitle-2 mb-2">나이 범위</div>
             <v-range-slider
-              v-model="ageRange"
-              :min="20"
-              :max="99"
-              :step="1"
-              thumb-label
-              color="pink"
-              track-color="pink-lighten-4"
+                v-model="ageRange"
+                :min="20"
+                :max="99"
+                :step="1"
+                thumb-label
+                color="pink"
+                track-color="pink-lighten-4"
             />
             <div class="text-caption">{{ ageRange[0] }} - {{ ageRange[1] }} 세</div>
           </v-sheet>
@@ -31,15 +31,15 @@
           <v-sheet class="mb-6 pa-4 selection-box">
             <div class="text-subtitle-2 mb-2">희망 지역</div>
             <v-select
-              v-model="region"
-              :items="regions"
-              item-title="title"
-              item-value="value"
-              variant="outlined"
-              density="comfortable"
-              color="pink"
-              style="width: 100%"
-              placeholder="지역을 선택하세요"
+                v-model="region"
+                :items="regions"
+                item-title="title"
+                item-value="value"
+                variant="outlined"
+                density="comfortable"
+                color="pink"
+                style="width: 100%"
+                placeholder="지역을 선택하세요"
             />
           </v-sheet>
 
@@ -48,22 +48,22 @@
             <v-btn color="pink" variant="tonal" @click="dialog=true">관심사 선택</v-btn>
             <v-chip-group v-if="interests.length" class="mt-2" multiple>
               <v-chip
-                v-for="i in interests"
-                :key="i"
-                class="ma-1"
-                color="pink"
-                variant="tonal"
+                  v-for="i in interests"
+                  :key="i"
+                  class="ma-1"
+                  color="pink"
+                  variant="tonal"
               >{{ i }}</v-chip>
             </v-chip-group>
           </v-sheet>
 
           <v-btn
-            color="pink"
-            block
-            size="large"
-            :loading="loading"
-            :disabled="loading || !isValid"
-            @click="startMatch"
+              color="pink"
+              block
+              size="large"
+              :loading="loading"
+              :disabled="loading || !isValid"
+              @click="startMatch"
           >매칭 시작</v-btn>
           <div class="text-center text-caption mt-2">
             <span v-if="!isValid">필수 정보를 모두 입력하세요</span>
@@ -79,16 +79,16 @@
         <v-card-text>
           <v-sheet max-height="200" class="overflow-y-auto">
             <v-chip-group
-              v-model="interests"
-              multiple
-              selected-class="bg-pink text-white"
+                v-model="interests"
+                multiple
+                selected-class="bg-pink text-white"
             >
               <v-chip
-                v-for="i in interestPool"
-                :key="i"
-                :value="i"
-                class="ma-1"
-                variant="outlined"
+                  v-for="i in interestPool"
+                  :key="i"
+                  :value="i"
+                  class="ma-1"
+                  variant="outlined"
               >{{ i }}</v-chip>
             </v-chip-group>
           </v-sheet>
@@ -106,10 +106,8 @@
 import { ref, computed } from 'vue'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
-import { useMatchStore } from '../stores/match'
 
 const router = useRouter()
-const matchStore = useMatchStore()
 const ageRange = ref([20, 30])
 const gender = ref('A')
 const regions = [
@@ -134,17 +132,15 @@ const isValid = computed(() => !!gender.value && !!region.value && interests.val
 async function startMatch(){
   if (!isValid.value) return
   loading.value = true
-  matchStore.reset()
   const payload = {
-    choiceGender: gender.value,
-    minAge: ageRange.value[0],
-    maxAge: ageRange.value[1],
-    regionCode: region.value,
-    interests: interests.value,
+    choice_gender: gender.value,
+    min_age: ageRange.value[0],
+    max_age: ageRange.value[1],
+    region_code: region.value,
+    interests_json: interests.value,
   }
   try{
-    const { data } = await api.post('/match/requests', payload)
-    matchStore.setFromStartResponse(data)
+    await api.post('/match/requests', payload)
     router.push('/match/result')
   }catch(e){
     alert('매칭 실패: ' + (e?.response?.data?.message || e.message))
