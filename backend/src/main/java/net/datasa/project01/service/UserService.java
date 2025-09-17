@@ -53,16 +53,21 @@ public class UserService {
         }
 
         // (2) 이메일 인증 토큰 검증
-        emailVerificationService.verifyTokenForEmail(req.getEmail(), req.getVerificationToken());
+        emailVerificationService.verifyTokenForEmail(req.getEmail(), req.getVerificationCode());
 
         // (3) 회원 엔티티 생성 (비밀번호 해시 포함)
+        String genderValue = req.getGender() != null ? req.getGender().trim().toUpperCase() : null;
+        if (genderValue == null || genderValue.isEmpty()) {
+            throw new IllegalArgumentException("성별 정보가 올바르지 않습니다.");
+        }
+        Character genderChar = genderValue.charAt(0);
         User user = User.builder()
                 .loginId(req.getLoginId())                      // 로그인 아이디
                 .passwordHash(passwordEncoder.encode(req.getPassword())) // 비밀번호 해시
                 .nickName(req.getNickName())                    // 닉네임
                 .email(req.getEmail())                          // 이메일
                 .countryCode(req.getCountryCode())              // 국적 코드
-                .gender(req.getGender())                        // 성별
+                .gender(genderChar)                        // 성별
                 .birthDate(req.getBirthDate())                  // 생년월일
                 .emailVerified(true)                            // 이메일 인증 여부
                 .failedLoginCount(0)                            // 로그인 실패 횟수(초기값 0)
@@ -88,10 +93,25 @@ public class UserService {
                 .build();
     }
 
-    /** 로그인 아이디 존재 여부 반환 */
+    /**
+     * 로그인 아이디 존재 여부 반환
+     */
     public boolean existsByLoginId(String loginId) {
         return userRepository.existsByLoginId(loginId);
     }
+
+    /** 이메일 존재 여부 반환 */
+    public boolean existsByEmail(String email) {
+        return userRepository.existsByEmail(email);
+    }
+
+    /** 로그인 아이디로 회원 조회 */
+    public UserResponse getUserByLoginId(String loginId) {
+        User user = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        return UserResponse.fromEntity(user);
+    }
+
     /**
      * 회원 단건 조회 메서드
      * - 회원 PK로 회원 정보를 조회하여 응답 DTO로 반환합니다.
@@ -116,4 +136,6 @@ public class UserService {
                 .enabled(u.isEnabled())
                 .build();
     }
+
+
 }

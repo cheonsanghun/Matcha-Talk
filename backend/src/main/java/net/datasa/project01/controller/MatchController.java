@@ -7,7 +7,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.MatchRequestDto;
 import net.datasa.project01.domain.entity.MatchRequest;
+import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.repository.MatchRequestRepository;
+import net.datasa.project01.repository.UserRepository;
 import net.datasa.project01.service.MatchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -25,6 +27,7 @@ public class MatchController {
     private final MatchService matchService;
     private final MatchRequestRepository matchRequestRepository;
     private final ObjectMapper objectMapper;
+    private final UserRepository userRepository;
 
     /**
      * 매칭 요청(단일 엔드포인트)
@@ -53,14 +56,20 @@ public class MatchController {
 
             // 2) 헤더 기반(비인증) 흐름: 요청 엔티티 저장 후 requestId 반환
             if (userPid != null) {
+                User user = userRepository.findById(userPid)
+                        .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다."));
+
+                if (dto.getInterests() == null || dto.getInterests().isEmpty()) {
+                    throw new IllegalArgumentException("관심사는 최소 1개 이상 선택해야 합니다.");
+                }
                 MatchRequest saved = matchRequestRepository.save(
                         MatchRequest.builder()
-                                .userPid(userPid)
-                                .choiceGender(dto.getChoiceGender())
+                                .user(user)
+                                .choiceGender(MatchRequest.Gender.valueOf(dto.getChoiceGender()))
                                 .minAge(dto.getMinAge())
                                 .maxAge(dto.getMaxAge())
                                 .regionCode(dto.getRegionCode())
-                                .interestsJson(objectMapper.writeValueAsString(dto.getInterestsJson()))
+                                .interestsJson(objectMapper.writeValueAsString(dto.getInterests()))
                                 .build()
                 );
                 return ResponseEntity.ok(Map.of("requestId", saved.getRequestId()));
