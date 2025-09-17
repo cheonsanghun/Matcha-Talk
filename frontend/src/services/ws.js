@@ -10,9 +10,7 @@ const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 const origin = apiBase.replace(/\/api\/?$/, '')
 
 export function createStompClient(token) {
-    const sockJsUrl = token
-        ? `${origin}${WS_PATH}?token=${encodeURIComponent(token)}`
-        : `${origin}${WS_PATH}`
+    const sockJsUrl = `${origin}${WS_PATH}`
 
     const client = new Client({
         webSocketFactory: () => new SockJS(sockJsUrl),
