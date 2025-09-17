@@ -78,6 +78,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { createStompClient } from '../services/ws'
 import { setupSignalRoutes } from '../services/signaling'
 import { useAuthStore } from '../stores/auth'
+import ChatPanel from '../components/ChatPanel.vue';
 // import { setupChat } ...
 
 const me = ref(/* 로그인한 사용자 loginId */)
