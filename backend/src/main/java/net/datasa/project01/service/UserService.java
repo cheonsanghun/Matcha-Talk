@@ -1,14 +1,20 @@
 package net.datasa.project01.service;
 
 import jakarta.validation.Valid;
+import net.datasa.project01.domain.dto.FollowRequestDto;
 import net.datasa.project01.domain.dto.UserResponse;         // 회원 정보 응답 DTO
 import net.datasa.project01.domain.dto.UserSignUpRequestDto;
+import net.datasa.project01.domain.entity.Follow;
 import net.datasa.project01.domain.entity.User;               // 회원 엔티티
+import net.datasa.project01.repository.FollowRepository;
 import net.datasa.project01.repository.UserRepository;        // 회원 저장소(인터페이스)
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder; // 비밀번호 해시 인코더
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * [UserService]
@@ -28,6 +34,8 @@ public class UserService {
 
     // 이메일 인증 서비스
     private final EmailVerificationService emailVerificationService;
+
+    private final FollowRepository followRepository;
 
     /**
      * 회원가입 처리 메서드
@@ -137,5 +145,108 @@ public class UserService {
                 .build();
     }
 
+    /**
+     * 팔로우 요청 생성
+     */
+    @Transactional
+    public void createFollow(FollowRequestDto req, String followerLoginId) {
+        User follower = userRepository.findByLoginId(followerLoginId)
+                .orElseThrow(() -> new IllegalArgumentException("요청한 사용자를 찾을 수 없습니다."));
+
+        User followee = userRepository.findById(req.getFolloweeId())
+                .orElseThrow(() -> new IllegalArgumentException("팔로우할 대상 사용자를 찾을 수 없습니다."));
+
+        if (follower.getUserPid().equals(followee.getUserPid())) {
+            throw new IllegalArgumentException("자기 자신을 팔로우할 수 없습니다.");
+        }
+
+        if (followRepository.existsByFollowerAndFollowee(follower, followee)) {
+            throw new IllegalStateException("이미 팔로우 요청을 보냈거나 팔로우 관계입니다.");
+        }
+
+        Follow follow = Follow.builder()
+                .follower(follower)
+                .followee(followee)
+                .status(Follow.FollowStatus.PENDING)
+                .build();
+
+        followRepository.save(follow);
+    }
+
+    /**
+     * 팔로우 요청 상태 변경 (수락/거절)
+     */
+    @Transactional
+    public void updateFollowStatus(Long followId, net.datasa.project01.domain.dto.FollowUpdateDto dto, String currentUsername) {
+        Follow follow = followRepository.findById(followId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 팔로우 요청을 찾을 수 없습니다."));
+
+        User currentUser = userRepository.findByLoginId(currentUsername)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        // 요청을 받은 사람(followee)만 상태를 변경할 수 있음
+        if (!follow.getFollowee().getUserPid().equals(currentUser.getUserPid())) {
+            throw new IllegalStateException("이 요청을 처리할 권한이 없습니다.");
+        }
+
+        Follow.FollowStatus newStatus = Follow.FollowStatus.valueOf(dto.getStatus());
+        if (newStatus != Follow.FollowStatus.ACCEPTED && newStatus != Follow.FollowStatus.REJECTED) {
+            throw new IllegalArgumentException("잘못된 상태 값입니다: " + dto.getStatus());
+        }
+
+        follow.setStatus(newStatus);
+        followRepository.save(follow);
+    }
+
+    /**
+     * 팔로우 관계 삭제 (언팔로우)
+     */
+    @Transactional
+    public void deleteFollow(Long followId, String currentUsername) {
+        Follow follow = followRepository.findById(followId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 팔로우 관계를 찾을 수 없습니다."));
+
+        User currentUser = userRepository.findByLoginId(currentUsername)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        // 팔로우를 요청한 사람(follower) 또는 받은 사람(followee)만 삭제할 수 있음
+        if (!follow.getFollower().getUserPid().equals(currentUser.getUserPid()) && !follow.getFollowee().getUserPid().equals(currentUser.getUserPid())) {
+            throw new IllegalStateException("이 관계를 삭제할 권한이 없습니다.");
+        }
+
+        followRepository.delete(follow);
+    }
+
+    /**
+     * 사용자가 팔로우하는 사람들의 목록을 조회
+     */
+    @Transactional(readOnly = true)
+    public List<UserResponse> getFollowingList(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        List<Follow> followingRelations = followRepository.findAllByFollowerAndStatus(user, Follow.FollowStatus.ACCEPTED);
+
+        return followingRelations.stream()
+                .map(Follow::getFollowee)
+                .map(UserResponse::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 사용자를 팔로우하는 사람들의 목록을 조회
+     */
+    @Transactional(readOnly = true)
+    public List<UserResponse> getFollowerList(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        List<Follow> followerRelations = followRepository.findAllByFolloweeAndStatus(user, Follow.FollowStatus.ACCEPTED);
+
+        return followerRelations.stream()
+                .map(Follow::getFollower)
+                .map(UserResponse::fromEntity)
+                .collect(Collectors.toList());
+    }
 
 }

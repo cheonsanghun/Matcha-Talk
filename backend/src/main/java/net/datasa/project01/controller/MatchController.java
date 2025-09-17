@@ -27,97 +27,31 @@ import java.util.Map;
 public class MatchController {
 
     private final MatchService matchService;
-    private final MatchRequestRepository matchRequestRepository;
-    private final ObjectMapper objectMapper;
-    private final UserRepository userRepository;
 
     /**
-     * 매칭 요청(단일 엔드포인트)
-     * - 인증 정보(@AuthenticationPrincipal)가 있으면 매칭 로직 실행
-     * - 인증 정보가 없고 X-USER-PID 헤더가 있으면 DB에 요청 레코드 저장
-     * - 둘 다 없으면 400
+     * 랜덤 매칭을 요청하는 API 엔드포인트
+     * @param userDetails 현재 인증된 사용자의 정보 (Spring Security가 주입)
+     * @param dto 프론트엔드에서 보낸 매칭 조건
+     * @return 요청 접수 결과
      */
     @PostMapping("/requests")
-    public ResponseEntity<?> createOrStartMatch(
+    public ResponseEntity<String> startRandomMatch(
             @AuthenticationPrincipal UserDetails userDetails,
-            @RequestHeader(value = "X-USER-PID", required = false) Long userPid,
             @Valid @RequestBody MatchRequestDto dto) {
 
         try {
-            // 1) Spring Security 인증 기반 흐름
-            if (userDetails != null) {
-                String loginId = userDetails.getUsername();
-                log.info("Match request received from authenticated user: {}", loginId);
+            String loginId = userDetails.getUsername();
+            log.info("Match request received from user: {}", loginId);
+            matchService.startOrFindMatch(loginId, dto);
 
-                // 서비스 레이어에 매칭 시작/탐색 위임
-                MatchStartResponseDto response = matchService.startOrFindMatch(loginId, dto);
-                return ResponseEntity.ok(response);
-            }
-
-            // 2) 헤더 기반(비인증) 흐름: 요청 엔티티 저장 후 requestId 반환
-            if (userPid != null) {
-                User user = userRepository.findById(userPid)
-                        .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다."));
-
-                if (dto.getInterests() == null || dto.getInterests().isEmpty()) {
-                    throw new IllegalArgumentException("관심사는 최소 1개 이상 선택해야 합니다.");
-                }
-                MatchRequest saved = matchRequestRepository.save(
-                        MatchRequest.builder()
-                                .user(user)
-                                .choiceGender(MatchRequest.Gender.valueOf(dto.getChoiceGender()))
-                                .minAge(dto.getMinAge())
-                                .maxAge(dto.getMaxAge())
-                                .regionCode(dto.getRegionCode())
-                                .interestsJson(objectMapper.writeValueAsString(dto.getInterests()))
-                                .build()
-                );
-                return ResponseEntity.ok(Map.of("requestId", saved.getRequestId()));
-            }
-
-            // 3) 둘 다 없는 경우
-            return ResponseEntity.badRequest()
-                    .body("인증 정보가 없습니다. 로그인(@AuthenticationPrincipal) 또는 X-USER-PID 헤더 중 하나가 필요합니다.");
+            // TODO: MatchService의 결과에 따라 다른 응답 반환 (대기열 등록 or 매칭 성공)
+            return ResponseEntity.ok("매칭 요청이 성공적으로 접수되었습니다.");
 
         } catch (JsonProcessingException e) {
-            log.error("JSON processing error during match request. user={} / userPid={}",
-                    (userDetails != null ? userDetails.getUsername() : "null"), userPid, e);
+            log.error("JSON processing error during match request for user: {}", userDetails.getUsername(), e);
             return ResponseEntity.internalServerError().body("매칭 요청 처리 중 오류가 발생했습니다.");
         } catch (IllegalArgumentException e) {
-            log.warn("Invalid match request. user={} / userPid={} / reason={}",
-                    (userDetails != null ? userDetails.getUsername() : "null"), userPid, e.getMessage());
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    @PostMapping("/requests/{requestId}/accept")
-    public ResponseEntity<?> acceptMatch(
-            @AuthenticationPrincipal UserDetails userDetails,
-            @PathVariable Long requestId) {
-        if (userDetails == null) {
-            return ResponseEntity.status(401).body("인증 정보가 필요합니다.");
-        }
-        try {
-            MatchDecisionResponseDto response = matchService.respondToMatch(userDetails.getUsername(), requestId, true);
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            log.warn("Accept failed for user {}: {}", userDetails.getUsername(), e.getMessage());
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    @PostMapping("/requests/{requestId}/decline")
-    public ResponseEntity<?> declineMatch(
-            @AuthenticationPrincipal UserDetails userDetails,
-            @PathVariable Long requestId) {
-        if (userDetails == null) {
-            return ResponseEntity.status(401).body("인증 정보가 필요합니다.");
-        }
-        try {
-            MatchDecisionResponseDto response = matchService.respondToMatch(userDetails.getUsername(), requestId, false);
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            log.warn("Decline failed for user {}: {}", userDetails.getUsername(), e.getMessage());
+            log.warn("Invalid match request from user: {}. Reason: {}", userDetails.getUsername(), e.getMessage());
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }

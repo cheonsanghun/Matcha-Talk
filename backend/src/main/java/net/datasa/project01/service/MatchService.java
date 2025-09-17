@@ -4,10 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.datasa.project01.domain.dto.MatchDecisionResponseDto;
-import net.datasa.project01.domain.dto.MatchEventMessage;
+import net.datasa.project01.domain.dto.MatchFoundResponseDto;
 import net.datasa.project01.domain.dto.MatchRequestDto;
-import net.datasa.project01.domain.dto.MatchStartResponseDto;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
@@ -38,273 +36,88 @@ public class MatchService {
      * 랜덤 매칭을 시작하거나 대기열에서 상대를 찾기
      * @param loginId 요청한 사용자의 ID
      * @param requestDto 매칭 조건
+     * 주요 로직들이 다수 들어가있으므로 매우 중요함
+     * 작동 안할 시 로직에 대해 다시 고려해볼 것
      */
-    public MatchStartResponseDto startOrFindMatch(String loginId, MatchRequestDto requestDto) throws JsonProcessingException {
+    public void startOrFindMatch(String loginId, MatchRequestDto requestDto) throws JsonProcessingException {
         User me = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         // 1. 이미 대기열에 있는지 확인
-        Optional<MatchRequest> existingWaiting = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
-        if (existingWaiting.isPresent()) {
-            long waitingCount = matchRequestRepository.countByStatusExcludingUser(MatchRequest.MatchStatus.WAITING, me);
-            return MatchStartResponseDto.builder()
-                    .state(MatchStartResponseDto.MatchState.ALREADY_WAITING)
-                    .myRequestId(existingWaiting.get().getRequestId())
-                    .waitingCount(waitingCount)
-                    .message(waitingCount > 0 ? "다른 사용자를 찾고 있습니다." : "현재 대기 중인 사용자가 없습니다.")
-                    .shouldCreateOffer(false)
-                    .build();
+        Optional<MatchRequest> existingRequest = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
+        if (existingRequest.isPresent()) {
+            log.info("User {} is already in the matching queue.", loginId);
+            return; // 이미 대기 중이므로 아무것도 하지 않음
         }
 
-        // 2. 이미 매칭된 기록이 있는지 확인
-        Optional<MatchRequest> existingMatched = matchRequestRepository.findFirstByUserAndStatusOrderByRequestedAtDesc(me, MatchRequest.MatchStatus.MATCHED);
-        if (existingMatched.isPresent() && existingMatched.get().getRoom() != null) {
-            MatchRequest myMatched = existingMatched.get();
-            MatchRequest opponent = findOpponentRequest(myMatched.getRoom(), myMatched.getRequestId());
-            return MatchStartResponseDto.builder()
-                    .state(MatchStartResponseDto.MatchState.MATCHED)
-                    .myRequestId(myMatched.getRequestId())
-                    .partnerRequestId(opponent != null ? opponent.getRequestId() : null)
-                    .roomId(myMatched.getRoom().getRoomId())
-                    .partnerLoginId(opponent != null ? opponent.getUser().getLoginId() : null)
-                    .partnerNickName(opponent != null ? opponent.getUser().getNickName() : null)
-                    .message("이미 진행 중인 매칭이 있습니다.")
-                    .shouldCreateOffer(false)
-                    .build();
-        }
-
-        MatchRequest.Gender myChoiceGender = MatchRequest.Gender.valueOf(requestDto.getChoiceGender());
-        Character myChoiceGenderChar = requestDto.getChoiceGender().charAt(0);
-
-        // 3. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
+        // 2. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
         List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
                 me.getUserPid(),
-                myChoiceGenderChar,
-                requestDto.getMinAge(),
-                requestDto.getMaxAge(),
                 MatchRequest.MatchStatus.WAITING
         );
 
-        MatchRequest matchedOpponentRequest = selectFinalOpponent(me, potentialMatches);
+        // 3. Java 코드로 최종 매칭 상대 결정 (역방향 검증)
+        MatchRequest matchedOpponentRequest = null;
+        for (MatchRequest opponentRequest : potentialMatches) {
+            User opponent = opponentRequest.getUser();
+            long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
+
+            // 상대방의 희망 성별이 '모두(A)'이거나 '나의 성별'과 일치하는지 확인
+            boolean isGenderMatch = opponentRequest.getChoiceGender() == MatchRequest.Gender.A ||
+                    opponentRequest.getChoiceGender().name().equals(me.getGender().toString());
+
+            // 나의 나이가 상대방의 희망 나이 범위에 속하는지 확인
+            boolean isAgeMatch = myAge >= opponentRequest.getMinAge() && myAge <= opponentRequest.getMaxAge();
+
+            if (isGenderMatch && isAgeMatch) {
+                matchedOpponentRequest = opponentRequest;
+                break; // 첫 번째로 찾은 짝과 매칭
+            }
+        }
 
         if (matchedOpponentRequest != null) {
             // 4. 매칭 성공 처리
             User opponent = matchedOpponentRequest.getUser();
             log.info("Match found for user {}: {}", loginId, opponent.getLoginId());
 
+            // 두 요청의 상태를 MATCHED로 변경
             matchedOpponentRequest.setStatus(MatchRequest.MatchStatus.MATCHED);
 
-            // 1:1 채팅방 생성 및 각 요청에 연결
-            Room privateRoom = chatService.createPrivateRoom(me, opponent);
-            matchedOpponentRequest.setRoom(privateRoom);
-
-            MatchRequest myMatchedRequest = matchRequestRepository.save(MatchRequest.builder()
+            // [수정됨] 나의 매칭 요청도 'MATCHED' 상태로 생성하여 기록을 남김
+            MatchRequest myMatchedRequest = MatchRequest.builder()
                     .user(me)
-                    .choiceGender(myChoiceGender)
+                    .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
                     .minAge(requestDto.getMinAge())
                     .maxAge(requestDto.getMaxAge())
                     .regionCode(requestDto.getRegionCode())
                     .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
-                    .status(MatchRequest.MatchStatus.MATCHED)
-                    .room(privateRoom)
-                    .build());
+                    .status(MatchRequest.MatchStatus.MATCHED) // 상태를 MATCHED로 설정
+                    .build();
+            matchRequestRepository.save(myMatchedRequest);
+
+            // 1:1 채팅방 생성
+            Room privateRoom = chatService.createPrivateRoom(me, opponent);
 
             // 양쪽 사용자에게 매칭 성공 알림 전송 (웹소켓)
-            MatchEventMessage initiatorEvent = MatchEventMessage.builder()
-                    .eventType(MatchEventMessage.EventType.MATCH_FOUND)
-                    .roomId(privateRoom.getRoomId())
-                    .myRequestId(myMatchedRequest.getRequestId())
-                    .partnerRequestId(matchedOpponentRequest.getRequestId())
-                    .partnerLoginId(opponent.getLoginId())
-                    .partnerNickName(opponent.getNickName())
-                    .message(String.format("%s님과 매칭되었습니다.", opponent.getNickName()))
-                    .shouldCreateOffer(true)
-                    .build();
-            sendMatchEvent(me, initiatorEvent);
+            MatchFoundResponseDto myResponse = new MatchFoundResponseDto(privateRoom.getRoomId(), opponent.getNickName());
+            MatchFoundResponseDto opponentResponse = new MatchFoundResponseDto(privateRoom.getRoomId(), me.getNickName());
 
-            MatchEventMessage opponentEvent = MatchEventMessage.builder()
-                    .eventType(MatchEventMessage.EventType.MATCH_FOUND)
-                    .roomId(privateRoom.getRoomId())
-                    .myRequestId(matchedOpponentRequest.getRequestId())
-                    .partnerRequestId(myMatchedRequest.getRequestId())
-                    .partnerLoginId(me.getLoginId())
-                    .partnerNickName(me.getNickName())
-                    .message(String.format("%s님과 매칭되었습니다.", me.getNickName()))
-                    .shouldCreateOffer(false)
-                    .build();
-            sendMatchEvent(opponent, opponentEvent);
+            messagingTemplate.convertAndSendToUser(me.getLoginId(), "/queue/match-results", myResponse);
+            messagingTemplate.convertAndSendToUser(opponent.getLoginId(), "/queue/match-results", opponentResponse);
 
-            return MatchStartResponseDto.builder()
-                    .state(MatchStartResponseDto.MatchState.MATCHED)
-                    .myRequestId(myMatchedRequest.getRequestId())
-                    .partnerRequestId(matchedOpponentRequest.getRequestId())
-                    .roomId(privateRoom.getRoomId())
-                    .partnerLoginId(opponent.getLoginId())
-                    .partnerNickName(opponent.getNickName())
-                    .message("매칭이 성사되었습니다.")
-                    .shouldCreateOffer(true)
-                    .build();
-        }
-
-        // 5. 매칭 실패 -> 대기열에 등록
-        log.info("No match found for user {}. Adding to queue.", loginId);
-        MatchRequest newRequest = matchRequestRepository.save(MatchRequest.builder()
-                .user(me)
-                .choiceGender(myChoiceGender)
-                .minAge(requestDto.getMinAge())
-                .maxAge(requestDto.getMaxAge())
-                .regionCode(requestDto.getRegionCode())
-                .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
-                .status(MatchRequest.MatchStatus.WAITING)
-                .build());
-
-        long waitingCount = matchRequestRepository.countByStatusExcludingUser(MatchRequest.MatchStatus.WAITING, me);
-
-        return MatchStartResponseDto.builder()
-                .state(MatchStartResponseDto.MatchState.WAITING)
-                .myRequestId(newRequest.getRequestId())
-                .waitingCount(waitingCount)
-                .message(waitingCount > 0 ? "다른 사용자를 찾고 있습니다." : "현재 대기 중인 사용자가 없습니다.")
-                .shouldCreateOffer(false)
-                .build();
-    }
-
-    public MatchDecisionResponseDto respondToMatch(String loginId, Long requestId, boolean accept) {
-        MatchRequest myRequest = matchRequestRepository.findByRequestIdAndUser_LoginId(requestId, loginId)
-                .orElseThrow(() -> new IllegalArgumentException("매칭 요청을 찾을 수 없습니다."));
-
-        if (myRequest.getStatus() != MatchRequest.MatchStatus.MATCHED && myRequest.getStatus() != MatchRequest.MatchStatus.CONFIRMED) {
-            throw new IllegalStateException("현재 상태에서는 응답할 수 없습니다.");
-        }
-
-        Room room = myRequest.getRoom();
-        if (room == null) {
-            throw new IllegalStateException("매칭 세션 정보가 없습니다.");
-        }
-
-        MatchRequest opponentRequest = findOpponentRequest(room, myRequest.getRequestId());
-
-        if (accept) {
-            myRequest.setStatus(MatchRequest.MatchStatus.CONFIRMED);
         } else {
-            myRequest.setStatus(MatchRequest.MatchStatus.DECLINED);
-            if (opponentRequest != null) {
-                opponentRequest.setStatus(MatchRequest.MatchStatus.CANCELLED);
-                opponentRequest.setRoom(null);
-            }
-            myRequest.setRoom(null);
-        }
-
-        MatchRequest.MatchStatus partnerStatus = opponentRequest != null ? opponentRequest.getStatus() : null;
-        boolean partnerAlreadyAccepted = partnerStatus == MatchRequest.MatchStatus.CONFIRMED;
-        boolean partnerDeclined = partnerStatus == MatchRequest.MatchStatus.DECLINED || partnerStatus == MatchRequest.MatchStatus.CANCELLED;
-
-        if (opponentRequest != null) {
-            MatchEventMessage.EventType eventType = accept
-                    ? MatchEventMessage.EventType.PARTNER_ACCEPTED
-                    : MatchEventMessage.EventType.PARTNER_DECLINED;
-
-            String notice = accept
-                    ? String.format("%s님이 매칭을 수락했습니다.", myRequest.getUser().getNickName())
-                    : String.format("%s님이 매칭을 거절했습니다.", myRequest.getUser().getNickName());
-
-            MatchEventMessage event = MatchEventMessage.builder()
-                    .eventType(eventType)
-                    .roomId(room.getRoomId())
-                    .myRequestId(opponentRequest.getRequestId())
-                    .partnerRequestId(myRequest.getRequestId())
-                    .partnerLoginId(myRequest.getUser().getLoginId())
-                    .partnerNickName(myRequest.getUser().getNickName())
-                    .message(notice)
-                    .shouldCreateOffer(false)
+            // 5. 매칭 실패 -> 대기열에 등록
+            log.info("No match found for user {}. Adding to queue.", loginId);
+            MatchRequest newRequest = MatchRequest.builder()
+                    .user(me)
+                    .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
+                    .minAge(requestDto.getMinAge())
+                    .maxAge(requestDto.getMaxAge())
+                    .regionCode(requestDto.getRegionCode())
+                    .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
+                    .status(MatchRequest.MatchStatus.WAITING)
                     .build();
-            sendMatchEvent(opponentRequest.getUser(), event);
+            matchRequestRepository.save(newRequest);
         }
-
-        boolean bothAccepted = accept && partnerAlreadyAccepted;
-
-        if (bothAccepted && opponentRequest != null) {
-            MatchEventMessage bothForMe = MatchEventMessage.builder()
-                    .eventType(MatchEventMessage.EventType.BOTH_CONFIRMED)
-                    .roomId(room.getRoomId())
-                    .myRequestId(myRequest.getRequestId())
-                    .partnerRequestId(opponentRequest.getRequestId())
-                    .partnerLoginId(opponentRequest.getUser().getLoginId())
-                    .partnerNickName(opponentRequest.getUser().getNickName())
-                    .message("서로 매칭을 수락했습니다. 대화를 시작하세요!")
-                    .shouldCreateOffer(false)
-                    .build();
-            sendMatchEvent(myRequest.getUser(), bothForMe);
-
-            MatchEventMessage bothForOpponent = MatchEventMessage.builder()
-                    .eventType(MatchEventMessage.EventType.BOTH_CONFIRMED)
-                    .roomId(room.getRoomId())
-                    .myRequestId(opponentRequest.getRequestId())
-                    .partnerRequestId(myRequest.getRequestId())
-                    .partnerLoginId(myRequest.getUser().getLoginId())
-                    .partnerNickName(myRequest.getUser().getNickName())
-                    .message("서로 매칭을 수락했습니다. 대화를 시작하세요!")
-                    .shouldCreateOffer(false)
-                    .build();
-            sendMatchEvent(opponentRequest.getUser(), bothForOpponent);
-        }
-
-        String responseMessage;
-        if (accept) {
-            if (partnerDeclined) {
-                responseMessage = "상대가 이미 매칭을 종료했습니다.";
-            } else if (bothAccepted) {
-                responseMessage = "상대도 이미 수락했습니다. 지금 바로 대화를 시작하세요.";
-            } else {
-                responseMessage = "매칭을 수락했습니다. 상대의 응답을 기다리는 중입니다.";
-            }
-        } else {
-            responseMessage = "매칭을 거절했습니다.";
-        }
-
-        return MatchDecisionResponseDto.builder()
-                .decision(accept ? MatchDecisionResponseDto.Decision.ACCEPTED : MatchDecisionResponseDto.Decision.DECLINED)
-                .roomId(room.getRoomId())
-                .myRequestId(myRequest.getRequestId())
-                .partnerRequestId(opponentRequest != null ? opponentRequest.getRequestId() : null)
-                .myStatus(myRequest.getStatus())
-                .partnerStatus(partnerStatus)
-                .bothAccepted(bothAccepted)
-                .message(responseMessage)
-                .build();
-    }
-
-    private MatchRequest selectFinalOpponent(User me, List<MatchRequest> potentialMatches) {
-        for (MatchRequest opponentRequest : potentialMatches) {
-            User opponent = opponentRequest.getUser();
-            long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
-
-            boolean isGenderMatch = opponentRequest.getChoiceGender() == MatchRequest.Gender.A ||
-                    opponentRequest.getChoiceGender().name().equals(me.getGender().toString());
-
-            boolean isAgeMatch = myAge >= opponentRequest.getMinAge() && myAge <= opponentRequest.getMaxAge();
-
-            if (isGenderMatch && isAgeMatch) {
-                return opponentRequest;
-            }
-        }
-        return null;
-    }
-
-    private MatchRequest findOpponentRequest(Room room, Long myRequestId) {
-        if (room == null) {
-            return null;
-        }
-        return matchRequestRepository.findByRoom(room).stream()
-                .filter(req -> !req.getRequestId().equals(myRequestId))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private void sendMatchEvent(User target, MatchEventMessage message) {
-        if (target == null) {
-            return;
-        }
-        messagingTemplate.convertAndSendToUser(target.getLoginId(), "/queue/match-results", message);
     }
 }

@@ -1,5 +1,8 @@
 package net.datasa.project01.config;
 
+import lombok.RequiredArgsConstructor;
+import net.datasa.project01.service.UserDetailsServiceImpl;
+import net.datasa.project01.util.JwtUtil;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -7,6 +10,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * [SecurityConfig]
@@ -15,7 +19,11 @@ import org.springframework.security.web.SecurityFilterChain;
  * - 비밀번호 저장 시 BCrypt 해시를 사용하도록 PasswordEncoder 빈을 제공합니다.
  */
 @Configuration // 스프링 설정 클래스임을 명시
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final JwtUtil jwtUtil;
+    private final UserDetailsServiceImpl userDetailsService;
 
     /**
      * SecurityFilterChain 빈 등록
