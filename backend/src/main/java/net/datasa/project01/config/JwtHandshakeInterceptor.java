@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.util.JwtUtil;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
@@ -45,40 +46,43 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         String token = resolveToken(request);
 
         if (!StringUtils.hasText(token)) {
-            log.debug("WebSocket 핸드셰이크 요청에 JWT가 포함되지 않았습니다. uri={}", request.getURI());
-
-            return true;
+            log.warn("WebSocket 핸드셰이크 요청에 JWT가 포함되지 않았습니다. uri={}", request.getURI());
+            rejectHandshake(response);
+            return false;
         }
 
         try {
-            if (jwtUtil.validateToken(token)) {
-                String username = jwtUtil.getUsernameFromToken(token);
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities());
-
-                attributes.put(WEBSOCKET_PRINCIPAL_ATTR, authentication);
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-
-                if (request instanceof ServletServerHttpRequest servletRequest) {
-                    servletRequest.getServletRequest()
-                            .setAttribute(WEBSOCKET_PRINCIPAL_ATTR, authentication);
-                }
-
-                log.info("WebSocket 핸드셰이크 JWT 인증 성공: 사용자={} uri={}", username, request.getURI());
-            } else {
+            if (!jwtUtil.validateToken(token)) {
                 log.warn("WebSocket 핸드셰이크에서 JWT 검증에 실패했습니다. uri={}", request.getURI());
+                rejectHandshake(response);
+                return false;
             }
+
+            String username = jwtUtil.getUsernameFromToken(token);
+            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities());
+
+            attributes.put(WEBSOCKET_PRINCIPAL_ATTR, authentication);
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+
+            if (request instanceof ServletServerHttpRequest servletRequest) {
+                servletRequest.getServletRequest()
+                        .setAttribute(WEBSOCKET_PRINCIPAL_ATTR, authentication);
+            }
+
+            log.info("WebSocket 핸드셰이크 JWT 인증 성공: 사용자={} uri={}", username, request.getURI());
+
+            return true;
         } catch (Exception ex) {
-            log.error("WebSocket 핸드셰이크 인증 처리 중 예기치 못한 오류가 발생했습니다.", ex);
-
+            log.error("WebSocket 핸드셰이크 인증 처리 중 예기치 못한 오류가 발생했습니다. uri={}", request.getURI(), ex);
+            rejectHandshake(response);
+            return false;
         }
-
-        return true;
     }
 
     @Override
@@ -110,5 +114,19 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         }
 
         return null;
+    }
+
+    private void rejectHandshake(ServerHttpResponse response) {
+        SecurityContextHolder.clearContext();
+
+        if (response == null) {
+            return;
+        }
+
+        try {
+            response.setStatusCode(HttpStatus.UNAUTHORIZED);
+        } catch (Exception ex) {
+            log.debug("WebSocket 핸드셰이크 거절 상태 코드를 설정하는 중 문제가 발생했습니다.", ex);
+        }
     }
 }

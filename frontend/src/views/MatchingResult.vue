@@ -27,6 +27,12 @@
             <div class="text-subtitle-1 text-medium-emphasis">
               매칭 가능한 상대를 찾는 중입니다...
             </div>
+            <div
+              v-if="waitingMessage"
+              class="text-body-2 text-medium-emphasis mt-3"
+            >
+              {{ waitingMessage }}
+            </div>
           </div>
 
           <div v-else-if="!isWaiting && !errorMessage" class="py-6">
@@ -101,6 +107,7 @@ const partnerLoginId = ref('')
 const roomId = ref(null)
 const errorMessage = ref('')
 const errorDetails = ref([])
+const waitingMessage = ref('')
 
 const stompErrorHelp = Object.freeze([
   'STOMP 메시지가 서버 clientInboundChannel로 전달되지 못했습니다.',
@@ -135,6 +142,7 @@ function handleMatchMessage(message) {
 
     errorMessage.value = ''
     errorDetails.value = []
+    waitingMessage.value = ''
 
     if (!roomId.value || !partnerNickname.value) {
       throw new Error('Incomplete match information')
@@ -153,6 +161,48 @@ function handleMatchMessage(message) {
     errorMessage.value = '매칭 결과를 불러오는 중 오류가 발생했습니다.'
     errorDetails.value = []
     isWaiting.value = false
+  }
+}
+
+function hydrateFromMatchStartResponse(response) {
+  if (!response || typeof response !== 'object') {
+    waitingMessage.value = ''
+    return
+  }
+
+  const { status, message, match } = response
+
+  waitingMessage.value = typeof message === 'string' && message.trim().length > 0 ? message : ''
+
+  if (status === 'MATCHED' && match) {
+    partnerNickname.value = match.partnerNickName ?? ''
+    partnerLoginId.value = match.partnerLoginId ?? ''
+    roomId.value = match.roomId ?? null
+
+    if (roomId.value && partnerNickname.value) {
+      errorMessage.value = ''
+      errorDetails.value = []
+      waitingMessage.value = ''
+      isWaiting.value = false
+    }
+  } else if (status === 'QUEUED' || status === 'ALREADY_IN_QUEUE') {
+    isWaiting.value = true
+  }
+}
+
+function applyInitialMatchState() {
+  try {
+    const raw = sessionStorage.getItem('matchStartResponse')
+    if (!raw) {
+      waitingMessage.value = ''
+      return
+    }
+
+    sessionStorage.removeItem('matchStartResponse')
+    const parsed = JSON.parse(raw)
+    hydrateFromMatchStartResponse(parsed)
+  } catch (err) {
+    console.warn('Failed to restore initial match state from sessionStorage', err)
   }
 }
 
@@ -219,6 +269,7 @@ onMounted(() => {
     return
   }
 
+  applyInitialMatchState()
   setupStomp()
 })
 

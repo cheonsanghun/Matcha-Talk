@@ -156,8 +156,15 @@ async function startMatch() {
     interests: interests.value,
   }
   try {
-    await api.post('/match/requests', payload)
-    router.push('/match/result')
+    const { data } = await api.post('/match/requests', payload)
+    if (data) {
+      try {
+        sessionStorage.setItem('matchStartResponse', JSON.stringify(data))
+      } catch (storageError) {
+        console.warn('Failed to persist match start response to sessionStorage', storageError)
+      }
+    }
+    router.push({ name: 'match-result' })
   } catch (e) {
     const status = e?.response?.status
     if (status === 401) {
