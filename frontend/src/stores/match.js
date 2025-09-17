@@ -66,31 +66,42 @@ export const useMatchStore = defineStore('match', {
         case 'PARTNER_DECLINED':
           this.partnerDecision = 'DECLINED'
           this.sessionClosed = true
+          this.shouldCreateOffer = false
           break
         case 'BOTH_CONFIRMED':
           this.bothConfirmed = true
           if (!this.myDecision) this.myDecision = 'ACCEPTED'
           if (!this.partnerDecision) this.partnerDecision = 'ACCEPTED'
+          if (event.shouldCreateOffer !== undefined) {
+            this.shouldCreateOffer = !!event.shouldCreateOffer
+          }
           this.sessionClosed = false
           break
         case 'MATCH_CANCELLED':
           this.sessionClosed = true
+          this.shouldCreateOffer = false
           break
       }
     },
-    setMyDecision(decision, message = '', bothAccepted = false) {
+    setMyDecision(decision, message = '', { bothAccepted = false, shouldCreateOffer = null } = {}) {
       this.myDecision = decision
       if (message) {
         this.statusMessage = message
       }
       if (decision === 'DECLINED') {
         this.sessionClosed = true
+        this.shouldCreateOffer = false
       }
       if (bothAccepted) {
         this.bothConfirmed = true
         if (!this.partnerDecision) {
           this.partnerDecision = 'ACCEPTED'
         }
+        if (shouldCreateOffer !== null) {
+          this.shouldCreateOffer = !!shouldCreateOffer
+        }
+      } else if (shouldCreateOffer !== null) {
+        this.shouldCreateOffer = !!shouldCreateOffer
       }
     },
     reset() {
