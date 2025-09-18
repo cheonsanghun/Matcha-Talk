@@ -1,5 +1,5 @@
 <template>
-  <v-container fluid class="chat-page  mt-4">
+  <v-container fluid class="chat-page mt-4">
     <v-row no-gutters class="h-100">
       <!-- Sidebar -->
       <v-col cols="12" md="3" class="chat-sidebar d-flex flex-column">
@@ -27,92 +27,93 @@
         </v-tabs>
         <v-divider />
         <div class="flex-grow-1 overflow-y-auto">
-          <v-list v-if="tab === 'direct'">
-            <v-list-item
-                v-for="item in filteredChats"
-                :key="item.id"
-                @click="openChat(item)"
-                lines="two"
+          <div v-if="loadingRooms" class="d-flex justify-center py-6">
+            <v-progress-circular indeterminate size="24" color="primary" />
+          </div>
+          <div v-else-if="roomsError" class="text-caption text-error text-center px-4 py-6">
+            {{ roomsError }}
+          </div>
+          <template v-else>
+            <v-list v-if="tab === 'direct'">
+              <v-list-item
+                  v-for="room in filteredDirectRooms"
+                  :key="room.roomId"
+                  :class="['chat-room-item', { active: room.roomId === selectedRoomId }]"
+                  @click="openRoom(room)"
+                  lines="two"
+              >
+                <template #prepend>
+                  <v-avatar size="40"><v-icon color="primary">mdi-account</v-icon></v-avatar>
+                </template>
+                <v-list-item-title>{{ getRoomTitle(room) }}</v-list-item-title>
+                <v-list-item-subtitle>{{ getRoomSubtitle(room) }}</v-list-item-subtitle>
+              </v-list-item>
+            </v-list>
+            <v-list v-else>
+              <v-list-item
+                  v-for="room in filteredGroupRooms"
+                  :key="room.roomId"
+                  :class="['chat-room-item', { active: room.roomId === selectedRoomId }]"
+                  @click="openRoom(room)"
+                  lines="two"
+              >
+                <template #prepend>
+                  <v-avatar size="40"><v-icon color="primary">mdi-account-group</v-icon></v-avatar>
+                </template>
+                <v-list-item-title>{{ getRoomTitle(room) }}</v-list-item-title>
+                <v-list-item-subtitle>{{ getRoomSubtitle(room) }}</v-list-item-subtitle>
+              </v-list-item>
+            </v-list>
+            <div
+                v-if="(tab === 'direct' ? filteredDirectRooms : filteredGroupRooms).length === 0"
+                class="text-caption text-medium-emphasis text-center px-4 py-6"
             >
-              <template #prepend>
-                <v-avatar size="40"><v-icon color="primary">mdi-account</v-icon></v-avatar>
-              </template>
-              <v-list-item-title>{{ item.name }}</v-list-item-title>
-              <v-list-item-subtitle>{{ item.last }}</v-list-item-subtitle>
-            </v-list-item>
-          </v-list>
-          <v-list v-else>
-            <v-list-item
-                v-for="item in filteredGroups"
-                :key="item.id"
-                @click="openChat(item)"
-                lines="two"
-            >
-              <template #prepend>
-                <v-avatar size="40"><v-icon color="primary">mdi-account-group</v-icon></v-avatar>
-              </template>
-              <v-list-item-title>{{ item.name }}</v-list-item-title>
-              <v-list-item-subtitle>{{ item.last }}</v-list-item-subtitle>
-            </v-list-item>
-          </v-list>
+              참여 중인 채팅방이 없습니다.
+            </div>
+          </template>
         </div>
       </v-col>
 
       <!-- Conversation -->
       <v-col cols="12" md="9" class="chat-main d-flex flex-column">
-        <div class="chat-header d-flex align-center pa-4">
-          <v-avatar size="40"><v-icon color="primary">mdi-account</v-icon></v-avatar>
-          <div class="ml-3">
-            <div class="text-subtitle-1 font-weight-medium">{{ current.name }}</div>
-            <div class="text-caption text-grey" v-if="!isGroup">온라인</div>
-            <div class="text-caption text-grey" v-else>{{ groupParticipants }}</div>
+        <template v-if="currentRoom">
+          <div class="chat-header d-flex align-center pa-4">
+            <v-avatar size="40"><v-icon color="primary">{{ isGroup ? 'mdi-account-group' : 'mdi-account' }}</v-icon></v-avatar>
+            <div class="ml-3">
+              <div class="text-subtitle-1 font-weight-medium">{{ currentRoomTitle }}</div>
+              <div v-if="currentRoomSubtitle" class="text-caption text-grey">{{ currentRoomSubtitle }}</div>
+            </div>
+            <v-spacer />
+            <v-btn icon variant="text"><v-icon>mdi-magnify</v-icon></v-btn>
+            <v-btn v-if="!isGroup" icon variant="text" @click="startVoiceCall"><v-icon>mdi-phone</v-icon></v-btn>
+            <v-btn v-if="isGroup" icon variant="text" @click="inviteParticipant"><v-icon>mdi-account-plus</v-icon></v-btn>
+            <v-btn icon variant="text" @click="startVideoCall"><v-icon>mdi-video</v-icon></v-btn>
           </div>
-          <v-spacer />
-          <v-btn icon variant="text"><v-icon>mdi-magnify</v-icon></v-btn>
-          <v-btn v-if="!isGroup" icon variant="text"><v-icon>mdi-phone</v-icon></v-btn>
-          <v-btn v-if="isGroup" icon variant="text" @click="inviteParticipant"><v-icon>mdi-account-plus</v-icon></v-btn>
-          <v-btn v-if="isGroup" icon variant="text" @click="startVideoCall"><v-icon>mdi-video</v-icon></v-btn>
-          <v-btn v-else icon variant="text"><v-icon>mdi-video</v-icon></v-btn>
-        </div>
-        <v-divider />
-        <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto" ref="chatMessagesContainer">
-          <div class="text-center my-4 text-caption text-grey">2023년 1월 18일</div>
-          <div
-              v-for="(m, i) in messages"
-              :key="i"
-              class="d-flex mb-4"
-              :class="{ 'justify-end': m.me }"
-          >
-            <template v-if="!m.me">
-              <v-avatar size="32" class="mr-2"><v-icon color="primary">mdi-account</v-icon></v-avatar>
-              <div>
-                <div v-if="isGroup" class="text-caption font-weight-medium mb-1">{{ m.sender }}</div>
-                <div class="pa-3 bg-grey-lighten-4 rounded-xl">{{ m.text }}</div>
-                <div class="text-caption text-grey mt-1">{{ m.time }}</div>
-              </div>
-            </template>
-            <template v-else>
-              <div>
-                <div class="pa-3 bg-primary text-white rounded-xl">{{ m.text }}</div>
-                <div class="text-caption text-grey mt-1 text-right">{{ m.time }}</div>
-              </div>
-            </template>
+          <v-divider />
+          <div class="chat-content flex-grow-1 d-flex flex-column">
+            <div v-if="loadingRoomDetail" class="flex-grow-1 d-flex align-center justify-center">
+              <v-progress-circular indeterminate size="32" color="primary" />
+            </div>
+            <div
+                v-else-if="roomDetailError"
+                class="flex-grow-1 d-flex align-center justify-center text-caption text-error px-4 text-center"
+            >
+              {{ roomDetailError }}
+            </div>
+            <div v-else class="chat-panel-wrapper flex-grow-1 d-flex flex-column">
+              <ChatPanel
+                  class="flex-grow-1 h-100"
+                  :room-id="selectedRoomId"
+                  :stomp-client="stompClient"
+                  :connected="isConnected"
+                  :enabled="chatEnabled"
+                  :partner-login-id="partnerLoginId"
+              />
+            </div>
           </div>
-        </div>
-        <div class="chat-input d-flex align-center pa-4 ga-2">
-          <v-btn icon variant="outlined" color="success"><v-icon>mdi-plus</v-icon></v-btn>
-          <v-text-field
-              v-model="draft"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-              placeholder="메시지를 입력하세요..."
-              class="flex-grow-1"
-              @keydown.enter.prevent="send"
-          />
-          <v-btn icon variant="text"><v-icon>mdi-emoticon-outline</v-icon></v-btn>
-          <v-btn icon color="success" @click="send"><v-icon>mdi-send</v-icon></v-btn>
-
+        </template>
+        <div v-else class="chat-empty flex-grow-1 d-flex align-center justify-center text-medium-emphasis">
+          참여 중인 채팅방이 없습니다. 좌측에서 다른 탭을 확인해 보세요.
         </div>
       </v-col>
     </v-row>
@@ -120,198 +121,271 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch, onUnmounted } from 'vue' // Added onUnmounted
-import { useFriendsStore } from '../stores/friends'
-import { createStompClient } from '../services/ws' // Added import for createStompClient
+import { ref, computed, onMounted, onBeforeUnmount, watch, shallowRef } from 'vue'
+import ChatPanel from '../components/ChatPanel.vue'
+import api from '../services/api'
+import { createStompClient } from '../services/ws'
+import { useAuthStore } from '../stores/auth'
 
 const query = ref('')
 const tab = ref('direct')
-const chats = ref([])
-const groups = ref([
-  { id: 3, name: '스터디 모임', last: '다음 주 모임 시간 안내', participants: ['김서연', '대학 동기'] }
-])
+const rooms = ref([])
+const loadingRooms = ref(false)
+const roomsError = ref('')
 
-const current = ref({})
-const draft = ref('')
-const conversations = ref({
-  3: []
+const selectedRoomId = ref(null)
+const roomDetails = ref(null)
+const loadingRoomDetail = ref(false)
+const roomDetailError = ref('')
+
+const auth = useAuthStore()
+
+const stompClient = shallowRef(null)
+const isConnected = ref(false)
+
+const myNickname = computed(() => auth.user?.nickName ?? '')
+const myLoginId = computed(() => auth.user?.loginId ?? '')
+
+const directRooms = computed(() => rooms.value.filter(room => room.roomType !== 'GROUP'))
+const groupRooms = computed(() => rooms.value.filter(room => room.roomType === 'GROUP'))
+
+const filteredDirectRooms = computed(() => filterRooms(directRooms.value))
+const filteredGroupRooms = computed(() => filterRooms(groupRooms.value))
+
+const currentRoom = computed(() => rooms.value.find(room => room.roomId === selectedRoomId.value) || null)
+const isGroup = computed(() => currentRoom.value?.roomType === 'GROUP')
+
+const currentParticipants = computed(() => roomDetails.value?.participants ?? [])
+const participantNicknames = computed(() => currentParticipants.value.map(p => p.nickname).filter(Boolean))
+const otherParticipant = computed(() => {
+  if (!currentParticipants.value.length) return null
+  return currentParticipants.value.find(participant => participant.loginId && participant.loginId !== myLoginId.value) || null
 })
 
-const chatMessagesContainer = ref(null)
-const stompClient = ref(null); // Declared stompClient ref
-
-const friendsStore = useFriendsStore()
-
-onMounted(() => {
-  chats.value = friendsStore.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
-  current.value = chats.value[0] || groups.value[0]
-  scrollToBottom()
-
-  // WebSocket Connection Logic
-  const token = localStorage.getItem('token'); // Get token from localStorage
-  if (!token) {
-    console.error("JWT token not found in localStorage. Cannot establish WebSocket connection.");
-    return;
+const currentRoomTitle = computed(() => {
+  if (!currentRoom.value) return ''
+  if (participantNicknames.value.length) {
+    if (isGroup.value) return participantNicknames.value.join(', ')
+    const others = participantNicknames.value.filter(name => name !== myNickname.value)
+    return others.length ? others.join(', ') : (participantNicknames.value[0] || `방 #${currentRoom.value.roomId}`)
   }
-
-  stompClient.value = createStompClient(token);
-
-  stompClient.value.onConnect = () => {
-    console.log('Connected to WebSocket');
-    // Subscribe to public chat topic
-    stompClient.value.subscribe('/topic/public', onMessageReceived);
-    // Subscribe to user-specific queue for private messages/notifications
-    // Assuming user's loginId is available, e.g., from a user store or decoded from token
-    // For now, we'll use a placeholder or assume it's part of the user object in localStorage
-    const user = JSON.parse(localStorage.getItem('user') || 'null');
-    if (user && user.loginId) {
-      stompClient.value.subscribe(`/user/${user.loginId}/queue/messages`, onMessageReceived);
-    } else {
-      console.warn("User loginId not found in localStorage. Cannot subscribe to private queue.");
-    }
-  };
-
-  stompClient.value.onStompError = (frame) => {
-    console.error('Broker reported error: ' + frame.headers['message']);
-    console.error('Details: ' + frame.body);
-  };
-
-  stompClient.value.onWebSocketError = (event) => {
-    console.error('WebSocket Error: ', event);
-  };
-
-  stompClient.value.activate();
+  const fallback = (currentRoom.value.memberNicknames || []).filter(Boolean)
+  if (!fallback.length) return `방 #${currentRoom.value.roomId}`
+  if (isGroup.value) return fallback.join(', ')
+  const others = fallback.filter(name => name !== myNickname.value)
+  return others.length ? others.join(', ') : fallback[0]
 })
 
-onUnmounted(() => {
-  if (stompClient.value && stompClient.value.connected) {
-    stompClient.value.deactivate();
-    console.log('Disconnected from WebSocket');
+const currentRoomSubtitle = computed(() => {
+  if (!currentRoom.value) return ''
+  if (isGroup.value) {
+    const participants = participantNicknames.value.length ? participantNicknames.value : (currentRoom.value.memberNicknames || [])
+    if (participants.length) return `${participants.length}명 참여 중`
+    if (typeof currentRoom.value.memberCount === 'number') return `${currentRoom.value.memberCount}명 참여 중`
+    return ''
   }
+  const others = participantNicknames.value.filter(name => name !== myNickname.value)
+  if (others.length) return others.join(', ')
+  const fallback = (currentRoom.value.memberNicknames || []).filter(name => name !== myNickname.value)
+  return fallback.join(', ')
 })
 
-friendsStore.$subscribe((_, state) => {
-  chats.value = state.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
-})
+const chatEnabled = computed(() => !!selectedRoomId.value && !roomDetailError.value)
+const partnerLoginId = computed(() => (isGroup.value ? '' : otherParticipant.value?.loginId ?? ''))
 
-
-const filteredChats = computed(() =>
-    chats.value.filter(c =>
-        c.name.includes(query.value) || c.last?.includes(query.value)
-    )
-)
-const filteredGroups = computed(() =>
-    groups.value.filter(c =>
-        c.name.includes(query.value) || c.last?.includes(query.value)
-    )
-)
-
-const isGroup = computed(() =>
-    groups.value.some(g => g.id === current.value.id)
-)
-const groupParticipants = computed(() => {
-  const g = groups.value.find(g => g.id === current.value.id)
-  return g ? g.participants.join(', ') : ''
-})
-
-const messages = computed(() => conversations.value[current.value.id] || [])
-
-function scrollToBottom() {
-  nextTick(() => {
-    const el = chatMessagesContainer.value
-    if (el) {
-      el.scrollTop = el.scrollHeight
-    }
+function filterRooms(list = []) {
+  if (!Array.isArray(list)) return []
+  const term = query.value.trim().toLowerCase()
+  if (!term) return list
+  return list.filter(room => {
+    const names = (room.memberNicknames || []).join(' ').toLowerCase()
+    const type = (room.roomType || '').toLowerCase()
+    return names.includes(term) || type.includes(term) || String(room.roomId).includes(term)
   })
 }
 
-function openChat(item) {
-  current.value = item
-  if (!conversations.value[item.id]) conversations.value[item.id] = []
-  scrollToBottom()
+function getRoomTitle(room) {
+  if (!room) return ''
+  const names = (room.memberNicknames || []).filter(Boolean)
+  if (room.roomType === 'GROUP') return names.length ? names.join(', ') : `그룹 채팅 #${room.roomId}`
+  const others = names.filter(name => name !== myNickname.value)
+  if (others.length) return others.join(', ')
+  if (names.length) return names[0]
+  return `방 #${room.roomId}`
+}
+
+function getRoomSubtitle(room) {
+  if (!room) return ''
+  if (room.roomType === 'GROUP') {
+    if (typeof room.memberCount === 'number') return `${room.memberCount}명 참여 중`
+    return (room.memberNicknames || []).join(', ')
+  }
+  const names = (room.memberNicknames || []).filter(name => name !== myNickname.value)
+  return names.join(', ')
+}
+
+function openRoom(room) {
+  if (!room || room.roomId === selectedRoomId.value) return
+  selectedRoomId.value = room.roomId
+}
+
+async function fetchRooms() {
+  loadingRooms.value = true
+  roomsError.value = ''
+  try {
+    const { data } = await api.get('/rooms/my')
+    rooms.value = Array.isArray(data) ? data : []
+  } catch (error) {
+    rooms.value = []
+    roomsError.value = error?.response?.data?.message || '채팅방 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'
+    console.error('Failed to load chat rooms:', error)
+  } finally {
+    loadingRooms.value = false
+  }
+}
+
+let detailRequestToken = 0
+watch(selectedRoomId, async (roomId) => {
+  detailRequestToken += 1
+  const token = detailRequestToken
+  roomDetails.value = null
+  roomDetailError.value = ''
+  if (!roomId) {
+    loadingRoomDetail.value = false
+    return
+  }
+  loadingRoomDetail.value = true
+  try {
+    const { data } = await api.get(`/rooms/${roomId}`)
+    if (token === detailRequestToken) {
+      roomDetails.value = data
+    }
+  } catch (error) {
+    if (token === detailRequestToken) {
+      roomDetails.value = null
+      roomDetailError.value = error?.response?.data?.message || '채팅방 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'
+    }
+    console.error('Failed to load room details:', error)
+  } finally {
+    if (token === detailRequestToken) {
+      loadingRoomDetail.value = false
+    }
+  }
+})
+
+watch(
+  () => rooms.value,
+  (list) => {
+    if (!Array.isArray(list) || list.length === 0) {
+      if (selectedRoomId.value !== null) selectedRoomId.value = null
+      return
+    }
+    const hasCurrent = list.some(room => room.roomId === selectedRoomId.value)
+    if (hasCurrent) return
+    const preferred = tab.value === 'group'
+      ? list.find(room => room.roomType === 'GROUP')
+      : list.find(room => room.roomType !== 'GROUP')
+    const fallback = preferred || list[0]
+    selectedRoomId.value = fallback ? fallback.roomId : null
+  }
+)
+
+watch(tab, (value) => {
+  const list = value === 'group' ? groupRooms.value : directRooms.value
+  if (!list.length) {
+    selectedRoomId.value = null
+    return
+  }
+  if (!list.some(room => room.roomId === selectedRoomId.value)) {
+    selectedRoomId.value = list[0].roomId
+  }
+})
+
+let clientInstance = null
+function setupStomp() {
+  const token = auth.token || localStorage.getItem('token')
+  clientInstance = createStompClient(token)
+  stompClient.value = clientInstance
+  clientInstance.onConnect = () => {
+    isConnected.value = true
+  }
+  clientInstance.onDisconnect = () => {
+    isConnected.value = false
+  }
+  clientInstance.onStompError = (frame) => {
+    console.error('STOMP error:', frame?.headers?.message, frame?.body)
+  }
+  clientInstance.onWebSocketError = (event) => {
+    console.error('WebSocket error:', event)
+  }
+  clientInstance.activate()
 }
 
 function inviteParticipant() {
-  const group = groups.value.find(g => g.id === current.value.id)
-  if (!group) return
-  if (group.participants.length >= 4) {
-    alert('최대 4명까지 초대할 수 있습니다.')
-    return
-  }
-  const name = prompt('초대할 사용자의 이름을 입력하세요:')
-  if (name) group.participants.push(name)
+  alert('그룹 초대 기능은 준비 중입니다.')
+}
+
+function startVoiceCall() {
+  alert('음성 통화 기능은 준비 중입니다.')
 }
 
 function startVideoCall() {
-  alert('영상 통화를 시작합니다')
+  alert('영상 통화 기능은 준비 중입니다.')
 }
 
-function send() {
-  if (!draft.value) return
-  const formatted = new Date().toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-  const msg = { text: draft.value, time: formatted, me: true }
-  conversations.value[current.value.id] = conversations.value[current.value.id] || []
-  conversations.value[current.value.id].push(msg)
-  let chat = chats.value.find(c => c.id === current.value.id)
-  if (!chat) chat = groups.value.find(c => c.id === current.value.id)
-  if (chat) chat.last = draft.value
+onMounted(() => {
+  fetchRooms()
+  setupStomp()
+})
 
-  draft.value = ''
-  scrollToBottom()
-}
-
-function onMessageReceived(payload) {
-  const message = JSON.parse(payload.body);
-  console.log("Received message:", message);
-
-  // Determine if it's a message for the current chat or another chat
-  // This logic needs to be refined based on your backend message structure
-  // For now, let's assume all messages are for the current chat for simplicity
-  const formattedTime = new Date().toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-
-  const msg = {
-    text: message.content, // Assuming message has a 'content' field
-    time: formattedTime,
-    me: message.senderId === JSON.parse(localStorage.getItem('user') || 'null').id // Assuming senderId and user.id
-  };
-
-  // Add message to the correct conversation
-  // This part needs to be dynamic based on message.roomId or message.senderId
-  // For now, adding to current chat
-  conversations.value[current.value.id] = conversations.value[current.value.id] || [];
-  conversations.value[current.value.id].push(msg);
-  scrollToBottom();
-}
-
-watch(messages, () => scrollToBottom())
+onBeforeUnmount(() => {
+  detailRequestToken += 1
+  clientInstance?.deactivate?.()
+  stompClient.value = null
+  isConnected.value = false
+})
 </script>
 
 <style scoped>
 .chat-page {
   height: calc(100vh - var(--v-layout-top));
 }
+
 .chat-sidebar {
   background: #fff;
   border-right: 2px solid #000000;
-
   height: 100%;
 }
+
 .chat-main {
   background: #fff;
   border-left: 2px solid #ffb6c1;
   height: 100%;
+  min-height: 0;
 }
-.chat-messages {
+
+.chat-content {
+  min-height: 0;
+}
+
+.chat-panel-wrapper {
+  min-height: 0;
+}
+
+.chat-empty {
   background: #fff;
 }
-.chat-input {
-  border-top: 1px solid #eee;
 
+.chat-room-item {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.chat-room-item.active {
+  background-color: rgba(255, 182, 193, 0.2);
+}
+
+.chat-room-item:hover {
+  background-color: rgba(255, 182, 193, 0.15);
 }
 </style>
