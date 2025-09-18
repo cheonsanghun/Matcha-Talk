@@ -18,6 +18,7 @@ public class WebSocketSecurityConfig {
         messages
                 .simpDestMatchers("/app/**").authenticated()
                 .simpDestMatchers("/topic/**", "/queue/**").authenticated()
+                //변경
                 .simpDestMatchers("/user/**").authenticated()
                 .simpSubscribeDestMatchers("/user/**").authenticated()
                 .simpTypeMatchers(
