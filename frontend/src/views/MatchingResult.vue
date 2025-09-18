@@ -123,6 +123,45 @@ let client = null
 let pc = null
 let localStream = null
 const subs = []
+let handledAuthFailure = false
+
+function handleAuthFailure(message) {
+  if (handledAuthFailure) {
+    return
+  }
+  handledAuthFailure = true
+
+  const alertMessage = message || '세션이 만료되었습니다. 다시 로그인해 주세요.'
+
+  subs.splice(0).forEach((sub) => {
+    try {
+      sub?.unsubscribe?.()
+    } catch (error) {
+      console.warn('구독 해제 중 오류 발생:', error)
+    }
+  })
+
+  try {
+    client?.deactivate?.()
+  } catch (error) {
+    console.warn('STOMP 클라이언트 종료 중 오류 발생:', error)
+  }
+
+  client = null
+  stompClient.value = null
+  clientConnected.value = false
+  signalRef.value = null
+  cleanupPeerConnection()
+
+  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+    window.alert(alertMessage)
+  } else {
+    console.warn('Alert skipped (non-browser environment):', alertMessage)
+  }
+
+  auth.logout()
+  router.replace({ name: 'login', query: { force: 1 } }).catch(() => {})
+}
 
 const me = computed(() => auth.user?.loginId ?? null)
 const partner = computed(() => match.partnerLoginId ?? null)
@@ -391,6 +430,11 @@ async function declineMatch() {
 }
 
 onMounted(() => {
+  if (!auth.token) {
+    handleAuthFailure('세션이 만료되었습니다. 다시 로그인해 주세요.')
+    return
+  }
+
   if (!match.requestId) {
     alert('진행 중인 매칭이 없습니다. 매칭을 다시 시작해주세요.')
     router.replace({ name: 'match' })
@@ -420,6 +464,17 @@ onMounted(() => {
   }
   client.onStompError = (frame) => {
     console.error('STOMP error:', frame?.headers, frame?.body)
+    const errorMessage = frame?.headers?.message || frame?.body || ''
+    if (typeof errorMessage === 'string') {
+      const normalized = errorMessage.toLowerCase()
+      if (
+        normalized.includes('authentication') ||
+        normalized.includes('unauthorized') ||
+        normalized.includes('failed to send message to executorsubscribablechannel')
+      ) {
+        handleAuthFailure('인증이 만료되어 연결이 종료되었습니다. 다시 로그인해 주세요.')
+      }
+    }
   }
 
   client.activate()
@@ -449,6 +504,15 @@ watch(() => match.shouldCreateOffer, (should) => {
     hasSentOffer.value = false
   }
 })
+
+watch(
+  () => auth.token,
+  (token, previous) => {
+    if (!token && previous) {
+      handleAuthFailure('세션이 만료되었습니다. 다시 로그인해 주세요.')
+    }
+  }
+)
 
 watch(partner, (loginId, previous) => {
   if (!loginId || loginId === previous) {

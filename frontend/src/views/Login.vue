@@ -40,9 +40,14 @@ async function onLogin() {
       password: password.value,
     })
 
+    const token = data.token ?? null
     const user = data.user ?? data
-    // 응답 형태 방어 (token 없이 UserSummary만 오는 경우도 커버)
-    store.login({ token: data.token ?? null, user })
+
+    const loginSuccess = store.login({ token, user })
+    if (!loginSuccess) {
+      alert('로그인 토큰을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.')
+      return
+    }
 
     // Pinia 상태가 반응형으로 전파된 다음 라우팅 (가드가 다시 /login으로 되돌리는 현상 방지)
     await nextTick()
