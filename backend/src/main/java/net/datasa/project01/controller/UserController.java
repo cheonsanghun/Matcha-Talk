@@ -44,7 +44,9 @@ public class UserController {
      */
     @PostMapping("/signup")
     public ResponseEntity<UserResponse> signUp(@Valid @RequestBody UserSignUpRequestDto requestDto) {
+        log.info("회원가입 요청 받음: {}", requestDto.getLoginId());
         UserResponse response = userService.signUp(requestDto);
+        log.info("회원가입 성공: {}", response.getLoginId());
         // 회원가입 성공 시, HTTP 201 Created 상태와 함께 생성된 사용자 정보 반환
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -69,16 +71,21 @@ public class UserController {
      */
     @GetMapping("/exists")
     public ResponseEntity<Map<String, Boolean>> checkExistence(
-            @RequestParam(required = false) String loginId,
-            @RequestParam(required = false) String email) {
+            @RequestParam(value = "loginId", required = false) String loginId,
+            @RequestParam(value = "email", required = false) String email) {
+        
+        log.info("중복 확인 요청 - loginId: {}, email: {}", loginId, email);
         
         boolean exists = false;
         if (loginId != null) {
             exists = userService.existsByLoginId(loginId);
+            log.info("loginId '{}' 중복 확인 결과: {}", loginId, exists);
         } else if (email != null) {
             exists = userService.existsByEmail(email);
+            log.info("email '{}' 중복 확인 결과: {}", email, exists);
         } else {
             // 파라미터가 둘 다 없는 경우 잘못된 요청으로 처리
+            log.warn("중복 확인 요청에 loginId와 email이 모두 없음");
             return ResponseEntity.badRequest().build();
         }
         return ResponseEntity.ok(Map.of("exists", exists));
@@ -149,7 +156,7 @@ public class UserController {
      * @return 사용자 정보 또는 404 Not Found
      */
     @GetMapping("/find-by-login-id")
-    public ResponseEntity<?> findUserByLoginIdForDebug(@RequestParam("id") String id) {
+    public ResponseEntity<?> findUserByLoginIdForDebug(@RequestParam(value = "id") String id) {
         // loginId로 사용자를 조회합니다.
         return userRepository.findByLoginId(id)
                 // map의 결과 타입을 <ResponseEntity<?>>로 명시
