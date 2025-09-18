@@ -5,8 +5,8 @@
         <v-card class="pa-8">
           <div class="text-center text-h6 text-pink-darken-2 mb-6">로그인</div>
           <v-form @submit.prevent="onLogin">
-            <v-text-field v-model="login_id" label="아이디" variant="outlined"/>
-            <v-text-field v-model="password" type="password" label="비밀번호" variant="outlined"/>
+            <v-text-field v-model="loginId" label="아이디" variant="outlined" @keyup.enter="onLogin"/>
+            <v-text-field v-model="password" type="password" label="비밀번호" variant="outlined" @keyup.enter="onLogin"/>
             <div class="d-flex ga-3 mt-4">
               <v-btn color="pink" type="submit">로그인</v-btn>
               <v-spacer/>
@@ -27,16 +27,16 @@ import api from '../services/api'
 
 const router = useRouter()
 const store = useAuthStore()
-const login_id = ref('')
+const loginId = ref('')
 const password = ref('')
 
 async function onLogin() {
-  if (!login_id.value || !password.value) {
+  if (!loginId.value || !password.value) {
     return alert('아이디/비밀번호를 입력하세요')
   }
   try {
     const {data} = await api.post('/auth/login', {
-      login_id: login_id.value,
+      login_id: loginId.value,
       password: password.value,
     })
 

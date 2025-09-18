@@ -31,6 +31,8 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain http(HttpSecurity http) throws Exception {
         // JWT 인증 필터 생성
+        JwtAuthenticationFilter jwtAuthenticationFilter =
+                new JwtAuthenticationFilter(jwtUtil, userDetailsService);
 
         http
                 // CSRF 보호 비활성화 (REST API나 테스트 환경에서는 불필요)
@@ -39,15 +41,19 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // HTTP 요청 권한 설정
                 .authorizeHttpRequests(reg -> reg
-                        // 모든 요청을 인증 없이 허용 (디버깅 목적)
-                        .anyRequest().permitAll()
+                        // WebSocket 연결 경로 허용
+                        .requestMatchers("/ws-stomp/**").permitAll()
+                        // 회원가입, 로그인, 중복확인, 이메일 인증 등 인증 없이 접근해야 하는 경로 허용
+                        .requestMatchers("/api/auth/login", "/api/users/signup", "/api/users/exists", "/api/users/email/**").permitAll()
+                        // 그 외 모든 요청은 인증 필요
+                        .anyRequest().authenticated()
                 )
                 // 폼 로그인 비활성화 (REST API 환경에서는 사용하지 않음)
                 .formLogin(form -> form.disable())
                 // HTTP Basic 인증 비활성화
-                .httpBasic(httpBasic -> httpBasic.disable());
+                .httpBasic(httpBasic -> httpBasic.disable())
                 // UsernamePasswordAuthenticationFilter 앞에 JWT 필터 추가
-                // .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         // 최종 SecurityFilterChain 반환
         return http.build();

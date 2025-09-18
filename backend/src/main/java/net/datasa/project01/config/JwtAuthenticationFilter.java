@@ -4,71 +4,53 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import net.datasa.project01.service.UserDetailsServiceImpl;
 import net.datasa.project01.util.JwtUtil;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
 @RequiredArgsConstructor
-@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final String AUTHORIZATION_HEADER = "Authorization";
-    private static final String BEARER_PREFIX = "Bearer ";
-    
     private final JwtUtil jwtUtil;
-    private final UserDetailsServiceImpl userDetailsService;
+    private final UserDetailsService userDetailsService;
 
     @Override
-    protected void doFilterInternal(
-            @NonNull HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain) throws ServletException, IOException {
-        
-        try {
-            String token = extractTokenFromRequest(request);
-            
-            if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                authenticateUser(token, request);
-            }
-        } catch (Exception e) {
-            log.error("Cannot set user authentication", e);
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+
+        String authorization = request.getHeader("Authorization");
+
+        // 토큰이 없거나, 'Bearer '로 시작하지 않으면 다음 필터로
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
+            return;
         }
-        
-        filterChain.doFilter(request, response);
-    }
-    
-    private String extractTokenFromRequest(HttpServletRequest request) {
-        String authHeader = request.getHeader(AUTHORIZATION_HEADER);
-        
-        if (authHeader != null && authHeader.startsWith(BEARER_PREFIX)) {
-            return authHeader.substring(BEARER_PREFIX.length());
-        }
-        
-        return null;
-    }
-    
-    private void authenticateUser(String token, HttpServletRequest request) {
+
+        // 'Bearer ' 부분 제거
+        String token = authorization.substring(7);
+
+        // 토큰이 유효한지 검증
         if (jwtUtil.validateToken(token)) {
+            // 토큰에서 loginId 추출
             String loginId = jwtUtil.getUsernameFromToken(token);
+
+            // loginId로 UserDetails 객체 조회
             UserDetails userDetails = userDetailsService.loadUserByUsername(loginId);
-            
-            UsernamePasswordAuthenticationToken authentication = 
-                new UsernamePasswordAuthenticationToken(
-                    userDetails, null, userDetails.getAuthorities());
-            
-            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            
-            log.debug("Authentication successful for user: {}", loginId);
+
+            // SecurityContext에 인증 정보 저장
+            if (userDetails != null) {
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            }
         }
+
+        filterChain.doFilter(request, response);
     }
 }

@@ -144,18 +144,18 @@ public class UserController {
     }
 
     /**
-     * 개발/테스트용 임시 로그인 엔드포인트 (절대 프로덕션에 배포 금지!)
-     * 주어진 loginId로 JWT 토큰을 생성하여 반환합니다.
-     * @param loginId 로그인할 사용자의 ID
-     * @return JWT 토큰
+     * [개발/디버깅용] loginId로 사용자를 조회하는 임시 API
+     * @param id 조회할 사용자의 loginId
+     * @return 사용자 정보 또는 404 Not Found
      */
-    @GetMapping("/test-login")
-    public ResponseEntity<Map<String, String>> testLogin(@RequestParam String loginId) {
-        return userRepository.findByLoginId(loginId)
-                .map(user -> {
-                    String token = jwtUtil.createToken(user.getLoginId());
-                    return ResponseEntity.ok(Map.of("token", token));
-                })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "User not found")));
+    @GetMapping("/find-by-login-id")
+    public ResponseEntity<?> findUserByLoginIdForDebug(@RequestParam("id") String id) {
+        // loginId로 사용자를 조회합니다.
+        return userRepository.findByLoginId(id)
+                // map의 결과 타입을 <ResponseEntity<?>>로 명시
+                .<ResponseEntity<?>>map(user -> ResponseEntity.ok(UserResponse.fromEntity(user)))
+                // 사용자가 없을 경우, 다른 타입의 ResponseEntity를 반환
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("message", "User with loginId '" + id + "' not found.")));
     }
 }

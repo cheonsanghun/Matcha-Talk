@@ -2,7 +2,7 @@ package net.datasa.project01.controller;
 
 import lombok.RequiredArgsConstructor;
 import net.datasa.project01.domain.dto.LoginRequest;
-import net.datasa.project01.domain.dto.UserSummary;
+import net.datasa.project01.domain.dto.LoginResponse;
 import net.datasa.project01.service.AuthService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -44,10 +44,11 @@ public class AuthController {
      * - 성공 시: UserSummary만 내려 UI가 필요한 최소 정보만 제공한다(민감정보 제외).
      */
     @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<UserSummary> loginLocal(@RequestBody @Validated LoginRequest req) {
+    public ResponseEntity<LoginResponse> loginLocal(@RequestBody @Validated LoginRequest req) {
         // 서비스 계층에 실제 인증을 위임한다.
-        UserSummary user = authService.loginLocal(req.getLoginId(), req.getPassword());
-        // 성공 응답: 200 OK + UserSummary(JSON)
-        return ResponseEntity.ok(user);
+        // 이제 서비스는 UserSummary와 token을 포함한 LoginResponse를 반환합니다.
+        LoginResponse response = authService.loginLocal(req.getLoginId(), req.getPassword());
+        // 성공 응답: 200 OK + LoginResponse(JSON)
+        return ResponseEntity.ok(response);
     }
 }

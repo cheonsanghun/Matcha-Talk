@@ -17,12 +17,12 @@
 
             <div class="d-flex align-end mb-4">
               <v-text-field
-                  v-model="form.login_id"
+                  v-model="form.loginId"
                   label="아이디"
                   variant="outlined"
                   class="flex-grow-1 me-2"
-                  :error-messages="errors.login_id"
-                  @blur="validate('login_id')"
+                  :error-messages="errors.loginId"
+                  @blur="validate('loginId')"
               />
               <v-btn variant="outlined" color="pink" @click="checkLoginId" :disabled="loginIdAvailable">중복 확인</v-btn>
             </div>
@@ -48,7 +48,7 @@
 
             <div class="d-flex align-end mb-4" v-if="verificationSent && !emailVerified">
               <v-text-field
-                  v-model="verificationToken"
+                  v-model="verificationCode"
                   label="인증번호"
                   variant="outlined"
                   class="flex-grow-1 me-2"
@@ -120,23 +120,25 @@
             />
 
             <v-select
+                v-model="form.language_code"
+                :items="languageItems"
+                item-title="title"
+                item-value="value"
+                label="선호 언어"
+                variant="outlined"
+                class="mb-4"
+                :error-messages="errors.language_code"
+                @blur="validate('language_code')"
+            />
+
+            <v-select
                 v-model="form.country_code"
                 :items="countryItems"
                 label="국적"
                 variant="outlined"
-                class="mb-4"
+                class="mb-6"
                 :error-messages="errors.country_code"
                 @blur="validate('country_code')"
-            />
-
-            <v-select
-                v-model="form.language_code"
-                :items="languageItems"
-                label="사용 언어"
-                variant="outlined"
-                class="mb-6"
-                :error-messages="errors.language_code"
-                @blur="validate('language_code')"
             />
             <v-btn type="submit" color="pink" block :disabled="!valid">회원가입</v-btn>
           </v-form>
@@ -153,16 +155,16 @@ import {useRouter} from 'vue-router'
 
 const router = useRouter()
 const genderItems = ['M', 'F']
-const countryItems = ['KR', 'JP']
 const languageItems = [
-  { title: '한국어', value: 'ko' },
-  { title: '日本語', value: 'ja' }
+  {title: '한국어', value: 'ko'},
+  {title: '일본어', value: 'ja'}
 ]
+const countryItems = ['KR', 'JP']
 
 const form = ref({
-  nick_name: '', login_id: '', email: '',
+  nick_name: '', loginId: '', email: '',
   password: '', password2: '',
-  gender: null, country_code: null, language_code: null
+  gender: null, language_code: 'ko', country_code: null
 })
 
 const birth = ref({year: null, month: null, day: null})
@@ -171,13 +173,12 @@ const monthItems = Array.from({length: 12}, (_, i) => i + 1)
 const dayItems = Array.from({length: 31}, (_, i) => i + 1)
 
 const errors = ref({
-  nick_name: '', login_id: '', email: '', password: '', password2: '',
-  birth: '', gender: '', country_code: '', language_code: ''
+  nick_name: '', loginId: '', email: '', password: '', password2: '',
+  birth: '', gender: '', language_code: '', country_code: ''
 })
 
 const verificationSent = ref(false)
-const verificationToken = ref('')
-const verifiedEmailToken = ref('')
+const verificationCode = ref('')
 const emailVerified = ref(false)
 const loginIdAvailable = ref(false)
 
@@ -205,8 +206,8 @@ function validate(field) {
     case 'nick_name':
       errors.value.nick_name = checkRules(form.value.nick_name, [r.required, r.len(2, 30)])
       break
-    case 'login_id':
-      errors.value.login_id = checkRules(form.value.login_id, [r.required, r.len(4, 30)])
+    case 'loginId':
+      errors.value.loginId = checkRules(form.value.loginId, [r.required, r.len(4, 30)])
       break
     case 'email':
       errors.value.email = checkRules(form.value.email, [r.required, r.email])
@@ -224,44 +225,39 @@ function validate(field) {
     case 'gender':
       errors.value.gender = form.value.gender ? '' : '성별을 선택하세요.'
       break
+    case 'language_code':
+      errors.value.language_code = form.value.language_code ? '' : '언어를 선택하세요.'
+      break
     case 'country_code':
       errors.value.country_code = form.value.country_code ? '' : '국적을 선택하세요.'
-      break
-    case 'language_code':
-      errors.value.language_code = form.value.language_code ? '' : '사용 언어를 선택하세요.'
       break
   }
 }
 
-watch(() => form.value.login_id, () => {
+watch(() => form.value.loginId, () => {
   loginIdAvailable.value = false
 })
 
 async function onSubmit() {
-  ;['nick_name', 'login_id', 'email', 'password', 'password2', 'birth', 'gender', 'country_code', 'language_code'].forEach(validate)
+  ;['nick_name', 'loginId', 'email', 'password', 'password2', 'birth', 'gender', 'language_code', 'country_code'].forEach(validate)
   if (!valid.value) return
 
   const birth_date = `${birth.value.year}-${String(birth.value.month).padStart(2, '0')}-${String(birth.value.day).padStart(2, '0')}`
   const payload = {
-    loginId: form.value.login_id,
+    loginId: form.value.loginId,
     password: form.value.password,
-    confirmPassword: form.value.password2,
-    nickName: form.value.nick_name,
+    confirm_password: form.value.password2,
+    nick_name: form.value.nick_name,
     email: form.value.email,
-    verificationCode: verifiedEmailToken.value,
-    countryCode: form.value.country_code,
-    languageCode: form.value.language_code,
+    verification_code: verificationCode.value,
+    language_code: form.value.language_code,
+    country_code: form.value.country_code,
     gender: form.value.gender,
-    birthDate: birth_date
+    birth_date
   }
   try {
-    console.log('Payload sent to /users/signup:', payload)
     // await api.post('/auth/register', payload)
-    await api.post('/users/signup', payload, {
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    })
+    await api.post('/users/signup', payload)
     alert('회원가입이 완료되었습니다.')
     router.push('/login')
   } catch (e) {
@@ -282,16 +278,19 @@ async function requestEmailVerify() {
 }
 
 async function checkLoginId() {
-  validate('login_id')
-  if (errors.value.login_id) return
+  validate('loginId')
+  if (errors.value.loginId) return
   try {
-    const {data} = await api.get('/users/exists', {params: {loginId: form.value.login_id}})
+    const {data} = await api.get('/users/exists', {
+      params: {loginId: form.value.loginId},
+      skipSnakifyParams: true
+    })
     if (data.exists) {
-      errors.value.login_id = '이미 사용 중인 아이디입니다.'
+      errors.value.loginId = '이미 사용 중인 아이디입니다.'
       loginIdAvailable.value = false
       alert('이미 사용 중인 아이디입니다.')
     } else {
-      errors.value.login_id = ''
+      errors.value.loginId = ''
       loginIdAvailable.value = true
       alert('사용 가능한 아이디입니다.')
     }
@@ -304,10 +303,9 @@ async function confirmEmailVerify() {
   try {
     await api.post('/users/email/verify/confirm', {
       email: form.value.email,
-      token: verificationToken.value
+      token: verificationCode.value
     })
     emailVerified.value = true
-    verifiedEmailToken.value = verificationToken.value // Store the successfully verified token
     alert('이메일 인증이 완료되었습니다.')
   } catch (e) {
     alert('인증번호 확인 실패: ' + (e?.response?.data?.message || e.message))

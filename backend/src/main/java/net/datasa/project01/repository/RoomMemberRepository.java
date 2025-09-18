@@ -6,6 +6,8 @@ import net.datasa.project01.domain.entity.RoomMemberId;
 import net.datasa.project01.domain.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,4 +23,11 @@ public interface RoomMemberRepository extends JpaRepository<RoomMember, RoomMemb
     /** 특정 채팅방에 특정 사용자가 멤버로 있는지 확인 (권한 검사용) */
     Optional<RoomMember> findByRoomAndUser(Room room, User user);
 
+    /**
+     * 특정 사용자가 속한 모든 채팅방과 그 방의 모든 멤버 정보를 한 번의 쿼리로 조회 (N+1 문제 해결)
+     */
+    @Query("SELECT rm FROM RoomMember rm " +
+           "JOIN FETCH rm.room r " +
+           "WHERE r IN (SELECT rm2.room FROM RoomMember rm2 WHERE rm2.user = :user)")
+    List<RoomMember> findAllRoomsAndMembersByUser(@Param("user") User user);
 }

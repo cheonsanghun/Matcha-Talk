@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 public class ChatMessageResponseDto {
     private final Long roomId;
     private final String senderNickName;
+    private final String senderLanguageCode; // 발신자의 언어 코드
     private final String content;
-    private final String translatedContent; // 번역된 메시지를 담을 필드
     private final LocalDateTime sentAt;
 }

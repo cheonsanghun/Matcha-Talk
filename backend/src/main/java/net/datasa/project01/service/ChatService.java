@@ -16,6 +16,7 @@ import net.datasa.project01.domain.entity.RoomMessage;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import net.datasa.project01.domain.entity.Room.RoomType;
@@ -84,27 +85,13 @@ public class ChatService {
                         .build();
                 roomMessageRepository.save(message);
 
-        // 2. [수정됨] 보낸 사람의 언어 설정에 따라 번역 방향을 동적으로 결정
-        String originalText = message.getTextContent();
-        String translatedText;
-        String sourceLang = sender.getLanguageCode(); // 예: "ko"
-        
-        if ("ko".equalsIgnoreCase(sourceLang)) {
-                // 보낸 사람이 한국어 사용자인 경우 -> 일본어로 번역
-                translatedText = translationService.translate(originalText, "ko", "ja");
-        } else if ("ja".equalsIgnoreCase(sourceLang)) {
-                // 보낸 사람이 일본어 사용자인 경우 -> 한국어로 번역
-                translatedText = translationService.translate(originalText, "ja", "ko");
-        } else {
-                // 그 외 언어 사용자인 경우, 일단 번역하지 않음 (또는 기본 번역 설정 적용)
-                translatedText = originalText;
-        }
-        // 3. 응답 DTO에 원본 메시지와 번역된 메시지를 모두 담아 반환
+        // 2. [수정] 번역은 클라이언트에게 위임. 서버는 원본 메시지와 발신자 언어 코드만 전달
         return ChatMessageResponseDto.builder()
                 .roomId(room.getRoomId())
                 .senderNickName(sender.getNickName())
+                .senderLanguageCode(sender.getLanguageCode()) // 발신자 언어 코드 추가
                 .content(message.getTextContent())
-                .translatedContent(translatedText) // 번역된 내용 추가
+                // .translatedContent(null) // 이 필드는 이제 존재하지 않으므로 제거합니다.
                 .sentAt(message.getCreatedAt())
                 .build();
         }
@@ -140,17 +127,16 @@ public class ChatService {
                 User user = userRepository.findByLoginId(loginId)
                         .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-                // 사용자가 속한 모든 RoomMember 엔티티를 찾음
-                List<RoomMember> roomMembers = roomMemberRepository.findByUser(user);
+                // 1. N+1 문제를 해결하기 위해 fetch join으로 사용자가 속한 모든 방과 멤버 정보를 한 번에 조회
+                List<RoomMember> allMembersInMyRooms = roomMemberRepository.findAllRoomsAndMembersByUser(user);
 
-                // 각 RoomMember에서 Room을 가져와 DTO로 변환
-                return roomMembers.stream()
-                        .map(RoomMember::getRoom)
-                        .map(room -> {
-                                // 각 방의 멤버 목록을 다시 조회하여 DTO 생성
-                                List<RoomMember> membersOfRoom = roomMemberRepository.findByRoom(room);
-                                return RoomListResponseDto.fromEntity(room, membersOfRoom);
-                        })
+                // 2. 조회된 멤버 목록을 '방(Room)' 기준으로 그룹핑
+                Map<Room, List<RoomMember>> roomsGroupedByRoom = allMembersInMyRooms.stream()
+                        .collect(Collectors.groupingBy(RoomMember::getRoom));
+
+                // 3. 그룹핑된 데이터를 DTO로 변환
+                return roomsGroupedByRoom.entrySet().stream()
+                        .map(entry -> RoomListResponseDto.fromEntity(entry.getKey(), entry.getValue()))
                         .collect(Collectors.toList());
         }
 
