@@ -30,18 +30,84 @@ const store = useAuthStore()
 const login_id = ref('')
 const password = ref('')
 
+const hasUserPayload = (payload) => {
+  if (!payload || typeof payload !== 'object') return false
+  const candidateKeys = [
+    'loginId',
+    'login_id',
+    'username',
+    'userName',
+    'nickname',
+    'nickName',
+    'name',
+    'email',
+    'id',
+    'userPid',
+    'user_id',
+    'userId',
+  ]
+  return candidateKeys.some((key) => payload[key] !== undefined && payload[key] !== null)
+}
+
+const normalizeUserPayload = (raw) => {
+  if (!raw || typeof raw !== 'object') return null
+
+  const normalized = { ...raw }
+
+  const idCandidate = raw.id ?? raw.userPid ?? raw.user_id ?? raw.userId
+  if (idCandidate !== undefined) normalized.id = idCandidate
+
+  const loginIdCandidate = raw.loginId ?? raw.login_id ?? raw.username ?? raw.userName
+  if (loginIdCandidate !== undefined) normalized.loginId = loginIdCandidate
+
+  const nicknameCandidate = raw.nickname ?? raw.nickName ?? raw.name
+  if (nicknameCandidate !== undefined) normalized.nickname = nicknameCandidate
+
+  const emailCandidate = raw.email ?? raw.mail
+  if (emailCandidate !== undefined) normalized.email = emailCandidate
+
+  if (normalized.id === undefined) delete normalized.id
+  if (normalized.loginId === undefined) delete normalized.loginId
+  if (normalized.nickname === undefined) delete normalized.nickname
+  if (normalized.email === undefined) delete normalized.email
+
+  delete normalized.login_id
+  delete normalized.nickName
+  delete normalized.userPid
+  delete normalized.user_id
+  delete normalized.userId
+  delete normalized.userName
+  delete normalized.username
+  delete normalized.mail
+  delete normalized.token
+  delete normalized.accessToken
+  delete normalized.refreshToken
+  delete normalized.jwt
+
+  return normalized
+}
+
 async function onLogin() {
-  if (!login_id.value || !password.value) {
+  const loginIdValue = login_id.value.trim()
+  const passwordValue = password.value
+
+  if (!loginIdValue || !passwordValue) {
     return alert('아이디/비밀번호를 입력하세요')
   }
   try {
     const {data} = await api.post('/auth/login', {
-      login_id: login_id.value,
-      password: password.value,
+      loginId: loginIdValue,
+      password: passwordValue,
     })
 
-    const token = data.token ?? null
-    const user = data.user ?? data
+    let token = data?.token ?? data?.accessToken ?? data?.jwt ?? null
+    if (typeof token === 'string') {
+      token = token.trim()
+      if (!token) token = null
+    }
+
+    const rawUser = data?.user ?? data?.profile ?? (hasUserPayload(data) ? data : null)
+    const user = normalizeUserPayload(rawUser)
 
     const loginSuccess = store.login({ token, user })
     if (!loginSuccess) {

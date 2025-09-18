@@ -16,6 +16,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
 
+import java.security.Principal;
+
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -45,12 +47,25 @@ public class StompHandler implements ChannelInterceptor {
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
             Authentication existingAuth = SecurityContextHolder.getContext().getAuthentication();
             if (existingAuth != null && existingAuth.isAuthenticated()) {
+                SecurityContextHolder.getContext().setAuthentication(existingAuth);
                 accessor.setUser(existingAuth);
                 log.debug("Using existing authentication for WebSocket user: {}", existingAuth.getName());
                 return;
             }
 
-            log.warn("No valid authorization header found for WebSocket connection");
+            Principal handshakePrincipal = accessor.getUser();
+            if (handshakePrincipal instanceof Authentication handshakeAuth && handshakeAuth.isAuthenticated()) {
+                SecurityContextHolder.getContext().setAuthentication(handshakeAuth);
+                accessor.setUser(handshakeAuth);
+                log.debug("Reusing handshake authentication for WebSocket user: {}", handshakeAuth.getName());
+                return;
+            } else if (handshakePrincipal != null) {
+                accessor.setUser(handshakePrincipal);
+                log.debug("Reusing handshake principal for WebSocket user: {}", handshakePrincipal.getName());
+                return;
+            }
+
+            log.warn("No valid authorization header or handshake principal found for WebSocket connection");
             throw new AuthenticationCredentialsNotFoundException("인증 정보가 없어 WebSocket 연결을 종료합니다.");
         }
 
