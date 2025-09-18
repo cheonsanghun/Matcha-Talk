@@ -1,5 +1,7 @@
 import axios from 'axios'
 import { camelizeKeys, snakifyKeys, isTransformable } from '../utils/case'
+import { useAuthStore } from '../stores/auth'
+
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -40,6 +42,27 @@ api.interceptors.response.use(
   (error) => {
     if (error?.response?.data && isTransformable(error.response.data)) {
       error.response.data = camelizeKeys(error.response.data)
+    }
+
+    const status = error?.response?.status
+    const message = error?.response?.data?.message
+    if (
+        status === 401 &&
+        (message === undefined || message === '인증이 필요한 요청입니다.')
+    ) {
+      try {
+        const auth = useAuthStore()
+        auth?.logout?.()
+      } catch (_) {
+        // ignore, fall back to manual clearing below
+      }
+
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }
