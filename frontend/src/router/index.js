@@ -30,14 +30,20 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
+  const hasToken = !!auth.token
+
+  if (!hasToken && auth.user) {
+    auth.logout()
+  }
 
   // 이미 로그인인데 /login 가면 홈으로 (단, ?force=1이면 통과)
-  if (to.name === 'login' && auth.isAuthenticated && !to.query.force) {
+  if (to.name === 'login' && hasToken && !to.query.force) {
     return next({ name: 'home', replace: true })
   }
 
   // 보호 라우트
-  if (to.meta?.requiresAuth && !auth.isAuthenticated) {
+  if (to.meta?.requiresAuth && !hasToken) {
+    auth.logout()
     return next({ name: 'login', replace: true })
   }
 
