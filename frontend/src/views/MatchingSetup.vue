@@ -5,6 +5,13 @@
         <v-card class="pa-8">
           <div class="text-center text-h6 text-pink-darken-2 mb-6">나에게 맞는 인연 찾기</div>
 
+          <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
+            {{ errorMessage }}
+          </v-alert>
+          <v-alert v-else-if="statusMessage" type="info" variant="tonal" class="mb-4">
+            {{ statusMessage }}
+          </v-alert>
+
           <v-sheet class="mb-6 pa-4 selection-box">
             <div class="text-subtitle-2 mb-2">나이 범위</div>
             <v-range-slider
@@ -45,7 +52,7 @@
 
           <v-sheet class="mb-6 pa-4 selection-box text-center">
             <div class="text-subtitle-2 mb-2">관심사</div>
-            <v-btn color="pink" variant="tonal" @click="dialog=true">관심사 선택</v-btn>
+            <v-btn color="pink" variant="tonal" @click="dialog = true">관심사 선택</v-btn>
             <v-chip-group v-if="interests.length" class="mt-2" multiple>
               <v-chip
                 v-for="i in interests"
@@ -61,8 +68,8 @@
             color="pink"
             block
             size="large"
-            :loading="loading"
-            :disabled="loading || !isValid"
+            :loading="startLoading"
+            :disabled="startLoading || !isValid"
             @click="startMatch"
           >매칭 시작</v-btn>
           <div class="text-center text-caption mt-2">
@@ -94,8 +101,8 @@
           </v-sheet>
         </v-card-text>
         <v-card-actions>
-          <v-spacer/>
-          <v-btn color="pink" variant="tonal" @click="dialog=false">확인</v-btn>
+          <v-spacer />
+          <v-btn color="pink" variant="tonal" @click="dialog = false">확인</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -103,7 +110,64 @@
 </template>
 
 <script setup>
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import { useMatchStore } from '../stores/match'
 
+const router = useRouter()
+const matchStore = useMatchStore()
+const { loading: startLoading, message: statusMessage } = storeToRefs(matchStore)
+
+const ageRange = ref([23, 32])
+const gender = ref('A')
+const region = ref('ALL')
+const interests = ref([])
+const dialog = ref(false)
+const errorMessage = ref('')
+
+const regions = [
+  { title: '제한 없음', value: 'ALL' },
+  { title: '서울', value: 'KR-SEOUL' },
+  { title: '부산', value: 'KR-BUSAN' },
+  { title: '도쿄', value: 'JP-TOKYO' },
+  { title: '오사카', value: 'JP-OSAKA' },
+]
+
+const interestPool = [
+  '여행',
+  '음악',
+  '게임',
+  '요리',
+  '영화',
+  '스포츠',
+  '언어교환',
+  'IT/테크',
+  '문학',
+  '사진',
+]
+
+const isValid = computed(() => interests.value.length > 0 && !!region.value)
+
+const startMatch = async () => {
+  if (!isValid.value) {
+    errorMessage.value = '지역과 관심사를 선택해주세요.'
+    return
+  }
+  errorMessage.value = ''
+  try {
+    await matchStore.startMatch({
+      choiceGender: gender.value ?? 'A',
+      minAge: ageRange.value[0],
+      maxAge: ageRange.value[1],
+      regionCode: region.value,
+      interests: interests.value,
+    })
+    router.push({ name: 'match-result' })
+  } catch (error) {
+    errorMessage.value = error?.message ?? '매칭 요청 중 문제가 발생했습니다.'
+  }
+}
 </script>
 
 <style scoped>

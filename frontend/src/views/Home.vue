@@ -83,6 +83,26 @@
 </template>
 
 <script setup>
+import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '../stores/auth'
+
+const authStore = useAuthStore()
+const { isAuthenticated } = storeToRefs(authStore)
+
+const generatePetal = () => ({
+  left: `${Math.random() * 100}%`,
+  delay: `${Math.random() * 10}s`,
+  duration: `${6 + Math.random() * 8}s`,
+  size: `${12 + Math.random() * 20}px`,
+  opacity: 0.5 + Math.random() * 0.5,
+  move: Math.floor(Math.random() * 120) - 60,
+})
+
+const petals = ref(Array.from({ length: 24 }, generatePetal))
+
+const isAuth = computed(() => isAuthenticated.value)
+const ctaTo = computed(() => (isAuth.value ? '/match' : '/register'))
 </script>
 
 <style scoped>
