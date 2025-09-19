@@ -33,6 +33,8 @@ const snakeCaseKeys = (input) => {
   }, {})
 }
 
+const shouldTransform = (value) => Array.isArray(value) || isPlainObject(value)
+
 let accessToken = null
 let guestPid = null
 
@@ -73,6 +75,12 @@ api.interceptors.request.use((config) => {
   } else if (guestPid && !config.headers['X-USER-PID']) {
     config.headers['X-USER-PID'] = guestPid
   }
+  if (shouldTransform(config.data)) {
+    config.data = snakeCaseKeys(config.data)
+  }
+  if (shouldTransform(config.params)) {
+    config.params = snakeCaseKeys(config.params)
+  }
   return config
 })
 
@@ -85,40 +93,40 @@ export const authApi = {
    * 로그인 요청. 서버 스펙에 따라 UserSummary 또는 { accessToken, user } 형태를 모두 허용한다.
    */
   login(payload) {
-    return api.post('/auth/login', snakeCaseKeys(payload)).then(unwrap)
+    return api.post('/auth/login', payload).then(unwrap)
   },
 }
 
 export const userApi = {
   register(payload) {
-    return api.post('/users/signup', snakeCaseKeys(payload)).then(unwrap)
+    return api.post('/users/signup', payload).then(unwrap)
   },
   fetchProfile() {
     return api.get('/users/profile').then(unwrap)
   },
   checkLoginId(loginId) {
     return api
-      .get('/users/exists', { params: snakeCaseKeys({ loginId }) })
+      .get('/users/exists', { params: { loginId } })
       .then(unwrap)
   },
   checkEmail(email) {
     return api
-      .get('/users/exists', { params: snakeCaseKeys({ email }) })
+      .get('/users/exists', { params: { email } })
       .then(unwrap)
   },
   requestEmailVerification(email) {
-    return api.post('/users/email/verify/request', snakeCaseKeys({ email })).then(unwrap)
+    return api.post('/users/email/verify/request', { email }).then(unwrap)
   },
   confirmEmailVerification(email, token) {
     return api
-      .post('/users/email/verify/confirm', snakeCaseKeys({ email, token }))
+      .post('/users/email/verify/confirm', { email, token })
       .then(unwrap)
   },
 }
 
 export const matchApi = {
   start(request) {
-    return api.post('/match/requests', snakeCaseKeys(request)).then(unwrap)
+    return api.post('/match/requests', request).then(unwrap)
   },
   accept(requestId) {
     return api.post(`/match/requests/${requestId}/accept`).then(unwrap)
