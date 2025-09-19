@@ -7,6 +7,32 @@ const api = axios.create({
   withCredentials: true,
 })
 
+const toSnakeCase = (value) =>
+  value
+    .replace(/([A-Z])/g, '_$1')
+    .replace(/[\s-]+/g, '_')
+    .replace(/__+/g, '_')
+    .toLowerCase()
+
+const isPlainObject = (value) =>
+  Object.prototype.toString.call(value) === '[object Object]'
+
+const snakeCaseKeys = (input) => {
+  if (Array.isArray(input)) {
+    return input.map((item) => snakeCaseKeys(item))
+  }
+
+  if (!input || !isPlainObject(input)) {
+    return input
+  }
+
+  return Object.entries(input).reduce((acc, [key, value]) => {
+    const normalizedKey = typeof key === 'string' ? toSnakeCase(key) : key
+    acc[normalizedKey] = snakeCaseKeys(value)
+    return acc
+  }, {})
+}
+
 let accessToken = null
 let guestPid = null
 
@@ -59,34 +85,40 @@ export const authApi = {
    * 로그인 요청. 서버 스펙에 따라 UserSummary 또는 { accessToken, user } 형태를 모두 허용한다.
    */
   login(payload) {
-    return api.post('/auth/login', payload).then(unwrap)
+    return api.post('/auth/login', snakeCaseKeys(payload)).then(unwrap)
   },
 }
 
 export const userApi = {
   register(payload) {
-    return api.post('/users/signup', payload).then(unwrap)
+    return api.post('/users/signup', snakeCaseKeys(payload)).then(unwrap)
   },
   fetchProfile() {
     return api.get('/users/profile').then(unwrap)
   },
   checkLoginId(loginId) {
-    return api.get('/users/exists', { params: { loginId } }).then(unwrap)
+    return api
+      .get('/users/exists', { params: snakeCaseKeys({ loginId }) })
+      .then(unwrap)
   },
   checkEmail(email) {
-    return api.get('/users/exists', { params: { email } }).then(unwrap)
+    return api
+      .get('/users/exists', { params: snakeCaseKeys({ email }) })
+      .then(unwrap)
   },
   requestEmailVerification(email) {
-    return api.post('/users/email/verify/request', { email }).then(unwrap)
+    return api.post('/users/email/verify/request', snakeCaseKeys({ email })).then(unwrap)
   },
   confirmEmailVerification(email, token) {
-    return api.post('/users/email/verify/confirm', { email, token }).then(unwrap)
+    return api
+      .post('/users/email/verify/confirm', snakeCaseKeys({ email, token }))
+      .then(unwrap)
   },
 }
 
 export const matchApi = {
   start(request) {
-    return api.post('/match/requests', request).then(unwrap)
+    return api.post('/match/requests', snakeCaseKeys(request)).then(unwrap)
   },
   accept(requestId) {
     return api.post(`/match/requests/${requestId}/accept`).then(unwrap)
