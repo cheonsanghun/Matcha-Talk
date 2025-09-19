@@ -13,11 +13,7 @@
 </template>
 
 <script setup>
-import { storeToRefs } from 'pinia';
-import { useVocabularyStore } from '../stores/vocabulary';
 
-const store = useVocabularyStore();
-const { words } = storeToRefs(store);
 </script>
 
 <style scoped>

@@ -20,45 +20,5 @@
 </template>
 
 <script setup>
-import {ref, nextTick } from 'vue'
-import {useAuthStore} from '../stores/auth'
-import {useRouter} from 'vue-router'
-import api from '../services/api'
 
-const router = useRouter()
-const store = useAuthStore()
-const login_id = ref('')
-const password = ref('')
-
-async function onLogin() {
-  if (!login_id.value || !password.value) {
-    return alert('아이디/비밀번호를 입력하세요')
-  }
-  try {
-    const {data} = await api.post('/auth/login', {
-      login_id: login_id.value,
-      password: password.value,
-    })
-
-    const user = data.user ?? data
-    // 응답 형태 방어 (token 없이 UserSummary만 오는 경우도 커버)
-    store.login({ token: data.token ?? null, user })
-
-    // Pinia 상태가 반응형으로 전파된 다음 라우팅 (가드가 다시 /login으로 되돌리는 현상 방지)
-    await nextTick()
-
-    // 라우팅
-    //await router.replace({ name: 'home' })
-
-    const target = user?.roleName === 'ROLE_ADMIN' ? { name: 'admin-dashboard' } : { name: 'home' }
-    await router.replace(target)
-
-    // 최후의 수단(가드/상태 꼬임이 있으면 강제 이동)
-    // window.location.href = '/'
-  } catch (err) {
-    const status = err.response?.status ?? 'network'
-    alert(err.response?.data?.message || `로그인 실패 (${status})`)
-    console.error('login error:', status, err.response?.data || err)
-  }
-}
 </script>

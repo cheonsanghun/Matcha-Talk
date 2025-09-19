@@ -103,55 +103,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import api from '../services/api'
-import { useRouter } from 'vue-router'
-import { useMatchStore } from '../stores/match'
 
-const router = useRouter()
-const matchStore = useMatchStore()
-const ageRange = ref([20, 30])
-const gender = ref('A')
-const regions = [
-  { title: '서울', value: 'SEOUL' },
-  { title: '부산', value: 'BUSAN' },
-  { title: '도쿄', value: 'TOKYO' },
-  { title: '오사카', value: 'OSAKA' },
-  { title: '후쿠오카', value: 'FUKUOKA' },
-  { title: '제주', value: 'JEJU' },
-  { title: '인천', value: 'INCHEON' },
-  { title: '대구', value: 'DAEGU' },
-  { title: '광주', value: 'GWANGJU' },
-  { title: '기타', value: 'OTHER' }
-]
-const region = ref('')
-const dialog = ref(false)
-const interestPool = ['음악','영화','게임','여행','요리','운동','독서','사진','패션','반려동물']
-const interests = ref([])
-const loading = ref(false)
-const isValid = computed(() => !!gender.value && !!region.value && interests.value.length > 0)
-
-async function startMatch(){
-  if (!isValid.value) return
-  loading.value = true
-  matchStore.reset()
-  const payload = {
-    choiceGender: gender.value,
-    minAge: ageRange.value[0],
-    maxAge: ageRange.value[1],
-    regionCode: region.value,
-    interests: interests.value,
-  }
-  try{
-    const { data } = await api.post('/match/requests', payload)
-    matchStore.setFromStartResponse(data)
-    router.push('/match/result')
-  }catch(e){
-    alert('매칭 실패: ' + (e?.response?.data?.message || e.message))
-  }finally{
-    loading.value = false
-  }
-}
 </script>
 
 <style scoped>

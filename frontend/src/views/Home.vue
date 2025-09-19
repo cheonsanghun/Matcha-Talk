@@ -83,24 +83,6 @@
 </template>
 
 <script setup>
-import {storeToRefs} from 'pinia'
-import {useAuthStore} from '../stores/auth'
-
-const store = useAuthStore()
-const {isAuthenticated: isAuth} = storeToRefs(store)
-
-const ctaTo = '/register'
-
-const petals = Array.from({length: 20}).map(() => ({
-  left: `${Math.random() * 100}%`,
-  delay: `${-Math.random() * 20}s`,
-  duration: `${10 + Math.random() * 10}s`,
-  size: `${8 + Math.random() * 8}px`,
-  opacity: 0.5 + Math.random() * 0.5,
-  move: Math.random() * 100 - 50,
-}))
-
-
 </script>
 
 <style scoped>

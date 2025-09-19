@@ -34,49 +34,5 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
 
-const tab = ref('inquiries')
-
-const inquiries = ref([
-  { id: 1, type: '문의', content: '사용 방법 문의', status: '대기' },
-  { id: 2, type: '신고', content: '스팸 신고', status: '처리중' },
-])
-
-const inquiryHeaders = [
-  { title: 'ID', key: 'id' },
-  { title: '유형', key: 'type' },
-  { title: '내용', key: 'content' },
-  { title: '상태', key: 'status' },
-  { title: '작업', key: 'actions', sortable: false },
-]
-
-const users = ref([
-  { id: 1, nickname: 'user1', role: 'USER', suspended: false },
-  { id: 2, nickname: 'user2', role: 'USER', suspended: true },
-])
-
-const userHeaders = [
-  { title: 'ID', key: 'id' },
-  { title: '닉네임', key: 'nickname' },
-  { title: '역할', key: 'role' },
-  { title: '정지여부', key: 'suspended' },
-  { title: '작업', key: 'actions', sortable: false },
-]
-
-function viewInquiry(item) {
-  alert(`${item.type} #${item.id}: ${item.content}`)
-}
-
-function suspendUser(item) {
-  item.suspended = true
-}
-
-function unsuspendUser(item) {
-  item.suspended = false
-}
-
-function editUser(item) {
-  alert(`${item.nickname} 정보 수정`)
-}
 </script>
