@@ -5,7 +5,7 @@
         <v-card class="pa-6">
           <v-row class="align-center mb-6">
             <v-avatar size="40" class="me-3">
-              <v-img :src="partnerAvatar" alt="avatar" />
+              <v-img :src="partnerAvatar" alt="avatar"/>
             </v-avatar>
             <div>
               <div class="text-h6 text-pink-darken-2">
@@ -39,7 +39,7 @@
               >
                 <template #placeholder>
                   <v-row class="fill-height ma-0" align="center" justify="center">
-                    <v-progress-circular indeterminate color="pink" />
+                    <v-progress-circular indeterminate color="pink"/>
                   </v-row>
                 </template>
               </v-img>
@@ -75,13 +75,15 @@
                   variant="tonal"
                   :disabled="!canAccept"
                   @click="acceptMatch"
-              >수락</v-btn>
+              >수락
+              </v-btn>
               <v-btn
                   color="grey"
                   variant="outlined"
                   :disabled="!canDecline"
                   @click="declineMatch"
-              >{{ declineLabel }}</v-btn>
+              >{{ declineLabel }}
+              </v-btn>
             </template>
             <v-btn
                 v-else-if="showCancelButton"
@@ -89,7 +91,8 @@
                 variant="outlined"
                 :disabled="!canDecline"
                 @click="declineMatch"
-            >{{ declineLabel }}</v-btn>
+            >{{ declineLabel }}
+            </v-btn>
           </div>
         </v-card>
       </v-col>
@@ -98,13 +101,13 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, shallowRef } from 'vue'
-import { useRouter } from 'vue-router'
+import {ref, computed, watch, onMounted, onBeforeUnmount, shallowRef} from 'vue'
+import {useRouter} from 'vue-router'
 import api from '../services/api'
-import { createStompClient } from '../services/ws'
-import { setupSignalRoutes } from '../services/signaling'
-import { useAuthStore } from '../stores/auth'
-import { useMatchStore } from '../stores/match'
+import {createStompClient} from '../services/ws'
+import {setupSignalRoutes} from '../services/signaling'
+import {useAuthStore} from '../stores/auth'
+import {useMatchStore} from '../stores/match'
 import ChatPanel from '../components/ChatPanel.vue'
 
 const auth = useAuthStore()
@@ -130,13 +133,13 @@ const partnerName = computed(() => match.partnerNickName ?? match.partnerLoginId
 const partnerAvatar = computed(() => {
   const seed = partnerName.value?.trim()
   return seed
-    ? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}`
-    : 'https://via.placeholder.com/150'
+      ? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}`
+      : 'https://via.placeholder.com/150'
 })
 const isMatched = computed(() => match.isMatched)
 const chatEnabled = computed(() => match.bothConfirmed && !match.sessionClosed && !!match.roomId)
 const connectionReady = computed(() =>
-  clientConnected.value && chatEnabled.value && !!partner.value && !!me.value && !!signalRef.value
+    clientConnected.value && chatEnabled.value && !!partner.value && !!me.value && !!signalRef.value
 )
 const sessionStatus = computed(() => {
   if (match.statusMessage) return match.statusMessage
@@ -156,8 +159,8 @@ const sessionStatus = computed(() => {
   if (match.isWaiting) {
     const waiters = match.waitingCount || 0
     return waiters > 0
-      ? `대기 중... 현재 ${waiters}명이 기다리고 있습니다.`
-      : '대기열에서 상대를 찾고 있습니다.'
+        ? `대기 중... 현재 ${waiters}명이 기다리고 있습니다.`
+        : '대기열에서 상대를 찾고 있습니다.'
   }
   return '매칭 정보를 불러오는 중입니다.'
 })
@@ -197,7 +200,7 @@ function ensurePeerConnection() {
   }
 
   pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    iceServers: [{urls: 'stun:stun.l.google.com:19302'}]
   })
 
   pc.ontrack = (event) => {
@@ -230,7 +233,7 @@ async function ensureLocalMedia() {
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: true})
     localStream = stream
     const pcInstance = ensurePeerConnection()
     stream.getTracks().forEach((track) => pcInstance.addTrack(track, stream))
@@ -315,7 +318,10 @@ function handleMatchEvent(frame) {
 function cleanupPeerConnection() {
   if (localStream) {
     localStream.getTracks().forEach((track) => {
-      try { track.stop() } catch {}
+      try {
+        track.stop()
+      } catch {
+      }
     })
     localStream = null
   }
@@ -328,7 +334,10 @@ function cleanupPeerConnection() {
   }
 
   if (pc) {
-    try { pc.close() } catch {}
+    try {
+      pc.close()
+    } catch {
+    }
     pc = null
   }
 
@@ -345,14 +354,14 @@ async function acceptMatch() {
   }
 
   try {
-    const { data } = await api.post(`/match/requests/${match.requestId}/accept`)
+    const {data} = await api.post(`/match/requests/${match.requestId}/accept`)
     match.setMyDecision(
-      'ACCEPTED',
-      data?.message || '매칭을 수락했습니다.',
-      {
-        bothAccepted: !!data?.bothAccepted,
-        shouldCreateOffer: data?.shouldCreateOffer ?? null
-      }
+        'ACCEPTED',
+        data?.message || '매칭을 수락했습니다.',
+        {
+          bothAccepted: !!data?.bothAccepted,
+          shouldCreateOffer: data?.shouldCreateOffer ?? null
+        }
     )
   } catch (error) {
     console.error('매칭 수락 실패:', error)
@@ -367,19 +376,19 @@ async function declineMatch() {
 
   const wasWaiting = match.isWaiting
   const confirmMessage = wasWaiting
-    ? '대기열에서 나가시겠습니까?'
-    : '매칭을 거절하시겠습니까?'
+      ? '대기열에서 나가시겠습니까?'
+      : '매칭을 거절하시겠습니까?'
 
   if (!confirmAction(confirmMessage)) {
     return
   }
 
   try {
-    const { data } = await api.post(`/match/requests/${match.requestId}/decline`)
+    const {data} = await api.post(`/match/requests/${match.requestId}/decline`)
     match.setMyDecision(
-      'DECLINED',
-      data?.message || (wasWaiting ? '대기열에서 제외되었습니다.' : '매칭을 거절했습니다.'),
-      { bothAccepted: false, shouldCreateOffer: false }
+        'DECLINED',
+        data?.message || (wasWaiting ? '대기열에서 제외되었습니다.' : '매칭을 거절했습니다.'),
+        {bothAccepted: false, shouldCreateOffer: false}
     )
     if (!wasWaiting) {
       cleanupPeerConnection()
@@ -393,11 +402,12 @@ async function declineMatch() {
 onMounted(() => {
   if (!match.requestId) {
     alert('진행 중인 매칭이 없습니다. 매칭을 다시 시작해주세요.')
-    router.replace({ name: 'match' })
+    router.replace({name: 'match'})
     return
   }
 
-  client = createStompClient(auth.token)
+  //client = createStompClient(auth.token)
+  client = createStompClient(() => auth.token)
   stompClient.value = client
   client.onConnect = () => {
     clientConnected.value = true
@@ -405,12 +415,12 @@ onMounted(() => {
     const matchSub = client.subscribe('/user/queue/match-results', handleMatchEvent)
     subs.push(matchSub)
 
-    const { sub, sendSignal } = setupSignalRoutes(client, {
+    const {sub, sendSignal} = setupSignalRoutes(client, {
       me: me.value || '',
       subscribeDest: '/user/queue/signals',
       onSignal: handleSignalMessage
     })
-    signalRef.value = { sendSignal }
+    signalRef.value = {sendSignal}
     subs.push(sub)
 
     maybeSendOffer()
@@ -418,8 +428,14 @@ onMounted(() => {
   client.onDisconnect = () => {
     clientConnected.value = false
   }
+  /*client.onStompError = (frame) => {
+    console.error('STOMP error:', frame?.headers, frame?.body)
+  }*/
   client.onStompError = (frame) => {
     console.error('STOMP error:', frame?.headers, frame?.body)
+    if (frame?.headers?.message?.includes('ExecutorSubscribableChannel')) {
+      alert('실시간 채널 인증에 실패했습니다. 다시 로그인해 주세요.')
+    }
   }
 
   client.activate()

@@ -23,7 +23,7 @@ public class StompHandler implements ChannelInterceptor {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
-    
+
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
 
@@ -31,26 +31,47 @@ public class StompHandler implements ChannelInterceptor {
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
         log.debug("Processing STOMP message with command: {}", accessor.getCommand());
-        
+
         if (StompCommand.CONNECT.equals(accessor.getCommand())) {
             authenticateWebSocketConnection(accessor);
         }
-        
+
         return message;
     }
-    
-    private void authenticateWebSocketConnection(StompHeaderAccessor accessor) {
-        String authHeader = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
-        
-        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
-            Authentication existingAuth = SecurityContextHolder.getContext().getAuthentication();
-            if (existingAuth != null && existingAuth.isAuthenticated()) {
-                accessor.setUser(existingAuth);
-                log.debug("Using existing authentication for WebSocket user: {}", existingAuth.getName());
-                return;
-            }
 
-            log.warn("No valid authorization header found for WebSocket connection");
+    private void authenticateWebSocketConnection(StompHeaderAccessor accessor) {
+
+        /*String authHeader = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
+-
+-        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+-            Authentication existingAuth = SecurityContextHolder.getContext().getAuthentication();
+-            if (existingAuth != null && existingAuth.isAuthenticated()) {
+-                accessor.setUser(existingAuth);
+-                log.debug("Using existing authentication for WebSocket user: {}", existingAuth.getName());
+-                return;
+-            }
+-
+-            log.warn("No valid authorization header found for WebSocket connection");
+-            throw new AuthenticationCredentialsNotFoundException("인증 정보가 없어 WebSocket 연결을 종료합니다.");
+-        }*/
+        Authentication handshakeAuth = (Authentication) accessor.getUser();
+        if (handshakeAuth != null && handshakeAuth.isAuthenticated()) {
+            SecurityContextHolder.getContext().setAuthentication(handshakeAuth);
+            log.debug("Using handshake principal for WebSocket user: {}", handshakeAuth.getName());
+            return;
+        }
+
+        Authentication existingAuth = SecurityContextHolder.getContext().getAuthentication();
+        if (existingAuth != null && existingAuth.isAuthenticated()) {
+            accessor.setUser(existingAuth);
+            log.debug("Reusing security context authentication for WebSocket user: {}", existingAuth.getName());
+            return;
+        }
+
+        String authHeader = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            log.warn("No valid authorization header found for WebSocket connection (nativeHeaders={})",
+                    accessor.toNativeHeaderMap());
             throw new AuthenticationCredentialsNotFoundException("인증 정보가 없어 WebSocket 연결을 종료합니다.");
         }
 
