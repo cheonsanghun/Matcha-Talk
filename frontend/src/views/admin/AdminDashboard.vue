@@ -34,5 +34,47 @@
 </template>
 
 <script setup>
+import { onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useAdminStore } from '../../stores/admin'
 
+const adminStore = useAdminStore()
+const { inquiries, users } = storeToRefs(adminStore)
+const tab = ref('inquiries')
+
+const inquiryHeaders = [
+  { title: '제목', key: 'title' },
+  { title: '분류', key: 'category' },
+  { title: '상태', key: 'status' },
+  { title: '작성일', key: 'createdAt' },
+  { title: '작업', key: 'actions', sortable: false },
+]
+
+const userHeaders = [
+  { title: '아이디', key: 'loginId' },
+  { title: '이메일', key: 'email' },
+  { title: '권한', key: 'roleName' },
+  { title: '정지 여부', key: 'suspended' },
+  { title: '작업', key: 'actions', sortable: false },
+]
+
+const viewInquiry = (item) => {
+  window.alert(`문의 상세보기\n\n${item.title}`)
+}
+
+const suspendUser = (item) => {
+  adminStore.suspendUser(item)
+}
+
+const unsuspendUser = (item) => {
+  adminStore.unsuspendUser(item)
+}
+
+const editUser = (item) => {
+  console.log('edit user', item)
+}
+
+onMounted(() => {
+  adminStore.initialize()
+})
 </script>

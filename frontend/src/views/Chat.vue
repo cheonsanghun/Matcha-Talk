@@ -63,7 +63,7 @@
         <div class="chat-header d-flex align-center pa-4">
           <v-avatar size="40"><v-icon color="primary">mdi-account</v-icon></v-avatar>
           <div class="ml-3">
-            <div class="text-subtitle-1 font-weight-medium">{{ current.name }}</div>
+            <div class="text-subtitle-1 font-weight-medium">{{ currentRoomDisplay.name }}</div>
             <div class="text-caption text-grey" v-if="!isGroup">온라인</div>
             <div class="text-caption text-grey" v-else>{{ groupParticipants }}</div>
           </div>
@@ -76,10 +76,9 @@
         </div>
         <v-divider />
         <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto" ref="chatMessagesContainer">
-          <div class="text-center my-4 text-caption text-grey">2023년 1월 18일</div>
           <div
-            v-for="(m, i) in messages"
-            :key="i"
+            v-for="m in messages"
+            :key="m.id"
             class="d-flex mb-4"
             :class="{ 'justify-end': m.me }"
           >
@@ -87,14 +86,16 @@
               <v-avatar size="32" class="mr-2"><v-icon color="primary">mdi-account</v-icon></v-avatar>
               <div>
                 <div v-if="isGroup" class="text-caption font-weight-medium mb-1">{{ m.sender }}</div>
-                <div class="pa-3 bg-grey-lighten-4 rounded-xl">{{ m.text }}</div>
-                <div class="text-caption text-grey mt-1">{{ m.time }}</div>
+                <div class="pa-3 bg-grey-lighten-4 rounded-xl">{{ m.content }}</div>
+                <div v-if="m.translatedContent" class="text-caption text-primary mt-1">{{ m.translatedContent }}</div>
+                <div class="text-caption text-grey mt-1">{{ formatTime(m.sentAt) }}</div>
               </div>
             </template>
             <template v-else>
               <div>
-                <div class="pa-3 bg-primary text-white rounded-xl">{{ m.text }}</div>
-                <div class="text-caption text-grey mt-1 text-right">{{ m.time }}</div>
+                <div class="pa-3 bg-primary text-white rounded-xl">{{ m.content }}</div>
+                <div v-if="m.translatedContent" class="text-caption text-lighten-4 mt-1">{{ m.translatedContent }}</div>
+                <div class="text-caption text-grey mt-1 text-right">{{ formatTime(m.sentAt) }}</div>
               </div>
             </template>
           </div>
@@ -111,7 +112,7 @@
             @keydown.enter.prevent="send"
           />
           <v-btn icon variant="text"><v-icon>mdi-emoticon-outline</v-icon></v-btn>
-          <v-btn icon color="success" @click="send"><v-icon>mdi-send</v-icon></v-btn>
+          <v-btn icon color="success" :loading="sending" @click="send"><v-icon>mdi-send</v-icon></v-btn>
 
         </div>
       </v-col>
@@ -120,7 +121,77 @@
 </template>
 
 <script setup>
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useChatStore } from '../stores/chat'
 
+const chatStore = useChatStore()
+const { rooms, currentRoom, messages, loading, sending, isGroup } = storeToRefs(chatStore)
+
+const query = ref('')
+const tab = ref('direct')
+const draft = ref('')
+const chatMessagesContainer = ref(null)
+
+const filteredChats = computed(() => {
+  const keyword = query.value.toLowerCase()
+  return rooms.value
+    .filter((room) => room.type !== 'GROUP')
+    .filter((room) => room.name.toLowerCase().includes(keyword))
+})
+
+const filteredGroups = computed(() => {
+  const keyword = query.value.toLowerCase()
+  return rooms.value
+    .filter((room) => room.type === 'GROUP')
+    .filter((room) => room.name.toLowerCase().includes(keyword))
+})
+
+const currentRoomDisplay = computed(() =>
+  currentRoom.value ?? { name: '채팅방', participants: 0 }
+)
+
+const groupParticipants = computed(() =>
+  `${currentRoomDisplay.value.participants ?? 0}명 참여중`
+)
+
+const openChat = (room) => {
+  chatStore.selectRoom(room.id)
+}
+
+const formatTime = (value) => {
+  if (!value) return ''
+  const date = typeof value === 'string' ? new Date(value) : value
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+const send = () => {
+  if (!draft.value.trim()) return
+  chatStore.sendMessage(draft.value.trim())
+  draft.value = ''
+}
+
+const inviteParticipant = () => {}
+const startVideoCall = () => {}
+
+watch(
+  messages,
+  async () => {
+    await nextTick()
+    if (chatMessagesContainer.value) {
+      chatMessagesContainer.value.scrollTop = chatMessagesContainer.value.scrollHeight
+    }
+  },
+  { deep: true }
+)
+
+onMounted(() => {
+  chatStore.init()
+})
+
+onBeforeUnmount(() => {
+  chatStore.cleanup()
+})
 </script>
 
 <style scoped>
