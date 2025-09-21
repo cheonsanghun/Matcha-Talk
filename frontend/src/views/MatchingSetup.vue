@@ -132,13 +132,16 @@ const isValid = computed(() => !!gender.value && !!region.value && interests.val
 async function startMatch(){
   if (!isValid.value) return
   loading.value = true
+  
+  // 백엔드 MatchRequestDto 필드명에 맞게 camelCase로 수정
   const payload = {
-    choice_gender: gender.value,
-    min_age: ageRange.value[0],
-    max_age: ageRange.value[1],
-    region_code: region.value,
-    interests_json: interests.value,
+    choiceGender: gender.value,
+    minAge: ageRange.value[0],
+    maxAge: ageRange.value[1],
+    regionCode: region.value,
+    interests: interests.value,  // interests_json → interests 로 수정
   }
+  
   try{
     await api.post('/match/requests', payload)
     router.push('/match/result')
