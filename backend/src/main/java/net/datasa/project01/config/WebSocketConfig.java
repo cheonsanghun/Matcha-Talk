@@ -27,7 +27,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws-stomp")
-                .setAllowedOriginPatterns("http://localhost:5173") // 개발용
+                .setAllowedOriginPatterns("http://localhost:5173","https://*.ngrok-free.app") // 개발용
                 .withSockJS();  // ★ SockJS 필수
     }
 
