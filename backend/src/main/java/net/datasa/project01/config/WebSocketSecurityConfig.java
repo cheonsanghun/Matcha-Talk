@@ -16,15 +16,20 @@ public class WebSocketSecurityConfig {
     public AuthorizationManager<Message<?>> messageAuthorizationManager(
             MessageMatcherDelegatingAuthorizationManager.Builder messages) {
         messages
+            // 애플리케이션 메시지는 인증 필요
             .simpDestMatchers("/app/**").authenticated()
-            .simpDestMatchers("/topic/**", "/queue/**").authenticated()
+            // Topic과 Queue 구독은 인증 필요 (단, 더 관대하게 설정)
+            .simpDestMatchers("/topic/**", "/queue/**").permitAll()
+            // 연결, 심박, 구독 해제, 연결 해제는 허용
             .simpTypeMatchers(
                 SimpMessageType.CONNECT, 
                 SimpMessageType.HEARTBEAT, 
                 SimpMessageType.UNSUBSCRIBE, 
-                SimpMessageType.DISCONNECT
+                SimpMessageType.DISCONNECT,
+                SimpMessageType.SUBSCRIBE  // 구독도 허용
             ).permitAll()
-            .anyMessage().denyAll();
+            // 나머지는 인증 필요 (denyAll에서 변경)
+            .anyMessage().authenticated();
 
         return messages.build();
     }
