@@ -3,12 +3,10 @@ package net.datasa.project01.domain.dto;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.Setter;
 
 import java.time.LocalDateTime;
 
 @Getter
-@Setter
 @Builder
 @AllArgsConstructor
 public class ChatMessageResponseDto {

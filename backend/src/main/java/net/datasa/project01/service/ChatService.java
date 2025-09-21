@@ -13,13 +13,15 @@ import net.datasa.project01.domain.dto.ChatMessageRequestDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.RoomMessage;
 
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import net.datasa.project01.domain.entity.Room.RoomType;
-
 import net.datasa.project01.service.TranslationService;
+
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -40,11 +42,12 @@ public class ChatService {
 
     @Transactional
     public Room createGroupRoom() {
-        // TODO: 방 이름 설정 기능 추가
-        // TODO: 비밀번호 보호 기능 추가
-        // TODO: 초대 전용 방 기능 추가
-        // 1. 요청을 보낸 사용자의 정보를 SecurityContextHolder에서 가져오기
-        String loginId = SecurityContextHolder.getContext().getAuthentication().getName();
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
+            throw new IllegalStateException("인증된 사용자만 방을 생성할 수 있습니다.");
+        }
+
+        String loginId = authentication.getName();
         User creator = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
@@ -76,36 +79,36 @@ public class ChatService {
                 .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
 
         // 1. 원본 메시지를 DB에 저장
-        RoomMessage message = RoomMessage.builder()
+        RoomMessage savedMessage = roomMessageRepository.saveAndFlush(RoomMessage.builder()
                 .room(room)
                 .sender(sender)
                 .contentType(RoomMessage.ContentType.TEXT)
                 .textContent(requestDto.getContent())
-                .build();
-        roomMessageRepository.save(message);
+                .build());
 
-        // 2. [수정됨] 보낸 사람의 언어 설정에 따라 번역 방향을 동적으로 결정
-        String originalText = message.getTextContent();
-        String translatedText;
-        String sourceLang = sender.getLanguageCode(); // 예: "ko"
+        String originalText = savedMessage.getTextContent();
+        String sourceLang = sender.getLanguageCode();
+        String translatedText = originalText;
 
-        if ("ko".equalsIgnoreCase(sourceLang)) {
-            // 보낸 사람이 한국어 사용자인 경우 -> 일본어로 번역
-            translatedText = translationService.translate(originalText, "ko", "ja");
-        } else if ("ja".equalsIgnoreCase(sourceLang)) {
-            // 보낸 사람이 일본어 사용자인 경우 -> 한국어로 번역
-            translatedText = translationService.translate(originalText, "ja", "ko");
-        } else {
-            // 그 외 언어 사용자인 경우, 일단 번역하지 않음 (또는 기본 번역 설정 적용)
-            translatedText = originalText;
+        if (originalText != null && !originalText.isBlank() && sourceLang != null) {
+            if ("ko".equalsIgnoreCase(sourceLang)) {
+                translatedText = translationService.translate(originalText, "ko", "ja");
+            } else if ("ja".equalsIgnoreCase(sourceLang)) {
+                translatedText = translationService.translate(originalText, "ja", "ko");
+            }
         }
-        // 3. 응답 DTO에 원본 메시지와 번역된 메시지를 모두 담아 반환
+
+        LocalDateTime sentAt = savedMessage.getCreatedAt();
+        if (sentAt == null) {
+            sentAt = LocalDateTime.now();
+        }
+
         return ChatMessageResponseDto.builder()
                 .roomId(room.getRoomId())
                 .senderNickName(sender.getNickName())
-                .content(message.getTextContent())
-                .translatedContent(translatedText) // 번역된 내용 추가
-                .sentAt(message.getCreatedAt())
+                .content(savedMessage.getTextContent())
+                .translatedContent(translatedText)
+                .sentAt(sentAt)
                 .build();
     }
     @Transactional

@@ -2,8 +2,10 @@ package net.datasa.project01.controller;
 
 import lombok.RequiredArgsConstructor;
 import net.datasa.project01.domain.dto.LoginRequest;
+import net.datasa.project01.domain.dto.LoginResponse;
 import net.datasa.project01.domain.dto.UserSummary;
 import net.datasa.project01.service.AuthService;
+import net.datasa.project01.util.JwtUtil;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -35,19 +37,19 @@ public class AuthController {
 
     /** 로그인/잠금 정책을 포함한 실제 인증 로직을 제공하는 서비스 빈 */
     private final AuthService authService;
+    private final JwtUtil jwtUtil;
 
     /**
      * 로그인 엔드포인트.
      *
      * - consumes=application/json: 본문이 JSON이 아닐 경우 스프링이 415/400을 반환할 수 있다.
      * - @Validated LoginRequest: DTO에 선언된 제약(@NotBlank, @Pattern, @Size 등)을 활성화한다.
-     * - 성공 시: UserSummary만 내려 UI가 필요한 최소 정보만 제공한다(민감정보 제외).
+     * - 성공 시: JWT 액세스 토큰과 UserSummary를 함께 반환한다.
      */
     @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<UserSummary> loginLocal(@RequestBody @Validated LoginRequest req) {
-        // 서비스 계층에 실제 인증을 위임한다.
+    public ResponseEntity<LoginResponse> loginLocal(@RequestBody @Validated LoginRequest req) {
         UserSummary user = authService.loginLocal(req.getLoginId(), req.getPassword());
-        // 성공 응답: 200 OK + UserSummary(JSON)
-        return ResponseEntity.ok(user);
+        String token = jwtUtil.createToken(user.getLoginId());
+        return ResponseEntity.ok(LoginResponse.of(token, user));
     }
 }

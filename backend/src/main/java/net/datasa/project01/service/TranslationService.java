@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -11,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
+
+import java.time.Duration;
 
 @Slf4j
 @Service
@@ -26,8 +29,16 @@ public class TranslationService {
     @Value("${papago.api.url}")
     private String apiUrl;
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
+
+    public TranslationService(RestTemplateBuilder restTemplateBuilder, ObjectMapper objectMapper) {
+        this.restTemplate = restTemplateBuilder
+                .setConnectTimeout(Duration.ofSeconds(5))
+                .setReadTimeout(Duration.ofSeconds(5))
+                .build();
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * Papago API를 호출하여 텍스트를 번역합니다.
@@ -37,6 +48,10 @@ public class TranslationService {
      * @return 번역된 텍스트
      */
     public String translate(String text, String sourceLang, String targetLang) {
+        if (text == null || text.isBlank() || sourceLang == null || targetLang == null) {
+            return text;
+        }
+
         try {
             // 1. HTTP 요청 헤더 설정
             HttpHeaders headers = new HttpHeaders();
@@ -55,10 +70,19 @@ public class TranslationService {
 
             // 4. Papago API에 POST 요청 전송 및 응답 받기
             String jsonResponse = restTemplate.postForObject(apiUrl, requestEntity, String.class);
+            if (jsonResponse == null) {
+                log.warn("Papago API returned empty response");
+                return text;
+            }
 
             // 5. 받은 JSON 응답에서 번역된 텍스트만 추출
             JsonNode rootNode = objectMapper.readTree(jsonResponse);
-            return rootNode.path("message").path("result").path("translatedText").asText();
+            JsonNode translatedNode = rootNode.path("message").path("result").path("translatedText");
+            if (translatedNode.isMissingNode() || translatedNode.isNull()) {
+                log.warn("Papago API response missing translatedText field");
+                return text;
+            }
+            return translatedNode.asText();
 
         } catch (Exception e) {
             log.error("Papago API translation failed", e);
