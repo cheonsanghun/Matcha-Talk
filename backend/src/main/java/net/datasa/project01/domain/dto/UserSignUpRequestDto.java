@@ -1,6 +1,5 @@
 package net.datasa.project01.domain.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
@@ -59,7 +58,7 @@ public class UserSignUpRequestDto {
     @Pattern(regexp = "^(ko|ja)$", message = "언어 코드는 'ko' 또는 'ja'여야 합니다.")
     private String languageCode; 
 
-    // 임시로 검증 완화 - 이메일 인증 없이도 회원가입 가능하도록
+    // 이메일 인증 코드 - 필수가 아님 (이메일 인증 완료 후 회원가입하는 플로우)
     private String verificationCode;
 
     @AssertTrue(message = "비밀번호와 비밀번호 확인이 일치하지 않습니다.")
