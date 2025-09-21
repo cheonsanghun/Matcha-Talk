@@ -36,6 +36,8 @@ public class MatchController {
         try {
             String loginId = userDetails.getUsername();
             log.info("Match request received from user: {}", loginId);
+            log.info("Match request data: {}", dto);
+            
             matchService.startOrFindMatch(loginId, dto);
             
             // TODO: MatchService의 결과에 따라 다른 응답 반환 (대기열 등록 or 매칭 성공)
