@@ -24,6 +24,9 @@ public class ChatController {
             RoomCreateResponseDto responseDto = RoomCreateResponseDto.fromEntity(createdRoom);
             log.info("Group room created successfully with ID: {}", createdRoom.getRoomId());
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
+        } catch (IllegalStateException e) {
+            log.warn("Unauthorized room creation attempt: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         } catch (Exception e) {
             log.error("Error creating group room", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

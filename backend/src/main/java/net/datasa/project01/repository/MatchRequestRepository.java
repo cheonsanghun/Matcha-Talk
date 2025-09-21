@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,16 +30,16 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
     @Query("SELECT mr FROM MatchRequest mr JOIN FETCH mr.user u " +
             "WHERE mr.status = :status " +
             "AND u.userPid <> :myPid " +
-            // 나의 희망 성별이 '모두(A)'이거나 상대방의 성별과 일치하며,
             "AND (:myChoiceGender = 'A' OR u.gender = :myChoiceGender) " +
-            // 상대방의 나이가 나의 희망 나이 범위에 속함
-            "AND FUNCTION('TIMESTAMPDIFF', YEAR, u.birthDate, CURRENT_DATE) BETWEEN :myMinAge AND :myMaxAge " +
+            "AND mr.regionCode = :myRegionCode " +
+            "AND u.birthDate BETWEEN :oldestBirthDate AND :youngestBirthDate " +
             "ORDER BY mr.requestedAt ASC")
     List<MatchRequest> findPotentialMatches(
             @Param("myPid") Long myPid,
             @Param("myChoiceGender") Character myChoiceGender,
-            @Param("myMinAge") Integer myMinAge,
-            @Param("myMaxAge") Integer myMaxAge,
+            @Param("myRegionCode") String myRegionCode,
+            @Param("oldestBirthDate") LocalDate oldestBirthDate,
+            @Param("youngestBirthDate") LocalDate youngestBirthDate,
             @Param("status") MatchRequest.MatchStatus status
     );
 }

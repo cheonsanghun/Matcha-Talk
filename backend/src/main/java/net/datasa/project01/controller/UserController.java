@@ -1,7 +1,7 @@
 package net.datasa.project01.controller;
 
 import net.datasa.project01.domain.dto.UserResponse;
-import net.datasa.project01.domain.dto.UserSignUpRequestDto; // ※ 프로젝트가 UserSignUpRequest(무접미사)라면 여기와 시그니처만 바꿔주세요.
+import net.datasa.project01.domain.dto.UserSignUpRequestDto;
 import net.datasa.project01.service.UserService;
 import net.datasa.project01.service.EmailVerificationService;
 

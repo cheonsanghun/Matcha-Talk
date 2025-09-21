@@ -76,12 +76,20 @@ public class MatchService {
         MatchRequest.Gender myChoiceGender = MatchRequest.Gender.valueOf(requestDto.getChoiceGender());
         Character myChoiceGenderChar = requestDto.getChoiceGender().charAt(0);
 
-        // 3. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
+        if (requestDto.getMinAge() > requestDto.getMaxAge()) {
+            throw new IllegalArgumentException("최소 나이는 최대 나이보다 클 수 없습니다.");
+        }
+
+        LocalDate today = LocalDate.now();
+        LocalDate oldestBirthDate = today.minusYears(requestDto.getMaxAge());
+        LocalDate youngestBirthDate = today.minusYears(requestDto.getMinAge());
+
         List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
                 me.getUserPid(),
                 myChoiceGenderChar,
-                requestDto.getMinAge(),
-                requestDto.getMaxAge(),
+                requestDto.getRegionCode(),
+                oldestBirthDate,
+                youngestBirthDate,
                 MatchRequest.MatchStatus.WAITING
         );
 
@@ -275,9 +283,8 @@ public class MatchService {
     }
 
     private MatchRequest selectFinalOpponent(User me, List<MatchRequest> potentialMatches) {
+        long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
         for (MatchRequest opponentRequest : potentialMatches) {
-            User opponent = opponentRequest.getUser();
-            long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
 
             boolean isGenderMatch = opponentRequest.getChoiceGender() == MatchRequest.Gender.A ||
                     opponentRequest.getChoiceGender().name().equals(me.getGender().toString());

@@ -10,6 +10,8 @@ import org.springframework.security.crypto.password.PasswordEncoder; // 비밀�
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
+
 /**
  * [UserService]
  * - 회원가입 및 회원 조회 비즈니스 로직을 담당하는 서비스 클래스입니다.
@@ -61,12 +63,17 @@ public class UserService {
             throw new IllegalArgumentException("성별 정보가 올바르지 않습니다.");
         }
         Character genderChar = genderValue.charAt(0);
+        String normalizedLanguageCode = req.getLanguageCode() != null
+                ? req.getLanguageCode().trim().toLowerCase(Locale.ROOT)
+                : null;
+
         User user = User.builder()
                 .loginId(req.getLoginId())                      // 로그인 아이디
                 .passwordHash(passwordEncoder.encode(req.getPassword())) // 비밀번호 해시
                 .nickName(req.getNickName())                    // 닉네임
                 .email(req.getEmail())                          // 이메일
                 .countryCode(req.getCountryCode())              // 국적 코드
+                .languageCode(normalizedLanguageCode)           // 선호 언어 코드 저장
                 .gender(genderChar)                        // 성별
                 .birthDate(req.getBirthDate())                  // 생년월일
                 .emailVerified(true)                            // 이메일 인증 여부
@@ -86,6 +93,7 @@ public class UserService {
                 .nickName(user.getNickName())                   // 닉네임
                 .email(user.getEmail())                         // 이메일
                 .countryCode(user.getCountryCode())             // 국적 코드
+                .languageCode(user.getLanguageCode())           // 선호 언어
                 .gender(user.getGender())                       // 성별
                 .birthDate(user.getBirthDate())                 // 생년월일
                 .roleName(user.getRoleName())                   // 권한명
@@ -130,6 +138,7 @@ public class UserService {
                 .nickName(u.getNickName())
                 .email(u.getEmail())
                 .countryCode(u.getCountryCode())
+                .languageCode(u.getLanguageCode())
                 .gender(u.getGender())
                 .birthDate(u.getBirthDate())
                 .roleName(u.getRoleName())
