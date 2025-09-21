@@ -41,8 +41,11 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // HTTP 요청 권한 설정
                 .authorizeHttpRequests(reg -> reg
-                        // WebSocket 연결 경로 허용
+                        // WebSocket 연결 경로 허용 - SockJS 폴백 포함
                         .requestMatchers("/ws-stomp/**").permitAll()
+                        .requestMatchers("/ws-stomp/*/xhr_streaming").permitAll()
+                        .requestMatchers("/ws-stomp/*/websocket").permitAll()
+                        .requestMatchers("/ws-stomp/info").permitAll()
                         // 회원가입, 로그인, 중복확인, 이메일 인증 등 인증 없이 접근해야 하는 경로 허용
                         .requestMatchers("/api/auth/login", "/api/users/signup", "/api/users/exists", "/api/users/email/**").permitAll()
                         // 그 외 모든 요청은 인증 필요
