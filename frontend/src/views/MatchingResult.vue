@@ -83,6 +83,8 @@ const roomId = ref(null)
 
 // WebSocket 관련
 let stompClient = null
+const connectionAttempts = ref(0)
+const maxConnectionAttempts = 3
 
 onMounted(async () => {
   await setupWebSocket()
@@ -92,43 +94,67 @@ async function setupWebSocket() {
   const token = localStorage.getItem('token')
   if (!token) {
     console.error('JWT token not found')
+    router.push('/login')
     return
   }
 
+  console.log('Setting up WebSocket connection...')
   stompClient = createStompClient(token)
   
   stompClient.onConnect = () => {
-    console.log('Connected to WebSocket for matching results')
+    console.log('✅ Connected to WebSocket for matching results')
+    connectionAttempts.value = 0
     
     // 매칭 결과 구독
-    stompClient.subscribe('/user/queue/match-results', (message) => {
-      console.log('Received match result:', message.body)
+    const subscription = stompClient.subscribe('/user/queue/match-results', (message) => {
+      console.log('📨 Received match result:', message.body)
       
       try {
         const matchResult = JSON.parse(message.body)
         handleMatchResult(matchResult)
       } catch (error) {
-        console.error('Error parsing match result:', error)
+        console.error('❌ Error parsing match result:', error)
       }
     })
     
-    console.log('Subscribed to match results queue')
+    console.log('✅ Subscribed to /user/queue/match-results')
   }
 
   stompClient.onStompError = (frame) => {
-    console.error('STOMP error:', frame.headers['message'])
+    console.error('❌ STOMP error:', frame.headers['message'])
     console.error('Details:', frame.body)
+    
+    // 연결 재시도
+    if (connectionAttempts.value < maxConnectionAttempts) {
+      setTimeout(() => {
+        connectionAttempts.value++
+        console.log(`🔄 Retrying WebSocket connection (${connectionAttempts.value}/${maxConnectionAttempts})`)
+        setupWebSocket()
+      }, 2000)
+    } else {
+      console.error('❌ Max connection attempts reached')
+      alert('매칭 서버 연결에 실패했습니다. 페이지를 새로고침해주세요.')
+    }
   }
 
   stompClient.onWebSocketError = (event) => {
-    console.error('WebSocket error:', event)
+    console.error('❌ WebSocket error:', event)
   }
 
-  stompClient.activate()
+  stompClient.onWebSocketClose = (event) => {
+    console.log('🔌 WebSocket connection closed:', event)
+  }
+
+  try {
+    stompClient.activate()
+    console.log('🚀 WebSocket activation initiated')
+  } catch (error) {
+    console.error('❌ Failed to activate WebSocket:', error)
+  }
 }
 
 function handleMatchResult(matchResult) {
-  console.log('Match found!', matchResult)
+  console.log('🎉 Match found!', matchResult)
   
   matchFound.value = true
   partnerName.value = matchResult.partnerNickName || '상대방'
@@ -162,7 +188,7 @@ function declineMatch() {
 onBeforeUnmount(() => {
   if (stompClient && stompClient.connected) {
     stompClient.deactivate()
-    console.log('Disconnected from WebSocket')
+    console.log('🔌 Disconnected from WebSocket')
   }
 })
 </script>
