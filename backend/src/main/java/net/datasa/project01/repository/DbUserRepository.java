@@ -39,7 +39,7 @@ public class DbUserRepository implements UserRepository {
     public Optional<User> findByEmail(String email) {
         return em.createQuery("select u from User u where u.email = :email", User.class)
                 .setParameter("email", email)
-                .getResultStream().findFirst();
+                .getResultList().stream().findFirst();
     }
 
     @Override
@@ -54,7 +54,8 @@ public class DbUserRepository implements UserRepository {
         User user = em.createQuery(
                         "SELECT u FROM User u WHERE u.loginId = :loginId", User.class)
                 .setParameter("loginId", loginId)
-                .getResultStream()
+                .getResultList()
+                .stream()
                 .findFirst()
                 .orElse(null);
         return Optional.ofNullable(user);
