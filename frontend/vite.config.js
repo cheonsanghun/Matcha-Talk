@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 5173,
+    host: '0.0.0.0', // 외부 접근 허용
     open: true,
     allowedHosts: ['.ngrok-free.app'], // ngrok 도메인 허용
     proxy: {
