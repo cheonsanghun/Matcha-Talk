@@ -99,7 +99,7 @@ public class UserController {
     @GetMapping("/profile")
     public ResponseEntity<UserResponse> getMyProfile(@AuthenticationPrincipal UserDetails userDetails) {
         // userDetails.getUsername()은 현재 로그인된 사용자의 loginId를 반환
-        // User 엔티티를 직접 조회하여 DTO로 변환하는 로직이 필요합니다. (UserService에 추가 필요)
+        // User 엔티티를 직접 조회하여 DTO로 변환하는 로직이 필요 (UserService에 추가 필요)
         UserResponse userProfile = userService.getUserByLoginId(userDetails.getUsername());
         return ResponseEntity.ok(userProfile);
     }

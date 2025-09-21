@@ -23,7 +23,7 @@
         </div>
         <v-tabs v-model="tab" density="comfortable" class="px-4">
           <v-tab value="direct">1:1 채팅</v-tab>
-          <v-tab value="group">그룹 채팅</v_tab>
+          <v-tab value="group">그룹 채팅</v-tab>
         </v-tabs>
         <v-divider />
         <div class="flex-grow-1 overflow-y-auto">
