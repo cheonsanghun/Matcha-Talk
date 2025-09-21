@@ -1,6 +1,7 @@
 # Example ngrok configuration for Matcha-Talk
 # Run with: ngrok start --config=ngrok.yml --all
 version: "2"
+authtoken: 30tpFMnfL3NVigt3188yj6foK50_2fthRKbo2MT7N1ibyTrCi
 tunnels:
   backend:
     proto: http

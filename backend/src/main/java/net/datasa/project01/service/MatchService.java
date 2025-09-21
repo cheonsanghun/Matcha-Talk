@@ -86,7 +86,7 @@ public class MatchService {
 
         List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
                 me.getUserPid(),
-                myChoiceGenderChar,
+                requestDto.getChoiceGender(),
                 requestDto.getRegionCode(),
                 oldestBirthDate,
                 youngestBirthDate,

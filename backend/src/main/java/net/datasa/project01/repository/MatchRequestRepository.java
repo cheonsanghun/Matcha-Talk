@@ -36,7 +36,7 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
             "ORDER BY mr.requestedAt ASC")
     List<MatchRequest> findPotentialMatches(
             @Param("myPid") Long myPid,
-            @Param("myChoiceGender") Character myChoiceGender,
+            @Param("myChoiceGender") String myChoiceGender,
             @Param("myRegionCode") String myRegionCode,
             @Param("oldestBirthDate") LocalDate oldestBirthDate,
             @Param("youngestBirthDate") LocalDate youngestBirthDate,
