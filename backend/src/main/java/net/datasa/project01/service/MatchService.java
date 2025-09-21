@@ -36,8 +36,6 @@ public class MatchService {
      * 랜덤 매칭을 시작하거나 대기열에서 상대를 찾기
      * @param loginId 요청한 사용자의 ID
      * @param requestDto 매칭 조건
-     * 주요 로직들이 다수 들어가있으므로 매우 중요함
-     * 작동 안할 시 로직에 대해 다시 고려해볼 것
      */
     public void startOrFindMatch(String loginId, MatchRequestDto requestDto) throws JsonProcessingException {
         User me = userRepository.findByLoginId(loginId)
@@ -47,7 +45,10 @@ public class MatchService {
         Optional<MatchRequest> existingRequest = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
         if (existingRequest.isPresent()) {
             log.info("User {} is already in the matching queue.", loginId);
-            return; // 이미 대기 중이므로 아무것도 하지 않음
+            
+            // ✅ 테스트용: 이미 대기열에 있는 사용자에게 대기 상태 알림
+            sendWaitingNotification(loginId);
+            return;
         }
 
         // 2. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
@@ -78,12 +79,12 @@ public class MatchService {
         if (matchedOpponentRequest != null) {
             // 4. 매칭 성공 처리
             User opponent = matchedOpponentRequest.getUser();
-            log.info("Match found for user {}: {}", loginId, opponent.getLoginId());
+            log.info("✅ Match found for user {}: {}", loginId, opponent.getLoginId());
 
             // 두 요청의 상태를 MATCHED로 변경
             matchedOpponentRequest.setStatus(MatchRequest.MatchStatus.MATCHED);
 
-            // [수정됨] 나의 매칭 요청도 'MATCHED' 상태로 생성하여 기록을 남김
+            // 나의 매칭 요청도 'MATCHED' 상태로 생성하여 기록을 남김
             MatchRequest myMatchedRequest = MatchRequest.builder()
                     .user(me)
                     .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
@@ -91,7 +92,7 @@ public class MatchService {
                     .maxAge(requestDto.getMaxAge())
                     .regionCode(requestDto.getRegionCode())
                     .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
-                    .status(MatchRequest.MatchStatus.MATCHED) // 상태를 MATCHED로 설정
+                    .status(MatchRequest.MatchStatus.MATCHED)
                     .build();
             matchRequestRepository.save(myMatchedRequest);
 
@@ -102,12 +103,12 @@ public class MatchService {
             MatchFoundResponseDto myResponse = new MatchFoundResponseDto(privateRoom.getRoomId(), opponent.getNickName());
             MatchFoundResponseDto opponentResponse = new MatchFoundResponseDto(privateRoom.getRoomId(), me.getNickName());
 
-            messagingTemplate.convertAndSendToUser(me.getLoginId(), "/queue/match-results", myResponse);
-            messagingTemplate.convertAndSendToUser(opponent.getLoginId(), "/queue/match-results", opponentResponse);
+            sendMatchResult(me.getLoginId(), myResponse);
+            sendMatchResult(opponent.getLoginId(), opponentResponse);
 
         } else {
             // 5. 매칭 실패 -> 대기열에 등록
-            log.info("No match found for user {}. Adding to queue.", loginId);
+            log.info("❌ No match found for user {}. Adding to queue.", loginId);
             MatchRequest newRequest = MatchRequest.builder()
                     .user(me)
                     .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
@@ -118,6 +119,49 @@ public class MatchService {
                     .status(MatchRequest.MatchStatus.WAITING)
                     .build();
             matchRequestRepository.save(newRequest);
+            
+            // ✅ 테스트용: 대기열에 등록된 사용자에게 대기 상태 알림
+            sendWaitingNotification(loginId);
+        }
+    }
+    
+    /**
+     * ✅ 매칭 결과 전송 (공통 메서드)
+     */
+    private void sendMatchResult(String loginId, MatchFoundResponseDto response) {
+        try {
+            log.info("🚀 Sending match result to user: {}", loginId);
+            
+            // 사용자별 큐로 전송
+            messagingTemplate.convertAndSendToUser(loginId, "/queue/match-results", response);
+            
+            // 테스트용: 공통 토픽으로도 전송
+            messagingTemplate.convertAndSend("/topic/match-results", response);
+            
+            log.info("✅ Match result sent successfully to: {}", loginId);
+        } catch (Exception e) {
+            log.error("❌ Failed to send match result to user {}: {}", loginId, e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ 테스트용: 대기 상태 알림
+     */
+    private void sendWaitingNotification(String loginId) {
+        try {
+            log.info("📋 Sending waiting notification to user: {}", loginId);
+            
+            String waitingMessage = "매칭 대기 중입니다. 상대방을 찾고 있어요...";
+            
+            // 사용자별 큐로 전송
+            messagingTemplate.convertAndSendToUser(loginId, "/queue/match-status", waitingMessage);
+            
+            // 테스트용: 공통 토픽으로도 전송
+            messagingTemplate.convertAndSend("/topic/match-status", waitingMessage);
+            
+            log.info("✅ Waiting notification sent to: {}", loginId);
+        } catch (Exception e) {
+            log.error("❌ Failed to send waiting notification to user {}: {}", loginId, e.getMessage());
         }
     }
 }
