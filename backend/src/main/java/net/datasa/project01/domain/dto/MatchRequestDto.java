@@ -3,6 +3,7 @@ package net.datasa.project01.domain.dto;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.ToString;
 
 import java.util.List;
 
@@ -11,6 +12,7 @@ import java.util.List;
  */
 @Getter
 @Setter
+@ToString
 public class MatchRequestDto {
 
     @NotBlank(message = "희망 성별은 필수 선택 항목입니다.")
