@@ -7,7 +7,7 @@
           <div v-if="!matchFound" class="text-center py-8">
             <v-progress-circular indeterminate color="pink" size="64" class="mb-4"></v-progress-circular>
             <div class="text-h6 mb-2">매칭 상대를 찾고 있습니다...</div>
-            <div class="text-caption text-medium-emphasis">잠시만 기다려주세요</div>
+            <div class="text-caption text-medium-emphasis">{{ sessionStatus }}</div>
           </div>
 
           <!-- 매칭 성공 시 -->
@@ -101,28 +101,60 @@ async function setupWebSocket() {
   console.log('Setting up WebSocket connection...')
   stompClient = createStompClient(token)
   
-  stompClient.onConnect = () => {
+  stompClient.onConnect = (frame) => {
     console.log('✅ Connected to WebSocket for matching results')
+    console.log('Connection frame:', frame)
     connectionAttempts.value = 0
     
-    // 매칭 결과 구독
-    const subscription = stompClient.subscribe('/user/queue/match-results', (message) => {
-      console.log('📨 Received match result:', message.body)
+    try {
+      // 매칭 결과 구독 - 더 안전한 방식으로 구독
+      const subscription = stompClient.subscribe('/user/queue/match-results', (message) => {
+        console.log('📨 Received match result:', message.body)
+        
+        try {
+          const matchResult = JSON.parse(message.body)
+          handleMatchResult(matchResult)
+        } catch (error) {
+          console.error('❌ Error parsing match result:', error)
+        }
+      }, {
+        // 구독 헤더에 토큰 추가 (필요한 경우)
+        'Authorization': `Bearer ${token}`
+      })
       
-      try {
-        const matchResult = JSON.parse(message.body)
-        handleMatchResult(matchResult)
-      } catch (error) {
-        console.error('❌ Error parsing match result:', error)
-      }
-    })
-    
-    console.log('✅ Subscribed to /user/queue/match-results')
+      console.log('✅ Subscribed to /user/queue/match-results')
+      
+      // 테스트용 공통 토픽도 구독 (매칭 상대가 없을 때 테스트용)
+      const testSubscription = stompClient.subscribe('/topic/match-results', (message) => {
+        console.log('📨 Received test match result:', message.body)
+        try {
+          const matchResult = JSON.parse(message.body)
+          handleMatchResult(matchResult)
+        } catch (error) {
+          console.error('❌ Error parsing test match result:', error)
+        }
+      })
+      
+      // 대기 상태 알림 구독
+      const statusSubscription = stompClient.subscribe('/topic/match-status', (message) => {
+        console.log('📋 Received match status:', message.body)
+        sessionStatus.value = message.body || '매칭 대기 중...'
+      })
+      
+      const userStatusSubscription = stompClient.subscribe('/user/queue/match-status', (message) => {
+        console.log('📋 Received user match status:', message.body)
+        sessionStatus.value = message.body || '매칭 대기 중...'
+      })
+      
+    } catch (subscribeError) {
+      console.error('❌ Subscription error:', subscribeError)
+    }
   }
 
   stompClient.onStompError = (frame) => {
-    console.error('❌ STOMP error:', frame.headers['message'])
+    console.error('❌ STOMP error:', frame.headers?.message || 'Unknown error')
     console.error('Details:', frame.body)
+    console.error('Full frame:', frame)
     
     // 연결 재시도
     if (connectionAttempts.value < maxConnectionAttempts) {
@@ -143,6 +175,11 @@ async function setupWebSocket() {
 
   stompClient.onWebSocketClose = (event) => {
     console.log('🔌 WebSocket connection closed:', event)
+  }
+
+  // 연결 전 디버그 정보
+  stompClient.debug = (str) => {
+    console.log('🔍 STOMP Debug:', str)
   }
 
   try {
