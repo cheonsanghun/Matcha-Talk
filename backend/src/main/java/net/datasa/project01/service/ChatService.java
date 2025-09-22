@@ -1,27 +1,37 @@
 package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
+import net.datasa.project01.domain.dto.ChatFileResource;
+import net.datasa.project01.domain.dto.ChatMessageRequestDto;
+import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.RoomMember;
+import net.datasa.project01.domain.entity.RoomMessage;
 import net.datasa.project01.domain.entity.User;
-
 import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.RoomMessageRepository;
 import net.datasa.project01.repository.RoomRepository;
 import net.datasa.project01.repository.UserRepository;
-import net.datasa.project01.domain.dto.ChatMessageRequestDto;
-import net.datasa.project01.domain.dto.ChatMessageResponseDto;
-import net.datasa.project01.domain.entity.RoomMessage;
-
+import net.datasa.project01.service.TranslationService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
-import net.datasa.project01.service.TranslationService;
-
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +42,9 @@ public class ChatService {
     private final UserRepository userRepository;
     private final RoomMessageRepository roomMessageRepository;
     private final TranslationService translationService;
+
+    @Value("${chat.storage-dir:uploads/chat}")
+    private String chatStorageDir;
 
     // TODO: 알림 서비스 추가 (Push Notification)
     // private final NotificationService notificationService;
@@ -98,18 +111,64 @@ public class ChatService {
             }
         }
 
-        LocalDateTime sentAt = savedMessage.getCreatedAt();
-        if (sentAt == null) {
-            sentAt = LocalDateTime.now();
+        return buildResponse(savedMessage, translatedText);
+    }
+
+    @Transactional
+    public ChatMessageResponseDto storeFileMessage(Long roomId, MultipartFile multipartFile, String loginId) {
+        if (multipartFile == null || multipartFile.isEmpty()) {
+            throw new IllegalArgumentException("업로드할 파일이 존재하지 않습니다.");
         }
 
-        return ChatMessageResponseDto.builder()
-                .roomId(room.getRoomId())
-                .senderNickName(sender.getNickName())
-                .content(savedMessage.getTextContent())
-                .translatedContent(translatedText)
-                .sentAt(sentAt)
-                .build();
+        User sender = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+        String originalFilename = StringUtils.cleanPath(multipartFile.getOriginalFilename() == null
+                ? "file"
+                : multipartFile.getOriginalFilename());
+        String mimeType = multipartFile.getContentType() != null
+                ? multipartFile.getContentType()
+                : "application/octet-stream";
+        RoomMessage.ContentType contentType = mimeType.toLowerCase().startsWith("image/")
+                ? RoomMessage.ContentType.IMAGE
+                : RoomMessage.ContentType.FILE;
+
+        Path storedPath = storeFileOnDisk(roomId, multipartFile, originalFilename);
+
+        RoomMessage savedMessage = roomMessageRepository.saveAndFlush(RoomMessage.builder()
+                .room(room)
+                .sender(sender)
+                .contentType(contentType)
+                .fileName(originalFilename)
+                .filePath(buildRelativePath(roomId, storedPath.getFileName().toString()))
+                .mimeType(mimeType)
+                .sizeBytes(multipartFile.getSize())
+                .build());
+
+        return buildResponse(savedMessage, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ChatFileResource loadFileResource(Long messageId) {
+        RoomMessage message = roomMessageRepository.findById(messageId)
+                .orElseThrow(() -> new IllegalArgumentException("메시지를 찾을 수 없습니다."));
+
+        if (message.getFilePath() == null) {
+            throw new IllegalArgumentException("파일이 첨부된 메시지가 아닙니다.");
+        }
+
+        try {
+            Path filePath = Paths.get(chatStorageDir).resolve(message.getFilePath()).normalize();
+            Resource resource = new UrlResource(filePath.toUri());
+            if (!resource.exists() || !resource.isReadable()) {
+                throw new IllegalArgumentException("파일을 찾을 수 없거나 읽을 수 없습니다.");
+            }
+            return new ChatFileResource(resource, message.getFileName(), message.getMimeType());
+        } catch (IOException e) {
+            throw new IllegalStateException("파일을 불러오는 중 오류가 발생했습니다.", e);
+        }
     }
     @Transactional
     public Room createPrivateRoom(User user1, User user2) {
@@ -136,6 +195,61 @@ public class ChatService {
         roomMemberRepository.saveAll(java.util.List.of(member1, member2)); // 두 멤버를 한 번에 저장
 
         return newRoom;
+    }
+
+    private ChatMessageResponseDto buildResponse(RoomMessage message, String translatedText) {
+        LocalDateTime sentAt = message.getCreatedAt();
+        if (sentAt == null) {
+            sentAt = LocalDateTime.now();
+        }
+
+        String fileUrl = null;
+        if (message.getMessageId() != null && message.getFilePath() != null) {
+            fileUrl = "/api/chat/files/" + message.getMessageId();
+        }
+
+        return ChatMessageResponseDto.builder()
+                .roomId(message.getRoom().getRoomId())
+                .senderNickName(message.getSender() != null ? message.getSender().getNickName() : null)
+                .content(message.getTextContent())
+                .translatedContent(translatedText)
+                .contentType(message.getContentType() != null ? message.getContentType().name() : null)
+                .fileName(message.getFileName())
+                .fileUrl(fileUrl)
+                .mimeType(message.getMimeType())
+                .sizeBytes(message.getSizeBytes())
+                .sentAt(sentAt)
+                .build();
+    }
+
+    private Path storeFileOnDisk(Long roomId, MultipartFile multipartFile, String originalFilename) {
+        try {
+            Path root = Paths.get(chatStorageDir).toAbsolutePath().normalize();
+            Files.createDirectories(root);
+
+            Path roomDirectory = root.resolve(String.valueOf(roomId));
+            Files.createDirectories(roomDirectory);
+
+            String extension = "";
+            int lastDot = originalFilename.lastIndexOf('.');
+            if (lastDot >= 0) {
+                extension = originalFilename.substring(lastDot);
+            }
+            String storedFileName = UUID.randomUUID() + extension;
+            Path destination = roomDirectory.resolve(storedFileName);
+
+            try (InputStream inputStream = multipartFile.getInputStream()) {
+                Files.copy(inputStream, destination, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            return destination;
+        } catch (IOException e) {
+            throw new IllegalStateException("파일을 저장하는 중 오류가 발생했습니다.", e);
+        }
+    }
+
+    private String buildRelativePath(Long roomId, String storedFileName) {
+        return roomId + "/" + storedFileName;
     }
 
     // TODO: 추가 필요한 메서드들

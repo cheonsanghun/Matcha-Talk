@@ -14,5 +14,10 @@ public class ChatMessageResponseDto {
     private final String senderNickName;
     private final String content;
     private final String translatedContent; // 번역된 메시지를 담을 필드
+    private final String contentType;
+    private final String fileName;
+    private final String fileUrl;
+    private final String mimeType;
+    private final Long sizeBytes;
     private final LocalDateTime sentAt;
 }
