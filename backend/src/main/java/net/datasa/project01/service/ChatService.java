@@ -1,27 +1,26 @@
 package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
+import net.datasa.project01.domain.dto.ChatMessageRequestDto;
+import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.RoomMember;
+import net.datasa.project01.domain.entity.RoomMessage;
 import net.datasa.project01.domain.entity.User;
-
 import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.RoomMessageRepository;
 import net.datasa.project01.repository.RoomRepository;
 import net.datasa.project01.repository.UserRepository;
-import net.datasa.project01.domain.dto.ChatMessageRequestDto;
-import net.datasa.project01.domain.dto.ChatMessageResponseDto;
-import net.datasa.project01.domain.entity.RoomMessage;
-
+import org.springframework.core.io.Resource;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import net.datasa.project01.service.TranslationService;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -32,13 +31,7 @@ public class ChatService {
     private final UserRepository userRepository;
     private final RoomMessageRepository roomMessageRepository;
     private final TranslationService translationService;
-
-    // TODO: 알림 서비스 추가 (Push Notification)
-    // private final NotificationService notificationService;
-    // TODO: 파일 업로드 서비스 추가
-    // private final FileUploadService fileUploadService;
-    // TODO: 커비너 세션 및 캐시 관리
-    // private final RedisTemplate<String, Object> redisTemplate;
+    private final FileStorageService fileStorageService;
 
     @Transactional
     public Room createGroupRoom() {
@@ -51,34 +44,34 @@ public class ChatService {
         User creator = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-        // 2. 새로운 Room 엔티티를 생성하고 데이터베이스에 저장
         Room newRoom = Room.builder()
-                .roomType(Room.RoomType.GROUP) // Enum 타입 직접 사용
-                .capacity(4) // 그룹방의 최대 인원은 4명으로 고정
+                .roomType(Room.RoomType.GROUP)
+                .capacity(4)
                 .build();
         roomRepository.save(newRoom);
 
-        // 3. 방을 만든 사람을 해당 방의 첫 멤버이자 방장(HOST)으로 추가
         RoomMember newMember = RoomMember.builder()
                 .room(newRoom)
                 .user(creator)
-                .role("HOST") // DB 스키마에 정의된 enum 값
+                .role("HOST")
                 .build();
         roomMemberRepository.save(newMember);
 
-        // TODO: 방 생성 알림 전송
-        // TODO: 방 생성 로그 기록
         return newRoom;
     }
 
     @Transactional
     public ChatMessageResponseDto processMessage(ChatMessageRequestDto requestDto, String loginId) {
+        if (requestDto.getRoomId() == null) {
+            throw new IllegalArgumentException("대상 채팅방 정보가 필요합니다.");
+        }
         User sender = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
         Room room = roomRepository.findById(requestDto.getRoomId())
                 .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
 
-        // 1. 원본 메시지를 DB에 저장
+        assertRoomMembership(room.getRoomId(), sender.getUserPid());
+
         RoomMessage savedMessage = roomMessageRepository.saveAndFlush(RoomMessage.builder()
                 .room(room)
                 .sender(sender)
@@ -86,11 +79,11 @@ public class ChatService {
                 .textContent(requestDto.getContent())
                 .build());
 
-        String originalText = savedMessage.getTextContent();
+        String originalText = Objects.requireNonNullElse(savedMessage.getTextContent(), "");
         String sourceLang = sender.getLanguageCode();
         String translatedText = originalText;
 
-        if (originalText != null && !originalText.isBlank() && sourceLang != null) {
+        if (!originalText.isBlank() && sourceLang != null) {
             if ("ko".equalsIgnoreCase(sourceLang)) {
                 translatedText = translationService.translate(originalText, "ko", "ja");
             } else if ("ja".equalsIgnoreCase(sourceLang)) {
@@ -98,29 +91,88 @@ public class ChatService {
             }
         }
 
-        LocalDateTime sentAt = savedMessage.getCreatedAt();
-        if (sentAt == null) {
-            sentAt = LocalDateTime.now();
-        }
+        LocalDateTime sentAt = Objects.requireNonNullElseGet(savedMessage.getCreatedAt(), LocalDateTime::now);
 
         return ChatMessageResponseDto.builder()
+                .messageId(savedMessage.getMessageId())
                 .roomId(room.getRoomId())
+                .contentType(savedMessage.getContentType())
                 .senderNickName(sender.getNickName())
                 .content(savedMessage.getTextContent())
                 .translatedContent(translatedText)
                 .sentAt(sentAt)
                 .build();
     }
+
+    @Transactional
+    public ChatMessageResponseDto processFileMessage(Long roomId, MultipartFile multipartFile, String loginId) {
+        if (roomId == null) {
+            throw new IllegalArgumentException("대상 채팅방 정보가 필요합니다.");
+        }
+        User sender = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+        assertRoomMembership(room.getRoomId(), sender.getUserPid());
+
+        FileStorageService.StoredFile storedFile = fileStorageService.store(multipartFile, "room-" + room.getRoomId());
+        RoomMessage.ContentType contentType = determineContentType(storedFile.getContentType());
+
+        RoomMessage savedMessage = roomMessageRepository.saveAndFlush(RoomMessage.builder()
+                .room(room)
+                .sender(sender)
+                .contentType(contentType)
+                .fileName(storedFile.getOriginalFileName())
+                .filePath(storedFile.getRelativePath())
+                .mimeType(storedFile.getContentType())
+                .sizeBytes(storedFile.getSize())
+                .build());
+
+        LocalDateTime sentAt = Objects.requireNonNullElseGet(savedMessage.getCreatedAt(), LocalDateTime::now);
+
+        return ChatMessageResponseDto.builder()
+                .messageId(savedMessage.getMessageId())
+                .roomId(room.getRoomId())
+                .contentType(savedMessage.getContentType())
+                .senderNickName(sender.getNickName())
+                .fileName(savedMessage.getFileName())
+                .fileUrl(buildFileUrl(room.getRoomId(), savedMessage.getMessageId()))
+                .mimeType(savedMessage.getMimeType())
+                .fileSize(savedMessage.getSizeBytes())
+                .sentAt(sentAt)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public FileDownload getFileForDownload(Long roomId, Long messageId, String loginId) {
+        User user = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        RoomMessage message = roomMessageRepository.findById(messageId)
+                .orElseThrow(() -> new IllegalArgumentException("메시지를 찾을 수 없습니다."));
+
+        if (!message.getRoom().getRoomId().equals(roomId)) {
+            throw new IllegalArgumentException("파일이 요청된 방에 존재하지 않습니다.");
+        }
+        assertRoomMembership(roomId, user.getUserPid());
+
+        if (message.getFilePath() == null) {
+            throw new IllegalStateException("파일이 첨부된 메시지가 아닙니다.");
+        }
+
+        Resource resource = fileStorageService.loadAsResource(message.getFilePath());
+        String fileName = message.getFileName() != null ? message.getFileName() : "download";
+        return new FileDownload(resource, fileName, message.getMimeType());
+    }
+
     @Transactional
     public Room createPrivateRoom(User user1, User user2) {
-        // 1. 새로운 PRIVATE 타입의 방 생성
         Room newRoom = Room.builder()
                 .roomType(Room.RoomType.PRIVATE)
                 .capacity(2)
                 .build();
         roomRepository.save(newRoom);
 
-        // 2. 두 명의 사용자를 멤버로 추가
         RoomMember member1 = RoomMember.builder()
                 .room(newRoom)
                 .user(user1)
@@ -133,21 +185,28 @@ public class ChatService {
                 .role("MEMBER")
                 .build();
 
-        roomMemberRepository.saveAll(java.util.List.of(member1, member2)); // 두 멤버를 한 번에 저장
-
+        roomMemberRepository.saveAll(java.util.List.of(member1, member2));
         return newRoom;
     }
 
-    // TODO: 추가 필요한 메서드들
-    // public void joinRoom(Long roomId, String loginId) { }
-    // public void leaveRoom(Long roomId, String loginId) { }
-    // public List<RoomResponseDto> getUserRooms(String loginId) { }
-    // public List<ChatMessageResponseDto> getMessageHistory(Long roomId, int page, int size) { }
-    // public void deleteMessage(Long messageId, String loginId) { }
-    // public void updateMessage(Long messageId, String newContent, String loginId) { }
-    // public void uploadFile(Long roomId, MultipartFile file, String loginId) { }
-    // public void markMessageAsRead(Long messageId, String loginId) { }
-    // public int getUnreadMessageCount(String loginId) { }
-    // public void kickMember(Long roomId, String targetLoginId, String adminLoginId) { }
-    // public void updateRoomSettings(Long roomId, RoomSettingsDto settings, String loginId) { }
+    private void assertRoomMembership(Long roomId, Long userPid) {
+        boolean isMember = roomMemberRepository.existsByRoom_RoomIdAndUser_UserPidAndLeftAtIsNull(roomId, userPid);
+        if (!isMember) {
+            throw new IllegalStateException("채팅방에 참여 중인 사용자만 메시지를 전송하거나 파일에 접근할 수 있습니다.");
+        }
+    }
+
+    private RoomMessage.ContentType determineContentType(String mimeType) {
+        if (mimeType != null && mimeType.toLowerCase().startsWith("image/")) {
+            return RoomMessage.ContentType.IMAGE;
+        }
+        return RoomMessage.ContentType.FILE;
+    }
+
+    private String buildFileUrl(Long roomId, Long messageId) {
+        return String.format("/api/rooms/%d/files/%d", roomId, messageId);
+    }
+
+    public record FileDownload(Resource resource, String fileName, String mimeType) {
+    }
 }

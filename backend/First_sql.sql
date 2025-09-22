@@ -110,15 +110,18 @@ CREATE TABLE match_requests
     max_age        INT         NOT NULL,                                                                   -- 최대 나이
     region_code    VARCHAR(10) NOT NULL,                                                                   -- 희망 지역
     interests_json JSON        NOT NULL,                                                                   -- 관심사 배열(JSON)
+    room_id        BIGINT NULL,                                                                            -- 생성된 방 FK
     status         VARCHAR(10) NOT NULL DEFAULT 'WAITING'                                                  -- 대기/매칭/취소
-        CHECK (status IN ('WAITING', 'MATCHED', 'CANCELLED')),
+        CHECK (status IN ('WAITING', 'MATCHED', 'CONFIRMED', 'DECLINED', 'CANCELLED')),
     requested_at   TIMESTAMP            DEFAULT CURRENT_TIMESTAMP,                                         -- 요청시각
     CONSTRAINT fk_mr_user FOREIGN KEY (user_pid) REFERENCES users (user_pid) ON DELETE CASCADE,
+    CONSTRAINT fk_mr_room FOREIGN KEY (room_id) REFERENCES rooms (room_id) ON DELETE SET NULL,
     CONSTRAINT ck_mr_age_range CHECK (max_age >= min_age),
 
     -- 인덱스(매칭 스캔)
     INDEX          idx_mr_match_scan (status, choice_gender, region_code, min_age, max_age, requested_at), -- 조건+FIFO
-    INDEX          idx_mr_user (user_pid)                                                                  -- 사용자별 최신 요청 조회
+    INDEX          idx_mr_user (user_pid),                                                                 -- 사용자별 최신 요청 조회
+    INDEX          idx_mr_room (room_id)
 );
 
 /* =========================================
