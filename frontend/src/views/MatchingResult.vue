@@ -35,7 +35,15 @@
             </v-col>
             <v-col cols="12" md="3">
               <v-card variant="outlined" class="pa-4 h-100 chat-wrapper d-flex flex-column">
-                <ChatPanel class="flex-grow-1" :partner="partnerNameDisplay" />
+                <ChatPanel
+                  class="flex-grow-1"
+                  :partner="partnerNameDisplay"
+                  :messages="chatMessages"
+                  :sending="isSendingChat"
+                  :uploading="isUploadingFile"
+                  :on-send="handleSendChatMessage"
+                  :on-send-file="handleUploadFile"
+                />
               </v-card>
             </v-col>
           </v-row>
@@ -78,6 +86,7 @@ import { useRouter } from 'vue-router'
 import ChatPanel from '../components/ChatPanel.vue'
 import { createStompClient } from '../services/ws'
 import { setupSignalRoutes } from '../services/signaling'
+import { setupChat } from '../services/chat'
 import { useAuthStore } from '../stores/auth'
 import { useMatchStore } from '../stores/match'
 import api from '../services/api'
@@ -90,11 +99,15 @@ const localVideo = ref(null)
 const remoteVideo = ref(null)
 const localStream = ref(null)
 const hasRemoteStream = ref(false)
+const chatMessages = ref([])
+const isSendingChat = ref(false)
+const isUploadingFile = ref(false)
 const actionLoading = reactive({ accept: false, decline: false })
 
 const partnerAvatarFallback = 'https://via.placeholder.com/96?text=User'
 
 const meLoginId = computed(() => auth.user?.loginId || auth.user?.login_id || auth.user?.loginID || null)
+const myNickname = computed(() => auth.user?.nickname || auth.user?.nickName || auth.user?.nick_name || '')
 const partnerNameDisplay = computed(() => matchStore.partnerNickName || '상대 대기 중')
 const isMatched = computed(() => matchStore.isMatched)
 const waitingStatusText = computed(() =>
@@ -130,6 +143,8 @@ let matchSubscription = null
 let signalRoute = null
 let pc = null
 const offerCreated = ref(false)
+let chatRoute = null
+let chatRoomId = null
 
 if (!shouldInitialize.value) {
   router.replace('/match')
@@ -172,12 +187,82 @@ function handleMatchMessage(frame) {
     if (payload.eventType === 'MATCH_FOUND') {
       offerCreated.value = false
       hasRemoteStream.value = false
+      chatMessages.value = []
     }
     matchStore.applyMatchEvent(payload)
+    ensureChatRoute()
     void ensurePeerConnection()
   } catch (error) {
     console.error('매칭 이벤트 처리 실패', error)
   }
+}
+
+function handleIncomingChatMessage(payload) {
+  if (!payload) {
+    return
+  }
+  try {
+    const sentAt = payload.sentAt ? new Date(payload.sentAt) : new Date()
+    let sizeValue = null
+    if (typeof payload.sizeBytes === 'number') {
+      sizeValue = payload.sizeBytes
+    } else if (payload.sizeBytes !== null && payload.sizeBytes !== undefined) {
+      const parsed = Number(payload.sizeBytes)
+      if (Number.isFinite(parsed)) {
+        sizeValue = parsed
+      }
+    }
+    chatMessages.value.push({
+      id: `${payload.roomId ?? ''}-${sentAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+      roomId: payload.roomId,
+      senderNickName: payload.senderNickName,
+      content: payload.content ?? '',
+      translatedContent: payload.translatedContent ?? '',
+      contentType: payload.contentType ?? 'TEXT',
+      fileName: payload.fileName ?? '',
+      fileUrl: payload.fileUrl ?? '',
+      mimeType: payload.mimeType ?? '',
+      sizeBytes: Number.isFinite(sizeValue) ? sizeValue : null,
+      sentAt,
+      fromMe: !!payload.senderNickName && payload.senderNickName === myNickname.value,
+    })
+  } catch (error) {
+    console.error('채팅 메시지 처리 실패', error)
+  }
+}
+
+function ensureChatRoute() {
+  if (!connected.value || !client.value || !matchStore.roomId || !isMatched.value) {
+    if (!matchStore.roomId) {
+      chatMessages.value = []
+    }
+    teardownChatRoute()
+    return
+  }
+
+  if (chatRoute && chatRoomId === matchStore.roomId) {
+    return
+  }
+
+  const shouldReset = chatRoomId !== matchStore.roomId
+  teardownChatRoute()
+  if (shouldReset) {
+    chatMessages.value = []
+  }
+  chatRoute = setupChat(client.value, matchStore.roomId, {
+    onChat: handleIncomingChatMessage,
+  })
+  chatRoomId = matchStore.roomId
+}
+
+function teardownChatRoute() {
+  if (chatRoute?.unsubscribe) {
+    chatRoute.unsubscribe()
+  } else if (chatRoute?.subscription?.unsubscribe) {
+    chatRoute.subscription.unsubscribe()
+  }
+  chatRoute = null
+  chatRoomId = null
 }
 
 async function ensurePeerConnection() {
@@ -295,6 +380,56 @@ function teardownPeerConnection() {
   hasRemoteStream.value = false
 }
 
+async function handleSendChatMessage(text) {
+  if (!text) {
+    return
+  }
+  if (!client.value || !connected.value || !matchStore.roomId) {
+    throw new Error('채팅방이 아직 준비되지 않았습니다.')
+  }
+
+  try {
+    isSendingChat.value = true
+    if (chatRoute?.sendChat) {
+      chatRoute.sendChat({ content: text })
+    } else {
+      client.value.publish({
+        destination: `/app/chat.sendMessage/${matchStore.roomId}`,
+        body: JSON.stringify({ roomId: matchStore.roomId, content: text }),
+      })
+    }
+  } catch (error) {
+    console.error('채팅 메시지 전송 실패', error)
+    throw error instanceof Error ? error : new Error('채팅 메시지 전송에 실패했습니다.')
+  } finally {
+    isSendingChat.value = false
+  }
+}
+
+async function handleUploadFile(file) {
+  if (!file) {
+    return
+  }
+  if (!matchStore.roomId) {
+    throw new Error('채팅방이 아직 준비되지 않았습니다.')
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  try {
+    isUploadingFile.value = true
+    await api.post(`/chat/rooms/${matchStore.roomId}/files`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  } catch (error) {
+    console.error('파일 업로드 실패', error)
+    throw error instanceof Error ? error : new Error('파일 업로드 중 오류가 발생했습니다.')
+  } finally {
+    isUploadingFile.value = false
+  }
+}
+
 async function acceptMatch() {
   if (acceptDisabled.value) {
     return
@@ -347,6 +482,32 @@ watch(
   (closed) => {
     if (closed) {
       teardownPeerConnection()
+      teardownChatRoute()
+      chatMessages.value = []
+    }
+  }
+)
+
+watch(
+  () => [connected.value, matchStore.roomId],
+  () => {
+    if (!connected.value || !matchStore.roomId) {
+      if (!matchStore.roomId) {
+        chatMessages.value = []
+      }
+      teardownChatRoute()
+      return
+    }
+    ensureChatRoute()
+  }
+)
+
+watch(
+  () => matchStore.state,
+  (state) => {
+    if (state !== 'MATCHED') {
+      teardownChatRoute()
+      chatMessages.value = []
     }
   }
 )
@@ -362,6 +523,7 @@ onMounted(async () => {
   client.value.onConnect = () => {
     connected.value = true
     matchSubscription = client.value.subscribe('/user/queue/match-results', handleMatchMessage)
+    ensureChatRoute()
     void ensurePeerConnection()
   }
   client.value.onDisconnect = () => {
@@ -369,10 +531,12 @@ onMounted(async () => {
     matchSubscription?.unsubscribe()
     matchSubscription = null
     teardownPeerConnection()
+    teardownChatRoute()
   }
   client.value.activate()
 
   if (isMatched.value) {
+    ensureChatRoute()
     void ensurePeerConnection()
   }
 })
@@ -386,6 +550,7 @@ onBeforeUnmount(() => {
   signalRoute = null
   client.value?.deactivate?.()
   teardownPeerConnection()
+  teardownChatRoute()
   if (localStream.value) {
     localStream.value.getTracks().forEach((track) => track.stop())
   }
