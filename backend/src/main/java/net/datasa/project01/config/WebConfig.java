@@ -1,8 +1,12 @@
 package net.datasa.project01.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import java.nio.file.Path;
 
 /**
  * Global CORS configuration for the application.
@@ -10,6 +14,12 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
+
+    @Value("${chat.files.storage-path:uploads/chat}")
+    private String storagePath;
+
+    @Value("${chat.files.public-url-prefix:/files/chat}")
+    private String publicUrlPrefix;
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
@@ -24,5 +34,16 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);
+    }
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        String pattern = publicUrlPrefix;
+        if (!pattern.endsWith("/")) {
+            pattern += "/";
+        }
+        String location = Path.of(storagePath).toUri().toString();
+        registry.addResourceHandler(pattern + "**")
+                .addResourceLocations(location);
     }
 }

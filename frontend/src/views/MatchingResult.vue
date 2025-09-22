@@ -13,7 +13,7 @@
             </div>
           </v-row>
           <v-row class="align-center mb-6" v-else>
-            <div class="text-h6 text-pink-darken-2">매칭 대기 중</div>
+            <div class="text-h6 text-pink-darken-2">매칭 대기중입니다</div>
             <div class="text-caption text-medium-emphasis ms-4">{{ waitingStatusText }}</div>
           </v-row>
 
@@ -35,7 +35,14 @@
             </v-col>
             <v-col cols="12" md="3">
               <v-card variant="outlined" class="pa-4 h-100 chat-wrapper d-flex flex-column">
-                <ChatPanel class="flex-grow-1" :partner="partnerNameDisplay" />
+                <ChatPanel
+                  class="flex-grow-1"
+                  :partner="partnerNameDisplay"
+                  :partner-login-id="matchStore.partnerLoginId"
+                  :room-id="matchStore.roomId"
+                  :client="client"
+                  :connected="connected"
+                />
               </v-card>
             </v-col>
           </v-row>
@@ -97,14 +104,16 @@ const partnerAvatarFallback = 'https://via.placeholder.com/96?text=User'
 const meLoginId = computed(() => auth.user?.loginId || auth.user?.login_id || auth.user?.loginID || null)
 const partnerNameDisplay = computed(() => matchStore.partnerNickName || '상대 대기 중')
 const isMatched = computed(() => matchStore.isMatched)
-const waitingStatusText = computed(() =>
-  matchStore.waitingCount > 0
-    ? '매칭 중입니다. 잠시만 기다려주세요.'
-    : '현재 대기 중인 사용자가 없습니다.'
-)
-const statusMessage = computed(() =>
-  matchStore.statusMessage || (isMatched.value ? '상대의 준비를 기다리는 중입니다.' : waitingStatusText.value)
-)
+const WAITING_MESSAGE = '매칭 대기중입니다'
+const MATCHED_MESSAGE = '매칭이 되었습니다'
+
+const waitingStatusText = computed(() => WAITING_MESSAGE)
+const statusMessage = computed(() => {
+  if (matchStore.statusMessage) {
+    return matchStore.statusMessage
+  }
+  return isMatched.value ? MATCHED_MESSAGE : WAITING_MESSAGE
+})
 const decisionFinalized = computed(() => matchStore.sessionClosed || matchStore.bothConfirmed)
 const acceptDisabled = computed(
   () =>
@@ -202,11 +211,12 @@ async function ensurePeerConnection() {
     }
     pc.onicecandidate = (event) => {
       if (event.candidate && signalRoute) {
-        signalRoute.sendSignal({
-          type: 'ice-candidate',
-          receiverLoginId: matchStore.partnerLoginId,
-          data: event.candidate,
-        })
+    signalRoute.sendSignal({
+      type: 'ice-candidate',
+      receiverLoginId: matchStore.partnerLoginId,
+      roomId: matchStore.roomId,
+      data: event.candidate,
+    })
       }
     }
     pc.onconnectionstatechange = () => {
@@ -238,6 +248,7 @@ async function createOffer() {
     signalRoute.sendSignal({
       type: 'offer',
       receiverLoginId: matchStore.partnerLoginId,
+      roomId: matchStore.roomId,
       data: offer,
     })
     offerCreated.value = true
@@ -248,6 +259,9 @@ async function createOffer() {
 
 async function handleSignal(message) {
   if (!message) {
+    return
+  }
+  if (message.roomId && matchStore.roomId && message.roomId !== matchStore.roomId) {
     return
   }
   if (!pc) {
@@ -266,6 +280,7 @@ async function handleSignal(message) {
       signalRoute?.sendSignal({
         type: 'answer',
         receiverLoginId: matchStore.partnerLoginId,
+        roomId: matchStore.roomId,
         data: answer,
       })
     } else if (message.type === 'answer') {

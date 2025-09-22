@@ -13,5 +13,6 @@ public class SignalMessage {
     private String type; // 신호 타입
     private String senderLoginId; // 보내는 사람 로그인 id
     private String receiverLoginId; // 받는 사람 로그인 id
+    private Long roomId; // 연결이 속한 채팅방 ID
     private Object data; // 실제 WebRTC 신호 데이터
 }

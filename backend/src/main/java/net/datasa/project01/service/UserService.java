@@ -120,6 +120,11 @@ public class UserService {
         return UserResponse.fromEntity(user);
     }
 
+    public User getByLoginId(String loginId) {
+        return userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+    }
+
     /**
      * 회원 단건 조회 메서드
      * - 회원 PK로 회원 정보를 조회하여 응답 DTO로 반환합니다.

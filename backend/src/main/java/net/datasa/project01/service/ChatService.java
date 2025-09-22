@@ -1,27 +1,39 @@
 package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
+import net.datasa.project01.domain.dto.ChatMessageRequestDto;
+import net.datasa.project01.domain.dto.ChatMessageResponseDto;
+import net.datasa.project01.domain.dto.RoomDetailResponseDto;
+import net.datasa.project01.domain.dto.RoomParticipantDto;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.RoomMember;
+import net.datasa.project01.domain.entity.RoomMessage;
 import net.datasa.project01.domain.entity.User;
-
 import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.RoomMessageRepository;
 import net.datasa.project01.repository.RoomRepository;
 import net.datasa.project01.repository.UserRepository;
-import net.datasa.project01.domain.dto.ChatMessageRequestDto;
-import net.datasa.project01.domain.dto.ChatMessageResponseDto;
-import net.datasa.project01.domain.entity.RoomMessage;
-
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
-import net.datasa.project01.service.TranslationService;
-
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +44,12 @@ public class ChatService {
     private final UserRepository userRepository;
     private final RoomMessageRepository roomMessageRepository;
     private final TranslationService translationService;
+
+    @Value("${chat.files.storage-path:uploads/chat}")
+    private String storagePath;
+
+    @Value("${chat.files.public-url-prefix:/files/chat}")
+    private String fileUrlPrefix;
 
     // TODO: 알림 서비스 추가 (Push Notification)
     // private final NotificationService notificationService;
@@ -73,12 +91,10 @@ public class ChatService {
 
     @Transactional
     public ChatMessageResponseDto processMessage(ChatMessageRequestDto requestDto, String loginId) {
-        User sender = userRepository.findByLoginId(loginId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
-        Room room = roomRepository.findById(requestDto.getRoomId())
-                .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+        User sender = findUserByLoginId(loginId);
+        Room room = findRoomById(requestDto.getRoomId());
+        validateMembership(room, sender);
 
-        // 1. 원본 메시지를 DB에 저장
         RoomMessage savedMessage = roomMessageRepository.saveAndFlush(RoomMessage.builder()
                 .room(room)
                 .sender(sender)
@@ -86,30 +102,229 @@ public class ChatService {
                 .textContent(requestDto.getContent())
                 .build());
 
-        String originalText = savedMessage.getTextContent();
-        String sourceLang = sender.getLanguageCode();
-        String translatedText = originalText;
+        return toResponseDto(savedMessage, translateIfNeeded(savedMessage.getTextContent(), sender));
+    }
 
-        if (originalText != null && !originalText.isBlank() && sourceLang != null) {
-            if ("ko".equalsIgnoreCase(sourceLang)) {
-                translatedText = translationService.translate(originalText, "ko", "ja");
-            } else if ("ja".equalsIgnoreCase(sourceLang)) {
-                translatedText = translationService.translate(originalText, "ja", "ko");
-            }
+    @Transactional
+    public ChatMessageResponseDto processFileMessage(Long roomId, MultipartFile file, String loginId) {
+        User sender = findUserByLoginId(loginId);
+        Room room = findRoomById(roomId);
+        validateMembership(room, sender);
+
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("업로드할 파일이 없습니다.");
         }
 
-        LocalDateTime sentAt = savedMessage.getCreatedAt();
-        if (sentAt == null) {
-            sentAt = LocalDateTime.now();
+        try {
+            Path storageRoot = Paths.get(storagePath).toAbsolutePath().normalize();
+            Files.createDirectories(storageRoot);
+
+            String originalFilename = Optional.ofNullable(file.getOriginalFilename()).orElse("upload");
+            String extension = "";
+            int idx = originalFilename.lastIndexOf('.');
+            if (idx > -1) {
+                extension = originalFilename.substring(idx);
+            }
+            String storedName = UUID.randomUUID() + extension;
+            Path target = storageRoot.resolve(storedName);
+            Files.copy(file.getInputStream(), target);
+
+            String mimeType = Optional.ofNullable(file.getContentType()).orElse("application/octet-stream");
+            RoomMessage.ContentType contentType = mimeType.startsWith("image/")
+                    ? RoomMessage.ContentType.IMAGE
+                    : RoomMessage.ContentType.FILE;
+
+            RoomMessage saved = roomMessageRepository.saveAndFlush(RoomMessage.builder()
+                    .room(room)
+                    .sender(sender)
+                    .contentType(contentType)
+                    .fileName(originalFilename)
+                    .filePath(storedName)
+                    .mimeType(mimeType)
+                    .sizeBytes(file.getSize())
+                    .build());
+
+            return toResponseDto(saved, null);
+        } catch (Exception ex) {
+            throw new IllegalStateException("파일 업로드 중 오류가 발생했습니다.", ex);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChatMessageResponseDto> getRecentMessages(Long roomId, int size, String loginId) {
+        Room room = findRoomById(roomId);
+        User user = findUserByLoginId(loginId);
+        validateMembership(room, user);
+
+        PageRequest pageable = PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return roomMessageRepository.findByRoomOrderByCreatedAtDesc(room, pageable)
+                .stream()
+                .sorted(Comparator.comparing(RoomMessage::getCreatedAt))
+                .map(message -> toResponseDto(message, translateIfNeededForViewer(message, user)))
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public Room getOrCreatePrivateRoom(User user1, User user2) {
+        Optional<Room> existing = roomRepository.findPrivateRoomByMemberLogins(
+                user1.getLoginId(), user2.getLoginId());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        Room newRoom = Room.builder()
+                .roomType(Room.RoomType.PRIVATE)
+                .capacity(2)
+                .build();
+        roomRepository.save(newRoom);
+
+        RoomMember member1 = RoomMember.builder()
+                .room(newRoom)
+                .user(user1)
+                .role("MEMBER")
+                .build();
+
+        RoomMember member2 = RoomMember.builder()
+                .room(newRoom)
+                .user(user2)
+                .role("MEMBER")
+                .build();
+
+        roomMemberRepository.saveAll(List.of(member1, member2));
+        return newRoom;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Room> findPrivateRoom(String loginIdA, String loginIdB) {
+        return roomRepository.findPrivateRoomByMemberLogins(loginIdA, loginIdB);
+    }
+
+    @Transactional(readOnly = true)
+    public List<RoomMember> getRoomMembers(Room room) {
+        return roomMemberRepository.findByRoom(room);
+    }
+
+    @Transactional(readOnly = true)
+    public List<RoomDetailResponseDto> getRoomsForUser(String loginId) {
+        List<RoomMember> memberships = roomMemberRepository.findByUserLoginId(loginId);
+        Map<Long, Room> rooms = new LinkedHashMap<>();
+        for (RoomMember membership : memberships) {
+            Room room = membership.getRoom();
+            rooms.putIfAbsent(room.getRoomId(), room);
+        }
+        return rooms.values().stream()
+                .map(this::buildRoomDetail)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public RoomDetailResponseDto getRoomDetail(Long roomId, String loginId) {
+        Room room = findRoomById(roomId);
+        User user = findUserByLoginId(loginId);
+        validateMembership(room, user);
+        return buildRoomDetail(room);
+    }
+
+    private User findUserByLoginId(String loginId) {
+        return userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+    }
+
+    private Room findRoomById(Long roomId) {
+        return roomRepository.findById(roomId)
+                .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+    }
+
+    private void validateMembership(Room room, User user) {
+        boolean exists = roomMemberRepository.existsByRoomAndUser(room, user);
+        if (!exists) {
+            throw new IllegalArgumentException("해당 채팅방에 참여 중인 사용자만 이용할 수 있습니다.");
+        }
+    }
+
+    private ChatMessageResponseDto toResponseDto(RoomMessage message, String translatedText) {
+        String url = null;
+        if (message.getFilePath() != null) {
+            url = buildFileUrl(message.getFilePath());
         }
 
         return ChatMessageResponseDto.builder()
-                .roomId(room.getRoomId())
-                .senderNickName(sender.getNickName())
-                .content(savedMessage.getTextContent())
+                .roomId(message.getRoom().getRoomId())
+                .messageId(message.getMessageId())
+                .senderLoginId(message.getSender() != null ? message.getSender().getLoginId() : null)
+                .senderNickName(message.getSender() != null ? message.getSender().getNickName() : null)
+                .contentType(message.getContentType())
+                .content(message.getTextContent())
                 .translatedContent(translatedText)
-                .sentAt(sentAt)
+                .fileName(message.getFileName())
+                .fileUrl(url)
+                .mimeType(message.getMimeType())
+                .sizeBytes(message.getSizeBytes())
+                .sentAt(message.getCreatedAt() != null ? message.getCreatedAt() : LocalDateTime.now())
                 .build();
+    }
+
+    private RoomDetailResponseDto buildRoomDetail(Room room) {
+        List<RoomParticipantDto> participants = getRoomMembers(room).stream()
+                .map(this::toParticipantDto)
+                .collect(Collectors.toList());
+        return RoomDetailResponseDto.of(room, participants);
+    }
+
+    private RoomParticipantDto toParticipantDto(RoomMember member) {
+        return new RoomParticipantDto(
+                member.getUser().getUserPid(),
+                member.getUser().getLoginId(),
+                member.getUser().getNickName(),
+                member.getRole()
+        );
+    }
+
+    private String translateIfNeeded(String originalText, User sender) {
+        if (originalText == null || originalText.isBlank()) {
+            return originalText;
+        }
+        String sourceLang = sender.getLanguageCode();
+        if (sourceLang == null) {
+            return originalText;
+        }
+        if ("ko".equalsIgnoreCase(sourceLang)) {
+            return translationService.translate(originalText, "ko", "ja");
+        }
+        if ("ja".equalsIgnoreCase(sourceLang)) {
+            return translationService.translate(originalText, "ja", "ko");
+        }
+        return originalText;
+    }
+
+    private String translateIfNeededForViewer(RoomMessage message, User viewer) {
+        if (message.getContentType() != RoomMessage.ContentType.TEXT) {
+            return null;
+        }
+        if (message.getSender() == null || viewer == null) {
+            return message.getTextContent();
+        }
+        if (message.getSender().getLoginId().equals(viewer.getLoginId())) {
+            return translateIfNeeded(message.getTextContent(), message.getSender());
+        }
+        String viewerLang = viewer.getLanguageCode();
+        if (viewerLang == null || message.getTextContent() == null) {
+            return message.getTextContent();
+        }
+        if ("ko".equalsIgnoreCase(viewerLang)) {
+            return translationService.translate(message.getTextContent(), "ja", "ko");
+        }
+        if ("ja".equalsIgnoreCase(viewerLang)) {
+            return translationService.translate(message.getTextContent(), "ko", "ja");
+        }
+        return message.getTextContent();
+    }
+
+    private String buildFileUrl(String storedFileName) {
+        String prefix = fileUrlPrefix;
+        if (prefix.endsWith("/")) {
+            prefix = prefix.substring(0, prefix.length() - 1);
+        }
+        return prefix + "/" + storedFileName;
     }
     @Transactional
     public Room createPrivateRoom(User user1, User user2) {
