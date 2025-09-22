@@ -1,9 +1,11 @@
 package net.datasa.project01.repository;
 
+import jakarta.persistence.LockModeType;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -27,6 +29,7 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
     List<MatchRequest> findByRoom_RoomId(Long roomId);
 
     // [수정됨] '나의 조건'에 맞는 잠재적 매칭 상대를 찾는 더 간단한 쿼리
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT mr FROM MatchRequest mr JOIN FETCH mr.user u " +
             "WHERE mr.status = :status " +
             "AND u.userPid <> :myPid " +
