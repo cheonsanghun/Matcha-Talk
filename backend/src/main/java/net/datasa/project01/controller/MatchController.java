@@ -90,6 +90,22 @@ public class MatchController {
         }
     }
 
+    @GetMapping("/requests/{requestId}")
+    public ResponseEntity<?> getMatchStatus(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long requestId) {
+        if (userDetails == null) {
+            return ResponseEntity.status(401).body("인증 정보가 필요합니다.");
+        }
+        try {
+            MatchStartResponseDto response = matchService.getMatchStatus(userDetails.getUsername(), requestId);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            log.warn("Match status lookup failed for user {} and request {}: {}", userDetails.getUsername(), requestId, e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     @PostMapping("/requests/{requestId}/accept")
     public ResponseEntity<?> acceptMatch(
             @AuthenticationPrincipal UserDetails userDetails,
