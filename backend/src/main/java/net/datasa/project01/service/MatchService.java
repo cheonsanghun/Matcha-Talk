@@ -177,6 +177,61 @@ public class MatchService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
+    public MatchStartResponseDto getMatchStatus(String loginId, Long requestId) {
+        MatchRequest myRequest = matchRequestRepository.findByRequestIdAndUser_LoginId(requestId, loginId)
+                .orElseThrow(() -> new IllegalArgumentException("매칭 요청을 찾을 수 없습니다."));
+
+        MatchRequest.MatchStatus status = myRequest.getStatus();
+
+        if (status == MatchRequest.MatchStatus.WAITING) {
+            long waitingCount = matchRequestRepository.countByStatusExcludingUser(MatchRequest.MatchStatus.WAITING, myRequest.getUser());
+            String message = waitingCount > 0 ? "다른 사용자를 찾고 있습니다." : "현재 대기 중인 사용자가 없습니다.";
+
+            return MatchStartResponseDto.builder()
+                    .state(MatchStartResponseDto.MatchState.WAITING)
+                    .myRequestId(myRequest.getRequestId())
+                    .waitingCount(waitingCount)
+                    .message(message)
+                    .shouldCreateOffer(false)
+                    .build();
+        }
+
+        if (status == MatchRequest.MatchStatus.MATCHED || status == MatchRequest.MatchStatus.CONFIRMED) {
+            MatchRequest opponent = findOpponentRequest(myRequest.getRoom(), myRequest.getRequestId());
+
+            boolean shouldCreateOffer = false;
+            if (opponent == null) {
+                shouldCreateOffer = true;
+            } else if (myRequest.getRequestedAt() != null && opponent.getRequestedAt() != null) {
+                shouldCreateOffer = myRequest.getRequestedAt().isAfter(opponent.getRequestedAt());
+            }
+
+            return MatchStartResponseDto.builder()
+                    .state(MatchStartResponseDto.MatchState.MATCHED)
+                    .myRequestId(myRequest.getRequestId())
+                    .partnerRequestId(opponent != null ? opponent.getRequestId() : null)
+                    .roomId(myRequest.getRoom() != null ? myRequest.getRoom().getRoomId() : null)
+                    .partnerLoginId(opponent != null ? opponent.getUser().getLoginId() : null)
+                    .partnerNickName(opponent != null ? opponent.getUser().getNickName() : null)
+                    .message("매칭이 성사되었습니다.")
+                    .shouldCreateOffer(shouldCreateOffer)
+                    .build();
+        }
+
+        String message = switch (status) {
+            case DECLINED, CANCELLED -> "매칭이 종료되었습니다.";
+            default -> "현재 매칭 상태를 확인할 수 없습니다.";
+        };
+
+        return MatchStartResponseDto.builder()
+                .state(MatchStartResponseDto.MatchState.WAITING)
+                .myRequestId(myRequest.getRequestId())
+                .message(message)
+                .shouldCreateOffer(false)
+                .build();
+    }
+
     public MatchDecisionResponseDto respondToMatch(String loginId, Long requestId, boolean accept) {
         MatchRequest myRequest = matchRequestRepository.findByRequestIdAndUser_LoginId(requestId, loginId)
                 .orElseThrow(() -> new IllegalArgumentException("매칭 요청을 찾을 수 없습니다."));

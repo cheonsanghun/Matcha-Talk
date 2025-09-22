@@ -145,9 +145,56 @@ let pc = null
 const offerCreated = ref(false)
 let chatRoute = null
 let chatRoomId = null
+const STATUS_POLL_INTERVAL = 2500
+let statusPollTimer = null
 
 if (!shouldInitialize.value) {
   router.replace('/match')
+}
+
+function stopStatusPolling() {
+  if (statusPollTimer) {
+    clearInterval(statusPollTimer)
+    statusPollTimer = null
+  }
+}
+
+async function requestStatusRefresh() {
+  if (!matchStore.requestId || isMatched.value || matchStore.sessionClosed) {
+    return
+  }
+  try {
+    const { data } = await api.get(`/match/requests/${matchStore.requestId}`)
+    if (data) {
+      matchStore.setFromStartResponse(data)
+      if (data.state === 'MATCHED') {
+        stopStatusPolling()
+        ensureChatRoute()
+        void ensurePeerConnection()
+      }
+    }
+  } catch (error) {
+    console.error('매칭 상태 조회 실패', error)
+  }
+}
+
+function ensureStatusPolling(immediate = false) {
+  if (!matchStore.requestId || isMatched.value || matchStore.sessionClosed) {
+    stopStatusPolling()
+    return
+  }
+  if (!statusPollTimer) {
+    statusPollTimer = setInterval(() => {
+      if (!matchStore.requestId || isMatched.value || matchStore.sessionClosed) {
+        stopStatusPolling()
+        return
+      }
+      void requestStatusRefresh()
+    }, STATUS_POLL_INTERVAL)
+  }
+  if (immediate) {
+    void requestStatusRefresh()
+  }
 }
 
 async function initLocalMedia() {
@@ -171,6 +218,21 @@ watch(localVideo, (element) => {
   }
 })
 
+watch(
+  () => [matchStore.requestId, matchStore.state, matchStore.sessionClosed],
+  ([requestId, state, sessionClosed], previous) => {
+    if (!requestId || sessionClosed || state === 'MATCHED') {
+      stopStatusPolling()
+      return
+    }
+    const prevRequestId = previous ? previous[0] : null
+    const prevState = previous ? previous[1] : null
+    const immediate = !previous || requestId !== prevRequestId || prevState === 'MATCHED'
+    ensureStatusPolling(immediate)
+  },
+  { immediate: true }
+)
+
 function handleMatchMessage(frame) {
   try {
     const payload = JSON.parse(frame.body)
@@ -185,6 +247,7 @@ function handleMatchMessage(frame) {
       hasRemoteStream.value = false
     }
     if (payload.eventType === 'MATCH_FOUND') {
+      stopStatusPolling()
       offerCreated.value = false
       hasRemoteStream.value = false
       chatMessages.value = []
@@ -481,6 +544,7 @@ watch(
   () => matchStore.sessionClosed,
   (closed) => {
     if (closed) {
+      stopStatusPolling()
       teardownPeerConnection()
       teardownChatRoute()
       chatMessages.value = []
@@ -535,6 +599,10 @@ onMounted(async () => {
   }
   client.value.activate()
 
+  if (!isMatched.value) {
+    ensureStatusPolling(true)
+  }
+
   if (isMatched.value) {
     ensureChatRoute()
     void ensurePeerConnection()
@@ -542,6 +610,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  stopStatusPolling()
   matchSubscription?.unsubscribe()
   matchSubscription = null
   if (signalRoute?.sub) {
