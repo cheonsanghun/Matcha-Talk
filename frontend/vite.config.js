@@ -10,7 +10,7 @@ import vue from '@vitejs/plugin-vue'
     export default defineConfig(({mode}) => {
         const env = loadEnv(mode, process.cwd(), '')
         const backendOrigin = env.VITE_DEV_BACKEND_ORIGIN ?? 'http://localhost:8080'
-        const lanHost = env.VITE_DEV_ALLOWED_HOST ?? '192.168.0.165'
+        const lanHost = (env.VITE_DEV_ALLOWED_HOST || '').trim()
         const allowedHosts = ['.ngrok-free.app']
         if (lanHost) {
             allowedHosts.push(lanHost)
