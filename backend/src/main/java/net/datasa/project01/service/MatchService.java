@@ -17,8 +17,11 @@ import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,6 +37,8 @@ public class MatchService {
     private final SimpMessageSendingOperations messagingTemplate;
     private final ObjectMapper objectMapper;
 
+    private static final Duration WAITING_TIMEOUT = Duration.ofMinutes(5);
+
     /**
      * 랜덤 매칭을 시작하거나 대기열에서 상대를 찾기
      * @param loginId 요청한 사용자의 ID
@@ -44,16 +49,23 @@ public class MatchService {
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         // 1. 이미 대기열에 있는지 확인
+        LocalDateTime now = LocalDateTime.now();
+
         Optional<MatchRequest> existingWaiting = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
         if (existingWaiting.isPresent()) {
-            long waitingCount = matchRequestRepository.countByStatusExcludingUser(MatchRequest.MatchStatus.WAITING, me);
-            return MatchStartResponseDto.builder()
-                    .state(MatchStartResponseDto.MatchState.ALREADY_WAITING)
-                    .myRequestId(existingWaiting.get().getRequestId())
-                    .waitingCount(waitingCount)
-                    .message(waitingCount > 0 ? "다른 사용자를 찾고 있습니다." : "현재 대기 중인 사용자가 없습니다.")
-                    .shouldCreateOffer(false)
-                    .build();
+            MatchRequest waitingRequest = existingWaiting.get();
+            if (isRequestExpired(waitingRequest, now)) {
+                cancelExpiredRequest(waitingRequest);
+            } else {
+                long waitingCount = matchRequestRepository.countByStatusExcludingUser(MatchRequest.MatchStatus.WAITING, me);
+                return MatchStartResponseDto.builder()
+                        .state(MatchStartResponseDto.MatchState.ALREADY_WAITING)
+                        .myRequestId(waitingRequest.getRequestId())
+                        .waitingCount(waitingCount)
+                        .message(waitingCount > 0 ? "다른 사용자를 찾고 있습니다." : "현재 대기 중인 사용자가 없습니다.")
+                        .shouldCreateOffer(false)
+                        .build();
+            }
         }
 
         // 2. 이미 매칭된 기록이 있는지 확인
@@ -93,7 +105,16 @@ public class MatchService {
                 MatchRequest.MatchStatus.WAITING
         );
 
-        MatchRequest matchedOpponentRequest = selectFinalOpponent(me, potentialMatches);
+        List<MatchRequest> filteredPotentialMatches = new ArrayList<>();
+        for (MatchRequest potentialMatch : potentialMatches) {
+            if (isRequestExpired(potentialMatch, now)) {
+                cancelExpiredRequest(potentialMatch);
+                continue;
+            }
+            filteredPotentialMatches.add(potentialMatch);
+        }
+
+        MatchRequest matchedOpponentRequest = selectFinalOpponent(me, filteredPotentialMatches);
 
         if (matchedOpponentRequest != null) {
             // 4. 매칭 성공 처리
@@ -368,5 +389,24 @@ public class MatchService {
             return;
         }
         messagingTemplate.convertAndSendToUser(target.getLoginId(), "/queue/match-results", message);
+    }
+
+    private boolean isRequestExpired(MatchRequest request, LocalDateTime referenceTime) {
+        if (request == null || request.getRequestedAt() == null) {
+            return false;
+        }
+        LocalDateTime expiryThreshold = referenceTime.minus(WAITING_TIMEOUT);
+        return request.getRequestedAt().isBefore(expiryThreshold);
+    }
+
+    private void cancelExpiredRequest(MatchRequest request) {
+        if (request == null) {
+            return;
+        }
+        if (request.getStatus() == MatchRequest.MatchStatus.WAITING) {
+            log.debug("Cancelling expired waiting request: {}", request.getRequestId());
+            request.setStatus(MatchRequest.MatchStatus.CANCELLED);
+            request.setRoom(null);
+        }
     }
 }
