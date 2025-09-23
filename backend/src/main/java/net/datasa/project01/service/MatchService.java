@@ -8,6 +8,8 @@ import net.datasa.project01.domain.dto.MatchDecisionResponseDto;
 import net.datasa.project01.domain.dto.MatchEventMessage;
 import net.datasa.project01.domain.dto.MatchRequestDto;
 import net.datasa.project01.domain.dto.MatchStartResponseDto;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
@@ -36,6 +38,9 @@ public class MatchService {
     private final ChatService chatService;
     private final SimpMessageSendingOperations messagingTemplate;
     private final ObjectMapper objectMapper;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private static final Duration WAITING_TIMEOUT = Duration.ofMinutes(5);
 
@@ -254,22 +259,40 @@ public class MatchService {
     }
 
     public MatchDecisionResponseDto respondToMatch(String loginId, Long requestId, boolean accept) {
-        MatchRequest myRequest = matchRequestRepository.findByRequestIdAndUser_LoginId(requestId, loginId)
+        MatchRequest snapshot = matchRequestRepository.findByRequestIdAndUser_LoginId(requestId, loginId)
                 .orElseThrow(() -> new IllegalArgumentException("매칭 요청을 찾을 수 없습니다."));
+
+        Room room = snapshot.getRoom();
+        if (room == null) {
+            throw new IllegalStateException("매칭 세션 정보가 없습니다.");
+        }
+
+        List<MatchRequest> roomParticipants = matchRequestRepository.findAllByRoomForUpdate(room);
+
+        MatchRequest myRequest = roomParticipants.stream()
+                .filter(request -> request.getRequestId().equals(requestId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("매칭 요청을 찾을 수 없습니다."));
+
+        if (!myRequest.getUser().getLoginId().equals(loginId)) {
+            throw new IllegalArgumentException("해당 매칭 요청에 대한 권한이 없습니다.");
+        }
 
         if (myRequest.getStatus() != MatchRequest.MatchStatus.MATCHED && myRequest.getStatus() != MatchRequest.MatchStatus.CONFIRMED) {
             throw new IllegalStateException("현재 상태에서는 응답할 수 없습니다.");
         }
 
-        Room room = myRequest.getRoom();
-        if (room == null) {
-            throw new IllegalStateException("매칭 세션 정보가 없습니다.");
-        }
-
-        MatchRequest opponentRequest = findOpponentRequest(room, myRequest.getRequestId());
+        MatchRequest opponentRequest = roomParticipants.stream()
+                .filter(request -> !request.getRequestId().equals(requestId))
+                .findFirst()
+                .orElse(null);
 
         if (accept) {
             myRequest.setStatus(MatchRequest.MatchStatus.CONFIRMED);
+            entityManager.flush();
+            if (opponentRequest != null) {
+                entityManager.refresh(opponentRequest);
+            }
         } else {
             myRequest.setStatus(MatchRequest.MatchStatus.DECLINED);
             if (opponentRequest != null) {
@@ -282,8 +305,9 @@ public class MatchService {
         MatchRequest.MatchStatus partnerStatus = opponentRequest != null ? opponentRequest.getStatus() : null;
         boolean partnerAlreadyAccepted = partnerStatus == MatchRequest.MatchStatus.CONFIRMED;
         boolean partnerDeclined = partnerStatus == MatchRequest.MatchStatus.DECLINED || partnerStatus == MatchRequest.MatchStatus.CANCELLED;
+        boolean bothAccepted = accept && partnerAlreadyAccepted;
 
-        if (opponentRequest != null) {
+        if (opponentRequest != null && (!bothAccepted || !accept)) {
             MatchEventMessage.EventType eventType = accept
                     ? MatchEventMessage.EventType.PARTNER_ACCEPTED
                     : MatchEventMessage.EventType.PARTNER_DECLINED;
@@ -304,8 +328,6 @@ public class MatchService {
                     .build();
             sendMatchEvent(opponentRequest.getUser(), event);
         }
-
-        boolean bothAccepted = accept && partnerAlreadyAccepted;
 
         if (bothAccepted && opponentRequest != null) {
             MatchEventMessage bothForMe = MatchEventMessage.builder()
