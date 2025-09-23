@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import net.datasa.project01.domain.entity.MatchRequest;
 
 @Getter
 @Builder
@@ -26,4 +27,7 @@ public class MatchStartResponseDto {
     private long waitingCount;
     private String message;
     private boolean shouldCreateOffer;
+    private MatchRequest.MatchStatus myStatus;
+    private MatchRequest.MatchStatus partnerStatus;
+    private boolean bothAccepted;
 }

@@ -1,4 +1,4 @@
-import { camelizeKeys, snakifyKeys } from '../utils/case'
+import { camelizeKeys } from '../utils/case'
 
 export function setupSignalRoutes(client, { me, onSignal, subscribeDest } = {}) {
     const destination = subscribeDest || '/user/queue/signals'
@@ -9,7 +9,7 @@ export function setupSignalRoutes(client, { me, onSignal, subscribeDest } = {}) 
     })
 
     function sendSignal(signal = {}) {
-        const payload = snakifyKeys({ senderLoginId: me, ...signal })
+        const payload = { senderLoginId: me, ...signal }
         client.publish({
             destination: '/app/signal',
             body: JSON.stringify(payload),

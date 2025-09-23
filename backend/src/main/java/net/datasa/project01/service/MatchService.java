@@ -69,6 +69,9 @@ public class MatchService {
                         .waitingCount(waitingCount)
                         .message(waitingCount > 0 ? "다른 사용자를 찾고 있습니다." : "현재 대기 중인 사용자가 없습니다.")
                         .shouldCreateOffer(false)
+                        .myStatus(waitingRequest.getStatus())
+                        .partnerStatus(null)
+                        .bothAccepted(false)
                         .build();
             }
         }
@@ -87,6 +90,11 @@ public class MatchService {
                     .partnerNickName(opponent != null ? opponent.getUser().getNickName() : null)
                     .message("이미 진행 중인 매칭이 있습니다.")
                     .shouldCreateOffer(false)
+                    .myStatus(myMatched.getStatus())
+                    .partnerStatus(opponent != null ? opponent.getStatus() : null)
+                    .bothAccepted(opponent != null
+                            && myMatched.getStatus() == MatchRequest.MatchStatus.CONFIRMED
+                            && opponent.getStatus() == MatchRequest.MatchStatus.CONFIRMED)
                     .build();
         }
 
@@ -177,6 +185,9 @@ public class MatchService {
                     .partnerNickName(opponent.getNickName())
                     .message("매칭이 성사되었습니다.")
                     .shouldCreateOffer(true)
+                    .myStatus(myMatchedRequest.getStatus())
+                    .partnerStatus(matchedOpponentRequest.getStatus())
+                    .bothAccepted(false)
                     .build();
         }
 
@@ -200,6 +211,9 @@ public class MatchService {
                 .waitingCount(waitingCount)
                 .message(waitingCount > 0 ? "다른 사용자를 찾고 있습니다." : "현재 대기 중인 사용자가 없습니다.")
                 .shouldCreateOffer(false)
+                .myStatus(newRequest.getStatus())
+                .partnerStatus(null)
+                .bothAccepted(false)
                 .build();
     }
 
@@ -220,18 +234,19 @@ public class MatchService {
                     .waitingCount(waitingCount)
                     .message(message)
                     .shouldCreateOffer(false)
+                    .myStatus(myRequest.getStatus())
+                    .partnerStatus(null)
+                    .bothAccepted(false)
                     .build();
         }
 
         if (status == MatchRequest.MatchStatus.MATCHED || status == MatchRequest.MatchStatus.CONFIRMED) {
             MatchRequest opponent = findOpponentRequest(myRequest.getRoom(), myRequest.getRequestId());
 
-            boolean shouldCreateOffer = false;
-            if (opponent == null) {
-                shouldCreateOffer = true;
-            } else if (myRequest.getRequestedAt() != null && opponent.getRequestedAt() != null) {
-                shouldCreateOffer = myRequest.getRequestedAt().isAfter(opponent.getRequestedAt());
-            }
+            boolean shouldCreateOffer = shouldCreateOffer(myRequest, opponent);
+            MatchRequest.MatchStatus partnerStatus = opponent != null ? opponent.getStatus() : null;
+            boolean bothAccepted = status == MatchRequest.MatchStatus.CONFIRMED
+                    && partnerStatus == MatchRequest.MatchStatus.CONFIRMED;
 
             return MatchStartResponseDto.builder()
                     .state(MatchStartResponseDto.MatchState.MATCHED)
@@ -242,6 +257,9 @@ public class MatchService {
                     .partnerNickName(opponent != null ? opponent.getUser().getNickName() : null)
                     .message("매칭이 성사되었습니다.")
                     .shouldCreateOffer(shouldCreateOffer)
+                    .myStatus(myRequest.getStatus())
+                    .partnerStatus(partnerStatus)
+                    .bothAccepted(bothAccepted)
                     .build();
         }
 
@@ -255,6 +273,9 @@ public class MatchService {
                 .myRequestId(myRequest.getRequestId())
                 .message(message)
                 .shouldCreateOffer(false)
+                .myStatus(myRequest.getStatus())
+                .partnerStatus(null)
+                .bothAccepted(false)
                 .build();
     }
 
@@ -307,6 +328,9 @@ public class MatchService {
         boolean partnerDeclined = partnerStatus == MatchRequest.MatchStatus.DECLINED || partnerStatus == MatchRequest.MatchStatus.CANCELLED;
         boolean bothAccepted = accept && partnerAlreadyAccepted;
 
+        boolean shouldCreateOfferForMe = shouldCreateOffer(myRequest, opponentRequest);
+        boolean shouldCreateOfferForOpponent = shouldCreateOffer(opponentRequest, myRequest);
+
         if (opponentRequest != null && (!bothAccepted || !accept)) {
             MatchEventMessage.EventType eventType = accept
                     ? MatchEventMessage.EventType.PARTNER_ACCEPTED
@@ -338,7 +362,7 @@ public class MatchService {
                     .partnerLoginId(opponentRequest.getUser().getLoginId())
                     .partnerNickName(opponentRequest.getUser().getNickName())
                     .message("서로 매칭을 수락했습니다. 대화를 시작하세요!")
-                    .shouldCreateOffer(false)
+                    .shouldCreateOffer(shouldCreateOfferForMe)
                     .build();
             sendMatchEvent(myRequest.getUser(), bothForMe);
 
@@ -350,7 +374,7 @@ public class MatchService {
                     .partnerLoginId(myRequest.getUser().getLoginId())
                     .partnerNickName(myRequest.getUser().getNickName())
                     .message("서로 매칭을 수락했습니다. 대화를 시작하세요!")
-                    .shouldCreateOffer(false)
+                    .shouldCreateOffer(shouldCreateOfferForOpponent)
                     .build();
             sendMatchEvent(opponentRequest.getUser(), bothForOpponent);
         }
@@ -404,6 +428,35 @@ public class MatchService {
                 .filter(req -> !req.getRequestId().equals(myRequestId))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private boolean shouldCreateOffer(MatchRequest current, MatchRequest opponent) {
+        if (current == null) {
+            return false;
+        }
+        if (opponent == null) {
+            return true;
+        }
+
+        LocalDateTime currentRequestedAt = current.getRequestedAt();
+        LocalDateTime opponentRequestedAt = opponent.getRequestedAt();
+
+        if (currentRequestedAt != null && opponentRequestedAt != null) {
+            if (currentRequestedAt.isAfter(opponentRequestedAt)) {
+                return true;
+            }
+            if (currentRequestedAt.isBefore(opponentRequestedAt)) {
+                return false;
+            }
+        }
+
+        Long currentId = current.getRequestId();
+        Long opponentId = opponent.getRequestId();
+        if (currentId != null && opponentId != null) {
+            return currentId > opponentId;
+        }
+
+        return false;
     }
 
     private void sendMatchEvent(User target, MatchEventMessage message) {

@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => {
   const lanHost = (env.VITE_DEV_ALLOWED_HOST || '').trim()
   const keyPath = (env.VITE_DEV_HTTPS_KEY || '').trim()
   const certPath = (env.VITE_DEV_HTTPS_CERT || '').trim()
+  const devHost = (env.VITE_DEV_SERVER_HOST || '0.0.0.0').trim() || '0.0.0.0'
+  const devPort = Number.parseInt(env.VITE_DEV_SERVER_PORT || '5173', 10)
+  const hmrHost = (env.VITE_DEV_HMR_HOST || '').trim()
+  const hmrPort = env.VITE_DEV_HMR_PORT ? Number.parseInt(env.VITE_DEV_HMR_PORT, 10) : undefined
+  const hmrProtocol = (env.VITE_DEV_HMR_PROTOCOL || '').trim()
 
   const allowedHosts = ['.ngrok-free.app']
   if (lanHost) {
@@ -31,11 +36,18 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [vue()],
     server: {
-      host: '0.0.0.0',
-      port: 5173,
+      host: devHost,
+      port: Number.isFinite(devPort) ? devPort : 5173,
       open: true,
       allowedHosts,
       https: httpsConfig,
+      hmr: hmrHost || hmrPort || hmrProtocol
+        ? {
+            host: hmrHost || undefined,
+            port: hmrPort,
+            protocol: hmrProtocol || undefined,
+          }
+        : undefined,
       proxy: {
         '/api': {
           target: backendOrigin,

@@ -17,9 +17,13 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedOriginPatterns(
                         "https://*.ngrok-free.app",
                         "http://localhost:*",
+                        "https://localhost:*",
                         "http://127.0.0.1:*",
+                        "https://127.0.0.1:*",
                         "http://192.168.*.*:*",
-                        "https://192.168.*.*:*"
+                        "https://192.168.*.*:*",
+                        "http://[::1]:*",
+                        "https://[::1]:*"
                 )
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
                 .allowedHeaders("*")

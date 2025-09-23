@@ -31,11 +31,38 @@ export const useMatchStore = defineStore('match', {
       this.waitingCount = payload.waitingCount ?? 0
       this.shouldCreateOffer = !!payload.shouldCreateOffer
       this.statusMessage = payload.message || ''
+
       if (this.state !== 'MATCHED') {
         this.myDecision = null
         this.partnerDecision = null
         this.bothConfirmed = false
         this.sessionClosed = false
+      }
+
+      const myStatus = payload.myStatus || null
+      const partnerStatus = payload.partnerStatus || null
+
+      if (typeof payload.bothAccepted === 'boolean') {
+        this.bothConfirmed = payload.bothAccepted
+        if (payload.bothAccepted) {
+          this.sessionClosed = false
+          if (!this.myDecision) this.myDecision = 'ACCEPTED'
+          if (!this.partnerDecision) this.partnerDecision = 'ACCEPTED'
+        }
+      }
+
+      if (myStatus === 'CONFIRMED') {
+        this.myDecision = 'ACCEPTED'
+      } else if (myStatus === 'DECLINED' || myStatus === 'CANCELLED') {
+        this.myDecision = 'DECLINED'
+        this.sessionClosed = true
+      }
+
+      if (partnerStatus === 'CONFIRMED') {
+        this.partnerDecision = 'ACCEPTED'
+      } else if (partnerStatus === 'DECLINED' || partnerStatus === 'CANCELLED') {
+        this.partnerDecision = 'DECLINED'
+        this.sessionClosed = true
       }
     },
     applyMatchEvent(event = {}) {
@@ -66,12 +93,14 @@ export const useMatchStore = defineStore('match', {
           break
         case 'BOTH_CONFIRMED':
           this.bothConfirmed = true
+          this.shouldCreateOffer = !!event.shouldCreateOffer
           if (!this.myDecision) this.myDecision = 'ACCEPTED'
           if (!this.partnerDecision) this.partnerDecision = 'ACCEPTED'
           this.sessionClosed = false
           break
         case 'MATCH_CANCELLED':
           this.sessionClosed = true
+          this.shouldCreateOffer = false
           break
       }
     },
@@ -82,6 +111,7 @@ export const useMatchStore = defineStore('match', {
       }
       if (decision === 'DECLINED') {
         this.sessionClosed = true
+        this.shouldCreateOffer = false
       }
       if (bothAccepted) {
         this.bothConfirmed = true

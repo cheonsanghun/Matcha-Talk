@@ -30,9 +30,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 //.setAllowedOriginPatterns("http://localhost:5173","https://*.ngrok-free.app") // 개발용
                 .setAllowedOriginPatterns(
                         "http://localhost:*",
+                        "https://localhost:*",
                         "http://127.0.0.1:*",
+                        "https://127.0.0.1:*",
                         "http://192.168.*.*:*",
                         "https://192.168.*.*:*",
+                        "http://[::1]:*",
+                        "https://[::1]:*",
                         "https://*.ngrok-free.app"
                 ) // 개발용
                 .withSockJS();  // ★ SockJS 필수

@@ -1,0 +1,889 @@
+<template>
+  <v-container class="session-container py-6">
+    <v-row justify="center">
+      <v-col cols="12" lg="11" xl="10">
+        <v-card class="session-card pa-6">
+          <div class="session-header d-flex align-center">
+            <v-avatar size="48" class="me-3">
+              <v-img :src="partnerAvatar" alt="partner" />
+            </v-avatar>
+            <div class="d-flex flex-column">
+              <span class="text-subtitle-1 font-weight-medium text-pink-darken-2">
+                {{ partnerNameDisplay }}님과 연결되었습니다
+              </span>
+              <span class="text-caption text-medium-emphasis">
+                {{ headerStatusText }}
+              </span>
+            </div>
+            <v-spacer />
+            <v-btn variant="outlined" color="grey" @click="leaveSession">
+              나가기
+            </v-btn>
+          </div>
+
+          <div class="session-content">
+            <div class="stage-wrapper">
+              <div class="stage-surface">
+                <video
+                  ref="remoteVideo"
+                  class="remote-video"
+                  autoplay
+                  playsinline
+                ></video>
+
+                <div v-if="!hasRemoteStream" class="stage-placeholder">
+                  <v-progress-circular indeterminate color="pink" size="32" />
+                  <span class="text-body-2 text-medium-emphasis mt-3">
+                    상대의 연결을 기다리는 중이에요…
+                  </span>
+                </div>
+
+                <video
+                  ref="localVideo"
+                  class="local-video"
+                  muted
+                  autoplay
+                  playsinline
+                ></video>
+
+                <v-btn
+                  class="follow-btn"
+                  color="success"
+                  variant="flat"
+                  prepend-icon="mdi-heart-outline"
+                  :loading="followLoading"
+                  @click="handleFollow"
+                >
+                  팔로우
+                </v-btn>
+              </div>
+            </div>
+
+            <div class="chat-column">
+              <v-sheet class="chat-shell" color="#fff8fb" rounded="xl">
+                <v-card
+                  variant="outlined"
+                  class="chat-card pa-4 d-flex flex-column"
+                  rounded="xl"
+                >
+                  <ChatPanel
+                    class="flex-grow-1"
+                    :partner="partnerNameDisplay"
+                    :messages="chatMessages"
+                    :sending="isSendingChat"
+                    :uploading="isUploadingFile"
+                    :on-send="handleSendChatMessage"
+                    :on-send-file="handleUploadFile"
+                  />
+                  <v-divider class="my-3" />
+                  <div class="debug-panel">
+                    <v-btn
+                      size="small"
+                      variant="text"
+                      color="primary"
+                      @click="fetchMatchStatus"
+                    >
+                      상태 확인
+                    </v-btn>
+                    <v-btn
+                      size="small"
+                      variant="text"
+                      color="primary"
+                      @click="logLocalState"
+                    >
+                      로그 출력
+                    </v-btn>
+                  </div>
+                </v-card>
+              </v-sheet>
+            </div>
+          </div>
+        </v-card>
+      </v-col>
+    </v-row>
+  </v-container>
+</template>
+
+<script setup>
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import ChatPanel from '../components/ChatPanel.vue'
+import defaultAvatar from '../assets/default-avatar.svg'
+import { createStompClient } from '../services/ws'
+import { setupSignalRoutes } from '../services/signaling'
+import { setupChat } from '../services/chat'
+import api from '../services/api'
+import { useAuthStore } from '../stores/auth'
+import { useMatchStore } from '../stores/match'
+
+const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+const matchStore = useMatchStore()
+
+const localVideo = ref(null)
+const remoteVideo = ref(null)
+const localStream = ref(null)
+const localMediaErrorMessage = ref('')
+const hasRemoteStream = ref(false)
+const chatMessages = ref([])
+const isSendingChat = ref(false)
+const isUploadingFile = ref(false)
+const followLoading = ref(false)
+
+const client = ref(null)
+const connected = ref(false)
+const lastSignal = ref(null)
+const lastOffer = ref(null)
+const lastAnswer = ref(null)
+const lastIceCandidates = ref([])
+
+function debugLog(label, payload) {
+  // eslint-disable-next-line no-console
+  console.log(`[match-session] ${label}`, payload)
+}
+
+function logLocalState() {
+  debugLog('local-state', {
+    shouldCreateOffer: matchStore.shouldCreateOffer,
+    offerCreated: offerCreated.value,
+    bothConfirmed: matchStore.bothConfirmed,
+    lastSignal: lastSignal.value,
+    lastOffer: lastOffer.value,
+    lastAnswer: lastAnswer.value,
+    iceCount: lastIceCandidates.value.length,
+  })
+}
+let matchSubscription = null
+let signalRoute = null
+let pc = null
+let audioTransceiver = null
+let videoTransceiver = null
+const offerCreated = ref(false)
+const remoteDescriptionSet = ref(false)
+let chatRoute = null
+let chatRoomId = null
+
+const initializationReady = ref(false)
+const initializing = ref(false)
+const sessionCleanupDone = ref(false)
+const sessionClosedNavigated = ref(false)
+
+const partnerAvatar = computed(() => defaultAvatar)
+const partnerNameDisplay = computed(() => matchStore.partnerNickName || '상대 준비 중')
+const isMatched = computed(() => matchStore.isMatched)
+const headerStatusText = computed(() => matchStore.statusMessage || '대화를 시작해 보세요.')
+const shouldInitialize = computed(
+  () =>
+    initializationReady.value &&
+    !!matchStore.roomId &&
+    !!matchStore.partnerLoginId &&
+    !matchStore.sessionClosed
+)
+const meLoginId = computed(() => auth.user?.loginId || auth.user?.login_id || auth.user?.loginID || null)
+
+async function initializeSession() {
+  if (initializing.value) {
+    return false
+  }
+  initializing.value = true
+  try {
+    const routeRoomId = Number.parseInt(route.params.roomId, 10)
+    const requestIdParam = route.query.requestId ? Number.parseInt(route.query.requestId, 10) : null
+    let activeRequestId = matchStore.requestId ?? requestIdParam
+
+    if (!activeRequestId) {
+      router.replace({ name: 'match' })
+      return false
+    }
+
+    if (!matchStore.roomId || (Number.isFinite(routeRoomId) && matchStore.roomId !== routeRoomId)) {
+      const { data } = await api.get(`/match/requests/${activeRequestId}`)
+      if (!data || data.state !== 'MATCHED' || !data.roomId) {
+        router.replace({ name: 'match-result' })
+        return false
+      }
+      matchStore.setFromStartResponse(data)
+    }
+
+    if (Number.isFinite(routeRoomId) && matchStore.roomId && matchStore.roomId !== routeRoomId) {
+      router.replace({ name: 'match-result' })
+      return false
+    }
+
+    if (!matchStore.roomId || !matchStore.partnerLoginId) {
+      router.replace({ name: 'match-result' })
+      return false
+    }
+
+    if (!matchStore.bothConfirmed) {
+      router.replace({ name: 'match-result' })
+      return false
+    }
+
+    initializationReady.value = true
+    return true
+  } catch (error) {
+    console.error('매칭 세션 초기화 실패', error)
+    router.replace({ name: 'match-result' })
+    return false
+  } finally {
+    initializing.value = false
+  }
+}
+
+async function initLocalMedia() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const isSecure = window.isSecureContext
+  const hasNavigator = typeof navigator !== 'undefined'
+  const mediaDevices = hasNavigator ? navigator.mediaDevices : undefined
+  const canUseGetUserMedia = !!(mediaDevices && typeof mediaDevices.getUserMedia === 'function')
+
+  if (!isSecure) {
+    const message = '보안 연결(HTTPS)에서 접속해야 카메라와 마이크를 사용할 수 있습니다.'
+    localMediaErrorMessage.value = message
+    matchStore.statusMessage = message
+    return
+  }
+
+  if (!canUseGetUserMedia) {
+    const message = '이 브라우저에서는 카메라 또는 마이크 접근을 지원하지 않습니다. 다른 브라우저에서 시도해 주세요.'
+    localMediaErrorMessage.value = message
+    matchStore.statusMessage = message
+    return
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    localStream.value = stream
+    if (localVideo.value) {
+      localVideo.value.srcObject = stream
+      await nextTick()
+      try {
+        await localVideo.value.play()
+      } catch (error) {
+        console.warn('로컬 영상 자동 재생 실패', error)
+      }
+    }
+    const previousErrorMessage = localMediaErrorMessage.value
+    localMediaErrorMessage.value = ''
+    if (previousErrorMessage && matchStore.statusMessage === previousErrorMessage) {
+      matchStore.statusMessage = ''
+    }
+    syncLocalTracksToPeerConnection()
+  } catch (error) {
+    console.error('로컬 미디어 초기화 실패', error)
+    localStream.value = null
+    if (localVideo.value) {
+      localVideo.value.srcObject = null
+    }
+    let message = '카메라 또는 마이크 접근이 차단되었습니다. 브라우저 설정을 확인해 주세요.'
+    if (error && typeof error === 'object') {
+      const errorName = error.name
+      if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
+        message = '브라우저에서 카메라 또는 마이크 접근이 차단되었습니다. 권한을 허용한 뒤 다시 시도하세요.'
+      } else if (errorName === 'NotFoundError' || errorName === 'OverconstrainedError') {
+        message = '연결된 카메라 또는 마이크를 찾을 수 없습니다. 장치를 확인한 뒤 다시 시도하세요.'
+      } else if (errorName === 'NotReadableError') {
+        message = '다른 프로그램이 카메라 또는 마이크를 사용 중입니다. 사용 중인 앱을 종료하고 다시 시도하세요.'
+      }
+    }
+    localMediaErrorMessage.value = message
+    matchStore.statusMessage = message
+  }
+}
+
+function syncLocalTracksToPeerConnection() {
+  if (!pc) {
+    return
+  }
+
+  const stream = localStream.value
+  const audioTrack =
+    stream && typeof stream.getAudioTracks === 'function'
+      ? stream.getAudioTracks()[0] || null
+      : null
+  const videoTrack =
+    stream && typeof stream.getVideoTracks === 'function'
+      ? stream.getVideoTracks()[0] || null
+      : null
+
+  if (!audioTransceiver) {
+    audioTransceiver = pc.addTransceiver('audio', { direction: audioTrack ? 'sendrecv' : 'recvonly' })
+  }
+  if (!videoTransceiver) {
+    videoTransceiver = pc.addTransceiver('video', { direction: videoTrack ? 'sendrecv' : 'recvonly' })
+  }
+
+  if (audioTransceiver) {
+    audioTransceiver.direction = audioTrack ? 'sendrecv' : 'recvonly'
+    const sender = audioTransceiver.sender
+    if (sender) {
+      sender.replaceTrack(audioTrack).catch((replaceError) => {
+        console.error('로컬 오디오 트랙 동기화 실패', replaceError)
+      })
+    }
+  }
+
+  if (videoTransceiver) {
+    videoTransceiver.direction = videoTrack ? 'sendrecv' : 'recvonly'
+    const sender = videoTransceiver.sender
+    if (sender) {
+      sender.replaceTrack(videoTrack).catch((replaceError) => {
+        console.error('로컬 비디오 트랙 동기화 실패', replaceError)
+      })
+    }
+  }
+}
+
+function ensureChatRoute() {
+  if (!connected.value || !client.value || !matchStore.roomId || !shouldInitialize.value) {
+    if (!matchStore.roomId) {
+      chatMessages.value = []
+    }
+    teardownChatRoute()
+    return
+  }
+
+  if (chatRoute && chatRoomId === matchStore.roomId) {
+    return
+  }
+
+  const shouldReset = chatRoomId !== matchStore.roomId
+  teardownChatRoute()
+  if (shouldReset) {
+    chatMessages.value = []
+  }
+  chatRoute = setupChat(client.value, matchStore.roomId, {
+    onChat: handleIncomingChatMessage,
+  })
+  chatRoomId = matchStore.roomId
+}
+
+function teardownChatRoute() {
+  if (chatRoute?.unsubscribe) {
+    chatRoute.unsubscribe()
+  } else if (chatRoute?.subscription?.unsubscribe) {
+    chatRoute.subscription.unsubscribe()
+  }
+  chatRoute = null
+  chatRoomId = null
+}
+
+async function ensurePeerConnection() {
+  if (!shouldInitialize.value || !connected.value) {
+    return
+  }
+  if (!matchStore.partnerLoginId || !meLoginId.value) {
+    return
+  }
+
+  if (!pc) {
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
+    pc.ontrack = (event) => {
+      const [stream] = event.streams
+      if (stream && remoteVideo.value) {
+        remoteVideo.value.srcObject = stream
+        hasRemoteStream.value = true
+        Promise.resolve()
+          .then(() => remoteVideo.value?.play?.())
+          .catch((error) => {
+            console.warn('원격 영상 자동 재생 실패', error)
+          })
+      }
+    }
+    pc.onicecandidate = (event) => {
+      if (event.candidate && signalRoute) {
+        signalRoute.sendSignal({
+          type: 'ice-candidate',
+          receiverLoginId: matchStore.partnerLoginId,
+          data: event.candidate,
+        })
+      }
+    }
+    pc.onconnectionstatechange = () => {
+      if (pc && ['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+        hasRemoteStream.value = false
+      }
+    }
+  }
+
+  syncLocalTracksToPeerConnection()
+
+  if (!signalRoute) {
+    signalRoute = setupSignalRoutes(client.value, {
+      me: meLoginId.value,
+      onSignal: handleSignal,
+    })
+  }
+
+  if (matchStore.shouldCreateOffer && !offerCreated.value) {
+    await createOffer()
+  }
+}
+
+async function createOffer() {
+  if (!pc || !signalRoute || !matchStore.partnerLoginId) {
+    return
+  }
+  try {
+    const offer = await pc.createOffer()
+    lastOffer.value = offer
+    debugLog('create-offer', offer)
+    await pc.setLocalDescription(offer)
+    const payload = {
+      type: 'offer',
+      receiverLoginId: matchStore.partnerLoginId,
+      data: offer,
+    }
+    debugLog('send-signal', payload)
+    signalRoute.sendSignal(payload)
+    offerCreated.value = true
+  } catch (error) {
+    console.error('WebRTC Offer 생성 실패', error)
+  }
+}
+
+async function handleSignal(message) {
+  if (!message) {
+    return
+  }
+  lastSignal.value = message
+  debugLog('signal-received', message)
+  if (!pc) {
+    await ensurePeerConnection()
+  }
+  if (!pc) {
+    return
+  }
+
+  try {
+    if (message.type === 'offer') {
+      offerCreated.value = true
+      await pc.setRemoteDescription(message.data)
+      remoteDescriptionSet.value = true
+      const answer = await pc.createAnswer()
+      lastAnswer.value = answer
+      debugLog('create-answer', answer)
+      await pc.setLocalDescription(answer)
+      const payload = {
+        type: 'answer',
+        receiverLoginId: matchStore.partnerLoginId,
+        data: answer,
+      }
+      debugLog('send-signal', payload)
+      signalRoute?.sendSignal(payload)
+    } else if (message.type === 'answer') {
+      offerCreated.value = true
+      await pc.setRemoteDescription(message.data)
+      remoteDescriptionSet.value = true
+    } else if (message.type === 'ice-candidate' && message.data) {
+      lastIceCandidates.value = [...lastIceCandidates.value, message.data]
+      debugLog('ice-candidate-received', message.data)
+      if (!remoteDescriptionSet.value) {
+        setTimeout(() => {
+          void pc?.addIceCandidate(message.data).catch((error) => {
+            console.error('ICE candidate 적용 실패', error)
+          })
+        }, 100)
+        return
+      }
+      await pc.addIceCandidate(message.data)
+    }
+  } catch (error) {
+    console.error('시그널 처리 실패', error)
+  }
+}
+
+function teardownPeerConnection() {
+  if (signalRoute?.sub) {
+    signalRoute.sub.unsubscribe()
+  }
+  signalRoute = null
+  if (pc) {
+    pc.close()
+    pc = null
+  }
+  audioTransceiver = null
+  videoTransceiver = null
+  offerCreated.value = false
+  if (remoteVideo.value) {
+    remoteVideo.value.srcObject = null
+  }
+  hasRemoteStream.value = false
+  remoteDescriptionSet.value = false
+}
+
+async function handleSendChatMessage(text) {
+  if (!text) {
+    return
+  }
+  if (!client.value || !connected.value || !matchStore.roomId) {
+    throw new Error('채팅방이 아직 준비되지 않았습니다.')
+  }
+
+  try {
+    isSendingChat.value = true
+    if (chatRoute?.sendChat) {
+      chatRoute.sendChat({ content: text })
+    } else {
+      client.value.publish({
+        destination: `/app/chat.sendMessage/${matchStore.roomId}`,
+        body: JSON.stringify({ roomId: matchStore.roomId, content: text }),
+      })
+    }
+  } catch (error) {
+    console.error('채팅 메시지 전송 실패', error)
+    throw error instanceof Error ? error : new Error('채팅 메시지 전송에 실패했습니다.')
+  } finally {
+    isSendingChat.value = false
+  }
+}
+
+async function handleUploadFile(file) {
+  if (!file) {
+    return
+  }
+  if (!matchStore.roomId) {
+    throw new Error('채팅방이 아직 준비되지 않았습니다.')
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  try {
+    isUploadingFile.value = true
+    await api.post(`/chat/rooms/${matchStore.roomId}/files`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  } catch (error) {
+    console.error('파일 업로드 실패', error)
+    throw error instanceof Error ? error : new Error('파일 업로드 중 오류가 발생했습니다.')
+  } finally {
+    isUploadingFile.value = false
+  }
+}
+
+function handleIncomingChatMessage(payload) {
+  if (!payload) {
+    return
+  }
+  try {
+    const sentAt = payload.sentAt ? new Date(payload.sentAt) : new Date()
+    let sizeValue = null
+    if (typeof payload.sizeBytes === 'number') {
+      sizeValue = payload.sizeBytes
+    } else if (payload.sizeBytes !== null && payload.sizeBytes !== undefined) {
+      const parsed = Number(payload.sizeBytes)
+      if (Number.isFinite(parsed)) {
+        sizeValue = parsed
+      }
+    }
+    chatMessages.value.push({
+      id: `${payload.roomId ?? ''}-${sentAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+      roomId: payload.roomId,
+      senderNickName: payload.senderNickName,
+      content: payload.content ?? '',
+      translatedContent: payload.translatedContent ?? '',
+      contentType: payload.contentType ?? 'TEXT',
+      fileName: payload.fileName ?? '',
+      fileUrl: payload.fileUrl ?? '',
+      mimeType: payload.mimeType ?? '',
+      sizeBytes: Number.isFinite(sizeValue) ? sizeValue : null,
+      sentAt,
+      fromMe: !!payload.senderNickName && payload.senderNickName === (auth.user?.nickname || auth.user?.nickName || auth.user?.nick_name || ''),
+    })
+  } catch (error) {
+    console.error('채팅 메시지 처리 실패', error)
+  }
+}
+
+function handleMatchMessage(frame) {
+  try {
+    const payload = JSON.parse(frame.body)
+    matchStore.applyMatchEvent(payload)
+    if (matchStore.sessionClosed) {
+      handleSessionClosed()
+      return
+    }
+    ensureChatRoute()
+    void ensurePeerConnection()
+  } catch (error) {
+    console.error('매칭 이벤트 처리 실패', error)
+  }
+}
+
+function cleanupSession() {
+  if (sessionCleanupDone.value) {
+    return
+  }
+  sessionCleanupDone.value = true
+  initializationReady.value = false
+  teardownPeerConnection()
+  teardownChatRoute()
+  stopLocalStream()
+  matchStore.shouldCreateOffer = false
+}
+
+function handleSessionClosed() {
+  if (sessionClosedNavigated.value) {
+    return
+  }
+  sessionClosedNavigated.value = true
+  cleanupSession()
+  router.replace({ name: 'match-result' })
+}
+
+function stopLocalStream() {
+  if (localStream.value) {
+    localStream.value.getTracks().forEach((track) => track.stop())
+    localStream.value = null
+  }
+  if (localVideo.value) {
+    localVideo.value.srcObject = null
+  }
+}
+
+async function handleFollow() {
+  if (followLoading.value) {
+    return
+  }
+  followLoading.value = true
+  try {
+    window.alert('팔로우 기능은 준비 중입니다.')
+  } finally {
+    followLoading.value = false
+  }
+}
+
+async function fetchMatchStatus() {
+  if (!matchStore.requestId) {
+    window.alert('매칭 요청 ID가 없습니다.')
+    return
+  }
+  try {
+    const { data } = await api.get(`/match/requests/${matchStore.requestId}`)
+    debugLog('match-status', data)
+  } catch (error) {
+    console.error('매칭 상태 조회 실패', error)
+  }
+}
+
+function leaveSession() {
+  sessionClosedNavigated.value = true
+  cleanupSession()
+  matchStore.reset()
+  router.replace({ name: 'match' })
+}
+
+watch(
+  () => [connected.value, shouldInitialize.value, matchStore.partnerLoginId, matchStore.shouldCreateOffer],
+  () => {
+    if (!shouldInitialize.value || !connected.value) {
+      return
+    }
+    void ensurePeerConnection()
+  }
+)
+
+watch(
+  () => matchStore.sessionClosed,
+  (closed) => {
+    if (closed) {
+      handleSessionClosed()
+    }
+  }
+)
+
+watch(
+  () => [connected.value, matchStore.roomId, shouldInitialize.value],
+  () => {
+    if (!shouldInitialize.value) {
+      teardownChatRoute()
+      return
+    }
+    ensureChatRoute()
+  }
+)
+
+onMounted(async () => {
+  const ready = await initializeSession()
+  if (!ready) {
+    return
+  }
+
+  await initLocalMedia()
+
+  client.value = createStompClient(auth.token)
+  client.value.onConnect = () => {
+    connected.value = true
+    matchSubscription = client.value.subscribe('/user/queue/match-results', handleMatchMessage)
+    ensureChatRoute()
+    void ensurePeerConnection()
+  }
+  client.value.onDisconnect = () => {
+    connected.value = false
+    matchSubscription?.unsubscribe()
+    matchSubscription = null
+    teardownPeerConnection()
+    teardownChatRoute()
+  }
+  client.value.activate()
+
+  ensureChatRoute()
+  void ensurePeerConnection()
+})
+
+onBeforeUnmount(() => {
+  matchSubscription?.unsubscribe()
+  matchSubscription = null
+  if (signalRoute?.sub) {
+    signalRoute.sub.unsubscribe()
+  }
+  signalRoute = null
+  client.value?.deactivate?.()
+  cleanupSession()
+})
+</script>
+
+<style scoped>
+.session-card {
+  background: linear-gradient(135deg, #ffffff 0%, #fff6fb 100%);
+  border-radius: 28px;
+  box-shadow: 0 24px 60px rgba(243, 198, 217, 0.35);
+}
+
+.session-header {
+  column-gap: 16px;
+  margin-bottom: 28px;
+}
+
+.session-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+}
+
+.stage-wrapper {
+  flex: 1 1 520px;
+  min-width: 0;
+}
+
+.stage-surface {
+  position: relative;
+  background: rgba(255, 247, 250, 0.92);
+  border: 2px solid #ffdbe6;
+  border-radius: 28px;
+  padding: 28px;
+  min-height: 430px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 20px;
+  background: #080808;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+}
+
+.stage-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.88);
+  text-align: center;
+  padding: 24px;
+  z-index: 2;
+}
+
+.local-video {
+  position: absolute;
+  right: 32px;
+  bottom: 32px;
+  width: 220px;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 20px;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+  background: #dfffea;
+  z-index: 3;
+}
+
+.follow-btn {
+  position: absolute;
+  left: 32px;
+  bottom: 32px;
+  border-radius: 999px;
+  padding-inline: 22px;
+  font-weight: 600;
+  background: #c6f7d6 !important;
+  color: #1b5e20 !important;
+  box-shadow: 0 18px 32px rgba(42, 157, 143, 0.25);
+  z-index: 3;
+}
+
+.chat-column {
+  flex: 0 0 320px;
+  max-width: 100%;
+}
+
+.chat-shell {
+  height: 100%;
+  padding: 18px;
+  background: rgba(255, 240, 248, 0.85);
+  backdrop-filter: blur(12px);
+}
+
+.chat-card {
+  height: 100%;
+  border-color: #ffd7e6;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: none;
+}
+
+.debug-panel {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1264px) {
+  .session-content {
+    flex-direction: column;
+  }
+
+  .chat-column {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 960px) {
+  .stage-surface {
+    padding: 18px;
+  }
+
+  .local-video {
+    width: 160px;
+    height: 110px;
+    right: 20px;
+    bottom: 20px;
+  }
+
+  .follow-btn {
+    left: 20px;
+    bottom: 20px;
+  }
+}
+</style>

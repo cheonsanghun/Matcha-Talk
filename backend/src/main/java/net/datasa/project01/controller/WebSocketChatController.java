@@ -57,6 +57,11 @@ public class WebSocketChatController {
     @MessageMapping("/signal")
     public void handleSignal(SignalMessage signalMessage, Principal principal) {
         try {
+            if (signalMessage == null) {
+                log.warn("Received null signal message from user: {}", principal.getName());
+                return;
+            }
+
             if (signalMessage.getReceiverLoginId() == null ||
                     signalMessage.getReceiverLoginId().trim().isEmpty()) {
                 log.warn("Signal message missing receiver ID from user: {}", principal.getName());
