@@ -1,9 +1,11 @@
 package net.datasa.project01.repository;
 
+import jakarta.persistence.LockModeType;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -23,6 +25,10 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
                                     @Param("user") User user);
 
     List<MatchRequest> findByRoom(Room room);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select mr from MatchRequest mr where mr.room = :room order by mr.requestId asc")
+    List<MatchRequest> findAllByRoomForUpdate(@Param("room") Room room);
 
     List<MatchRequest> findByRoom_RoomId(Long roomId);
 

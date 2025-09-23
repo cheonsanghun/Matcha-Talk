@@ -29,8 +29,9 @@ dependencies {
 	annotationProcessor 'org.projectlombok:lombok'                              // 롬복 어노테이션 처리용(컴파일 시)
 
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'              // 개발 편의 기능(자동 리스타트 등, 배포 시 제외)
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'       // 테스트 코드 작성/실행용(단위/통합 테스트)
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'                 // JUnit 테스트 런처(테스트 실행 시 필요)
+        testImplementation 'org.springframework.boot:spring-boot-starter-test'       // 테스트 코드 작성/실행용(단위/통합 테스트)
+        testImplementation 'com.h2database:h2'                                       // 테스트 환경용 인메모리 DB
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'                 // JUnit 테스트 런처(테스트 실행 시 필요)
 
 	implementation 'org.springframework.boot:spring-boot-starter-mail'           // 이메일 발송 기능(인증 메일 등)
 
