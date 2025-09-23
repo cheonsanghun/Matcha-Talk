@@ -19,7 +19,7 @@ Vue 3 + Vite + Vuetify 3 프런트엔드입니다. 제공된 SQL 스키마를 �
    기본 포트는 `5173`이며 `VITE_DEV_ALLOWED_HOST`와 HTTPS 설정을 통해 동일 네트워크의 다른 기기에서도 접속할 수 있습니다.
 
 ## HTTPS 개발 서버 설정
-로컬/LAN 환경에서 WebRTC를 사용하려면 브라우저 보안 정책상 **HTTPS**가 필수입니다. 아래 절차에 따라 개발용 인증서를 발급하고 Vite 개발 서버에 적용하세요.
+로컬/LAN 환경에서 WebRTC를 사용하려면 브라우저 보안 정책상 **HTTPS**가 필수입니다. 기본적으로 본 레포지터리에는 `frontend/dev-key.pem`, `frontend/dev-cert.pem`이 포함되어 있으며, 별도 설정이 없으면 Vite 개발 서버가 해당 파일을 이용해 HTTPS로 기동됩니다. 처음 접속하는 기기에서는 이 인증서를 신뢰하도록 승인해야 합니다. 필요에 따라 아래 절차에 따라 자체 인증서를 발급하고 교체할 수 있습니다.
 
 ### 1. mkcert로 로컬 인증서 발급 (권장)
 1. [mkcert](https://github.com/FiloSottile/mkcert)를 설치합니다.

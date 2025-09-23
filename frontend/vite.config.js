@@ -1,18 +1,32 @@
 import fs from 'fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+
+const frontendRoot = fileURLToPath(new URL('.', import.meta.url))
+
+const resolvePath = (p) => {
+  if (!p) return ''
+  return path.isAbsolute(p) ? p : path.resolve(frontendRoot, p)
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const backendOrigin = env.VITE_DEV_BACKEND_ORIGIN ?? 'http://localhost:8080'
   const lanHost = (env.VITE_DEV_ALLOWED_HOST || '').trim()
-  const keyPath = (env.VITE_DEV_HTTPS_KEY || '').trim()
-  const certPath = (env.VITE_DEV_HTTPS_CERT || '').trim()
+  const keyEnv = (env.VITE_DEV_HTTPS_KEY || '').trim()
+  const certEnv = (env.VITE_DEV_HTTPS_CERT || '').trim()
+  const keyPath = resolvePath(keyEnv)
+  const certPath = resolvePath(certEnv)
   const devHost = (env.VITE_DEV_SERVER_HOST || '0.0.0.0').trim() || '0.0.0.0'
   const devPort = Number.parseInt(env.VITE_DEV_SERVER_PORT || '5173', 10)
   const hmrHost = (env.VITE_DEV_HMR_HOST || '').trim()
   const hmrPort = env.VITE_DEV_HMR_PORT ? Number.parseInt(env.VITE_DEV_HMR_PORT, 10) : undefined
   const hmrProtocol = (env.VITE_DEV_HMR_PROTOCOL || '').trim()
+  const fallbackKeyPath = resolvePath('dev-key.pem')
+  const fallbackCertPath = resolvePath('dev-cert.pem')
 
   const allowedHosts = ['.ngrok-free.app']
   if (lanHost) {
@@ -27,10 +41,19 @@ export default defineConfig(({ mode }) => {
         cert: fs.readFileSync(certPath),
       }
     } else {
-      console.warn('[vite] 제공된 HTTPS 인증서 경로를 찾을 수 없습니다.', { keyPath, certPath })
+      console.warn('[vite] 제공된 HTTPS 인증서 경로를 찾을 수 없습니다.', {
+        keyPath,
+        certPath,
+      })
     }
-  } else if (keyPath || certPath) {
+  } else if (keyEnv || certEnv) {
     console.warn('[vite] HTTPS 개발 서버를 위해서는 VITE_DEV_HTTPS_KEY와 VITE_DEV_HTTPS_CERT를 모두 지정해야 합니다.')
+  } else if (fs.existsSync(fallbackKeyPath) && fs.existsSync(fallbackCertPath)) {
+    httpsConfig = {
+      key: fs.readFileSync(fallbackKeyPath),
+      cert: fs.readFileSync(fallbackCertPath),
+    }
+    console.info('[vite] 개발용 기본 HTTPS 인증서를 사용합니다. 필요 시 VITE_DEV_HTTPS_KEY/VITE_DEV_HTTPS_CERT로 덮어쓸 수 있습니다.')
   }
 
   return {
