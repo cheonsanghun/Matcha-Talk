@@ -84,6 +84,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import ChatPanel from '../components/ChatPanel.vue'
+import defaultAvatar from '../assets/default-avatar.svg'
 import { createStompClient } from '../services/ws'
 import { setupSignalRoutes } from '../services/signaling'
 import { setupChat } from '../services/chat'
@@ -98,13 +99,14 @@ const matchStore = useMatchStore()
 const localVideo = ref(null)
 const remoteVideo = ref(null)
 const localStream = ref(null)
+const localMediaErrorMessage = ref('')
 const hasRemoteStream = ref(false)
 const chatMessages = ref([])
 const isSendingChat = ref(false)
 const isUploadingFile = ref(false)
 const actionLoading = reactive({ accept: false, decline: false })
 
-const partnerAvatarFallback = 'https://via.placeholder.com/96?text=User'
+const partnerAvatarFallback = defaultAvatar
 
 const meLoginId = computed(() => auth.user?.loginId || auth.user?.login_id || auth.user?.loginID || null)
 const myNickname = computed(() => auth.user?.nickname || auth.user?.nickName || auth.user?.nick_name || '')
@@ -115,9 +117,15 @@ const waitingStatusText = computed(() =>
     ? '매칭 중입니다. 잠시만 기다려주세요.'
     : '현재 대기 중인 사용자가 없습니다.'
 )
-const statusMessage = computed(() =>
-  matchStore.statusMessage || (isMatched.value ? '상대의 준비를 기다리는 중입니다.' : waitingStatusText.value)
-)
+const statusMessage = computed(() => {
+  if (localMediaErrorMessage.value) {
+    return localMediaErrorMessage.value
+  }
+  return (
+    matchStore.statusMessage ||
+    (isMatched.value ? '상대의 준비를 기다리는 중입니다.' : waitingStatusText.value)
+  )
+})
 const decisionFinalized = computed(() => matchStore.sessionClosed || matchStore.bothConfirmed)
 const acceptDisabled = computed(
   () =>
@@ -142,6 +150,8 @@ const connected = ref(false)
 let matchSubscription = null
 let signalRoute = null
 let pc = null
+let audioTransceiver = null
+let videoTransceiver = null
 const offerCreated = ref(false)
 let chatRoute = null
 let chatRoomId = null
@@ -198,16 +208,104 @@ function ensureStatusPolling(immediate = false) {
 }
 
 async function initLocalMedia() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const isSecure = window.isSecureContext
+  const hasNavigator = typeof navigator !== 'undefined'
+  const mediaDevices = hasNavigator ? navigator.mediaDevices : undefined
+  const canUseGetUserMedia = !!(mediaDevices && typeof mediaDevices.getUserMedia === 'function')
+
+  if (!isSecure) {
+    const message = '보안 연결(HTTPS)에서 접속해야 카메라와 마이크를 사용할 수 있습니다.'
+    localMediaErrorMessage.value = message
+    matchStore.statusMessage = message
+    console.warn('HTTPS가 아닌 연결에서는 getUserMedia를 사용할 수 없습니다.')
+    return
+  }
+
+  if (!canUseGetUserMedia) {
+    const message = '이 브라우저에서는 카메라 또는 마이크 접근을 지원하지 않습니다. 다른 브라우저에서 시도해 주세요.'
+    localMediaErrorMessage.value = message
+    matchStore.statusMessage = message
+    console.warn('navigator.mediaDevices.getUserMedia가 지원되지 않습니다.')
+    return
+  }
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     localStream.value = stream
     if (localVideo.value) {
       localVideo.value.srcObject = stream
     }
+    const previousErrorMessage = localMediaErrorMessage.value
+    localMediaErrorMessage.value = ''
+    if (previousErrorMessage && matchStore.statusMessage === previousErrorMessage) {
+      matchStore.statusMessage = ''
+    }
+    syncLocalTracksToPeerConnection()
   } catch (error) {
     console.error('로컬 미디어 초기화 실패', error)
-    if (!matchStore.statusMessage) {
-      matchStore.statusMessage = '카메라 또는 마이크 접근이 차단되었습니다.'
+    localStream.value = null
+    if (localVideo.value) {
+      localVideo.value.srcObject = null
+    }
+    let message = '카메라 또는 마이크 접근이 차단되었습니다. 브라우저 설정을 확인해 주세요.'
+    if (error && typeof error === 'object') {
+      const errorName = error.name
+      if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
+        message = '브라우저에서 카메라 또는 마이크 접근이 차단되었습니다. 권한을 허용한 뒤 다시 시도하세요.'
+      } else if (errorName === 'NotFoundError' || errorName === 'OverconstrainedError') {
+        message = '연결된 카메라 또는 마이크를 찾을 수 없습니다. 장치를 확인한 뒤 다시 시도하세요.'
+      } else if (errorName === 'NotReadableError') {
+        message = '다른 프로그램이 카메라 또는 마이크를 사용 중입니다. 사용 중인 앱을 종료하고 다시 시도하세요.'
+      }
+    }
+    localMediaErrorMessage.value = message
+    matchStore.statusMessage = message
+  }
+}
+
+function syncLocalTracksToPeerConnection() {
+  if (!pc) {
+    return
+  }
+
+  const stream = localStream.value
+  const audioTrack =
+    stream && typeof stream.getAudioTracks === 'function'
+      ? stream.getAudioTracks()[0] || null
+      : null
+  const videoTrack =
+    stream && typeof stream.getVideoTracks === 'function'
+      ? stream.getVideoTracks()[0] || null
+      : null
+
+  if (!audioTransceiver) {
+    audioTransceiver = pc.addTransceiver('audio', { direction: audioTrack ? 'sendrecv' : 'recvonly' })
+  }
+  if (!videoTransceiver) {
+    videoTransceiver = pc.addTransceiver('video', { direction: videoTrack ? 'sendrecv' : 'recvonly' })
+  }
+
+  if (audioTransceiver) {
+    audioTransceiver.direction = audioTrack ? 'sendrecv' : 'recvonly'
+    const sender = audioTransceiver.sender
+    if (sender) {
+      sender.replaceTrack(audioTrack).catch((replaceError) => {
+        console.error('로컬 오디오 트랙 동기화 실패', replaceError)
+      })
+    }
+  }
+
+  if (videoTransceiver) {
+    videoTransceiver.direction = videoTrack ? 'sendrecv' : 'recvonly'
+    const sender = videoTransceiver.sender
+    if (sender) {
+      sender.replaceTrack(videoTrack).catch((replaceError) => {
+        console.error('로컬 비디오 트랙 동기화 실패', replaceError)
+      })
     }
   }
 }
@@ -216,6 +314,13 @@ watch(localVideo, (element) => {
   if (element && localStream.value) {
     element.srcObject = localStream.value
   }
+})
+
+watch(localStream, (stream) => {
+  if (localVideo.value) {
+    localVideo.value.srcObject = stream || null
+  }
+  syncLocalTracksToPeerConnection()
 })
 
 watch(
@@ -338,9 +443,6 @@ async function ensurePeerConnection() {
 
   if (!pc) {
     pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
-    if (localStream.value) {
-      localStream.value.getTracks().forEach((track) => pc.addTrack(track, localStream.value))
-    }
     pc.ontrack = (event) => {
       const [stream] = event.streams
       if (stream && remoteVideo.value) {
@@ -363,6 +465,8 @@ async function ensurePeerConnection() {
       }
     }
   }
+
+  syncLocalTracksToPeerConnection()
 
   if (!signalRoute) {
     signalRoute = setupSignalRoutes(client.value, {
@@ -436,6 +540,8 @@ function teardownPeerConnection() {
     pc.close()
     pc = null
   }
+  audioTransceiver = null
+  videoTransceiver = null
   offerCreated.value = false
   if (remoteVideo.value) {
     remoteVideo.value.srcObject = null
