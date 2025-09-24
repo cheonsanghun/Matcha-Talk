@@ -112,6 +112,7 @@ import defaultAvatar from '../assets/default-avatar.svg'
 import { createStompClient } from '../services/ws'
 import { setupSignalRoutes } from '../services/signaling'
 import { setupChat } from '../services/chat'
+import { getIceServers } from '../services/turn'
 import api from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import { useMatchStore } from '../stores/match'
@@ -382,31 +383,38 @@ async function ensurePeerConnection() {
   }
 
   if (!pc) {
-    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
-    pc.ontrack = (event) => {
-      const [stream] = event.streams
-      if (stream && remoteVideo.value) {
-        remoteVideo.value.srcObject = stream
-        hasRemoteStream.value = true
-        Promise.resolve()
+    const iceServers = await getIceServers()
+
+    if (pc) {
+      // 다른 비동기 ensurePeerConnection 호출이 이미 RTCPeerConnection을 준비했습니다.
+      // 아래 로직은 기존 연결에 대해 계속 진행합니다.
+    } else {
+      pc = new RTCPeerConnection({ iceServers })
+      pc.ontrack = (event) => {
+        const [stream] = event.streams
+        if (stream && remoteVideo.value) {
+          remoteVideo.value.srcObject = stream
+          hasRemoteStream.value = true
+          Promise.resolve()
           .then(() => remoteVideo.value?.play?.())
           .catch((error) => {
             console.warn('원격 영상 자동 재생 실패', error)
           })
       }
     }
-    pc.onicecandidate = (event) => {
-      if (event.candidate && signalRoute) {
-        signalRoute.sendSignal({
-          type: 'ice-candidate',
-          receiverLoginId: matchStore.partnerLoginId,
-          data: event.candidate,
-        })
+      pc.onicecandidate = (event) => {
+        if (event.candidate && signalRoute) {
+          signalRoute.sendSignal({
+            type: 'ice-candidate',
+            receiverLoginId: matchStore.partnerLoginId,
+            data: event.candidate,
+          })
+        }
       }
-    }
-    pc.onconnectionstatechange = () => {
-      if (pc && ['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
-        hasRemoteStream.value = false
+      pc.onconnectionstatechange = () => {
+        if (pc && ['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+          hasRemoteStream.value = false
+        }
       }
     }
   }

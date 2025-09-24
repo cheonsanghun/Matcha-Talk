@@ -59,6 +59,30 @@ VITE_DEV_ALLOWED_HOST=192.168.0.165
 ### 4. 브라우저 신뢰 저장소 업데이트
 사설 인증서를 사용한다면 각 기기 브라우저/OS 신뢰 저장소에 루트 인증서를 등록해야 합니다. 등록이 완료되어야 카메라·마이크 권한 요청이 정상적으로 표시됩니다.
 
+## TURN 서버 설정
+기본 구성은 구글 STUN 서버만 포함하고 있어, 대칭 NAT나 이동통신망 등의 환경에서는 WebRTC 연결이 실패할 수 있습니다. `MatchSession.vue`는 환경 변수 또는 외부 API에서 TURN 정보를 불러와 `RTCPeerConnection`에 주입하도록 수정되어 있으므로, 아래 방법 중 하나를 통해 ICE 서버 구성을 준비하세요.
+
+### 1. Metered Open Relay (동적 자격 증명)
+1. [Metered](https://www.metered.ca) 콘솔에서 프로젝트를 생성하고 Open Relay를 활성화합니다. 무료 티어는 월 500MB까지 TURN 트래픽을 제공합니다.
+2. 콘솔의 TURN Credentials API 엔드포인트(예: `https://matchatalk.metered.live/api/v1/turn/credentials`)와 API Key를 확인합니다.
+3. 프런트엔드 `.env`에 다음 값을 추가합니다.
+   ```bash
+   VITE_TURN_CREDENTIALS_URL=https://matchatalk.metered.live/api/v1/turn/credentials
+   VITE_TURN_API_KEY=<Metered_API_Key>
+   ```
+4. 애플리케이션이 로드되면 `getIceServers()`가 위 엔드포인트를 호출해 임시 TURN 자격 증명을 받아 `RTCPeerConnection`에 적용합니다.
+
+### 2. 정적 TURN 자격 증명 사용
+Metered가 발급한 고정 Username/Password를 직접 사용하거나, 다른 TURN 서버(coturn 등)를 운영 중이라면 다음 변수를 설정합니다.
+```bash
+VITE_TURN_URLS=turn:seoul.relay.metered.ca:80,turn:seoul.relay.metered.ca:443?transport=tcp,turns:seoul.relay.metered.ca:443
+VITE_TURN_USERNAME=<TURN_Username>
+VITE_TURN_CREDENTIAL=<TURN_Password>
+```
+여러 URL은 쉼표로 구분하며, UDP/TCP/TLS를 모두 포함해 두면 다양한 네트워크 환경에서 성공 확률이 높아집니다.
+
+> ⚠️ TURN API 키나 자격 증명은 민감 정보이므로 `.env.local`, `.env.production` 등 git에 커밋되지 않는 파일에서 관리하세요.
+
 ## 운영 환경 배포 체크리스트
 - Nginx, Apache, CloudFront 등 프록시/로드밸런서에 TLS 인증서를 설치하고 443 포트를 개방합니다.
 - `/ws-stomp` 경로(WebSocket 업그레이드 요청)를 포함해 모든 트래픽이 HTTPS로 서비스되도록 설정합니다.
