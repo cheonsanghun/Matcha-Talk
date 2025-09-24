@@ -63,7 +63,7 @@
         <div class="chat-header d-flex align-center pa-4">
           <v-avatar size="40"><v-icon color="primary">mdi-account</v-icon></v-avatar>
           <div class="ml-3">
-            <div class="text-subtitle-1 font-weight-medium">{{ current.name }}</div>
+            <div class="text-subtitle-1 font-weight-medium">{{ currentName }}</div>
             <div class="text-caption text-grey" v-if="!isGroup">온라인</div>
             <div class="text-caption text-grey" v-else>{{ groupParticipants }}</div>
           </div>
@@ -76,10 +76,9 @@
         </div>
         <v-divider />
         <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto" ref="chatMessagesContainer">
-          <div class="text-center my-4 text-caption text-grey">2023년 1월 18일</div>
           <div
             v-for="(m, i) in messages"
-            :key="i"
+            :key="m.id || i"
             class="d-flex mb-4"
             :class="{ 'justify-end': m.me }"
           >
@@ -121,16 +120,16 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { useFriendsStore } from '../stores/friends'
 
 const query = ref('')
 const tab = ref('direct')
-const chats = ref([])
 const groups = ref([
-  { id: 3, name: '스터디 모임', last: '다음 주 모임 시간 안내', participants: ['김서연', '대학 동기'] }
+  { id: 3, type: 'group', name: '스터디 모임', last: '다음 주 모임 시간 안내', participants: ['김서연', '대학 동기'] }
 ])
 
-const current = ref({})
+const current = ref(null)
 const draft = ref('')
 const conversations = ref({
   3: []
@@ -139,38 +138,115 @@ const conversations = ref({
 const chatMessagesContainer = ref(null)
 
 const friendsStore = useFriendsStore()
+const auth = useAuthStore()
 
-onMounted(() => {
-  chats.value = friendsStore.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
-  current.value = chats.value[0] || groups.value[0]
-  scrollToBottom()
+const meLoginId = computed(() => auth.user?.loginId || auth.user?.login_id || auth.user?.loginID || null)
+const meNickName = computed(() => auth.user?.nickName || auth.user?.nickname || auth.user?.nick_name || '')
+
+const timeFormatter = new Intl.DateTimeFormat('ko-KR', {
+  hour: '2-digit',
+  minute: '2-digit',
 })
 
-friendsStore.$subscribe((_, state) => {
-  chats.value = state.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
+const directChats = computed(() =>
+  friendsStore.list.map((friend) => ({
+    id:
+      friend.id ??
+      friend.roomId ??
+      friend.partnerLoginId ??
+      friend.partnerNickName ??
+      `friend-${Math.random().toString(36).slice(2, 10)}`,
+    type: 'direct',
+    name: friend.partnerNickName || friend.partnerLoginId || '알 수 없음',
+    last: summarizeLastMessage(friend),
+    friend,
+  }))
+)
+
+const filteredChats = computed(() => {
+  const keyword = query.value.trim()
+  if (!keyword) {
+    return directChats.value
+  }
+  return directChats.value.filter(
+    (chat) =>
+      (chat.name && chat.name.includes(keyword)) ||
+      (chat.last && chat.last.includes(keyword))
+  )
 })
 
-
-const filteredChats = computed(() =>
-  chats.value.filter(c =>
-    c.name.includes(query.value) || c.last?.includes(query.value)
+const filteredGroups = computed(() => {
+  const keyword = query.value.trim()
+  if (!keyword) {
+    return groups.value
+  }
+  return groups.value.filter(
+    (group) =>
+      (group.name && group.name.includes(keyword)) ||
+      (group.last && group.last.includes(keyword))
   )
-)
-const filteredGroups = computed(() =>
-  groups.value.filter(c =>
-    c.name.includes(query.value) || c.last?.includes(query.value)
-  )
-)
+})
 
-const isGroup = computed(() =>
-    groups.value.some(g => g.id === current.value.id)
-)
+const isGroup = computed(() => current.value?.type === 'group')
+
 const groupParticipants = computed(() => {
-  const g = groups.value.find(g => g.id === current.value.id)
-  return g ? g.participants.join(', ') : ''
+  if (!isGroup.value) {
+    return ''
+  }
+  const group = groups.value.find((g) => g.id === current.value?.id)
+  return group ? group.participants.join(', ') : ''
 })
 
-const messages = computed(() => conversations.value[current.value.id] || [])
+const currentName = computed(() => current.value?.name || '대화 상대 없음')
+
+const messages = computed(() => {
+  if (current.value?.type === 'group') {
+    return conversations.value[current.value.id] || []
+  }
+  if (current.value?.type === 'direct') {
+    return formatFriendMessages(current.value.friend?.messages || [])
+  }
+  return []
+})
+
+function summarizeLastMessage(friend) {
+  if (!friend || !Array.isArray(friend.messages) || friend.messages.length === 0) {
+    return ''
+  }
+  const last = friend.messages[friend.messages.length - 1]
+  const contentType = (last.contentType || '').toString().toUpperCase()
+  if (contentType === 'IMAGE') {
+    return '[이미지]'
+  }
+  if (contentType === 'FILE') {
+    return last.fileName ? `[파일] ${last.fileName}` : '[파일]'
+  }
+  return last.content || ''
+}
+
+function formatFriendMessages(items = []) {
+  return items.map((item) => {
+    const contentType = (item.contentType || '').toString().toUpperCase()
+    let text = item.content || ''
+    if (contentType === 'IMAGE') {
+      text = '[이미지]'
+    } else if (contentType === 'FILE') {
+      text = item.fileName ? `[파일] ${item.fileName}` : '[파일]'
+    }
+    const sentAt = item.sentAt ? new Date(item.sentAt) : null
+    const fromMe = item.senderLoginId
+      ? item.senderLoginId === meLoginId.value
+      : item.fromMe ?? (item.senderNickName && item.senderNickName === meNickName.value)
+
+    return {
+      text,
+      me: !!fromMe,
+      sender: item.senderNickName || '',
+      time: sentAt ? timeFormatter.format(sentAt) : '',
+      id: item.id ?? item.messageId ?? `${text}-${Math.random().toString(36).slice(2, 8)}`,
+    }
+  })
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -182,13 +258,18 @@ function scrollToBottom() {
 }
 
 function openChat(item) {
+  if (!item) {
+    return
+  }
   current.value = item
-  if (!conversations.value[item.id]) conversations.value[item.id] = []
+  if (item.type === 'group' && !conversations.value[item.id]) {
+    conversations.value[item.id] = []
+  }
   scrollToBottom()
 }
 
 function inviteParticipant() {
-  const group = groups.value.find(g => g.id === current.value.id)
+  const group = groups.value.find((g) => g.id === current.value?.id)
   if (!group) return
   if (group.participants.length >= 4) {
     alert('최대 4명까지 초대할 수 있습니다.')
@@ -204,22 +285,86 @@ function startVideoCall() {
 
 function send() {
   if (!draft.value) return
+  if (current.value?.type !== 'group') {
+    draft.value = ''
+    return
+  }
   const formatted = new Date().toLocaleTimeString([], {
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   })
   const msg = { text: draft.value, time: formatted, me: true }
   conversations.value[current.value.id] = conversations.value[current.value.id] || []
   conversations.value[current.value.id].push(msg)
-  let chat = chats.value.find(c => c.id === current.value.id)
-  if (!chat) chat = groups.value.find(c => c.id === current.value.id)
-  if (chat) chat.last = draft.value
+  const group = groups.value.find((g) => g.id === current.value.id)
+  if (group) {
+    group.last = draft.value
+  }
 
   draft.value = ''
   scrollToBottom()
 }
 
 watch(messages, () => scrollToBottom())
+
+watch(
+  directChats,
+  (newChats) => {
+    if (tab.value !== 'direct') {
+      return
+    }
+    if (!newChats.length) {
+      if (groups.value.length) {
+        current.value = groups.value[0]
+        tab.value = 'group'
+      }
+      return
+    }
+    if (!current.value || current.value.type !== 'direct') {
+      current.value = newChats[0]
+      return
+    }
+    const exists = newChats.some((chat) => chat.id === current.value.id)
+    if (!exists) {
+      current.value = newChats[0]
+    }
+  },
+  { immediate: true }
+)
+
+watch(tab, (value) => {
+  if (value === 'direct') {
+    if (directChats.value.length) {
+      if (current.value?.type !== 'direct') {
+        current.value = directChats.value[0]
+      }
+    }
+  } else if (value === 'group') {
+    if (groups.value.length) {
+      if (current.value?.type !== 'group') {
+        current.value = groups.value[0]
+      }
+    }
+  }
+})
+
+onMounted(async () => {
+  try {
+    await friendsStore.refreshFromServer()
+  } catch (error) {
+    console.error('채팅 목록 초기화 실패', error)
+  }
+
+  if (directChats.value.length) {
+    current.value = directChats.value[0]
+    tab.value = 'direct'
+  } else if (groups.value.length) {
+    current.value = groups.value[0]
+    tab.value = 'group'
+  }
+
+  scrollToBottom()
+})
 </script>
 
 <style scoped>

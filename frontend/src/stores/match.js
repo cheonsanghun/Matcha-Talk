@@ -15,13 +15,20 @@ export const useMatchStore = defineStore('match', {
     partnerDecision: null,
     bothConfirmed: false,
     sessionClosed: false,
+    followRequestId: null,
+    followStatus: 'NONE',
+    followDirection: null,
+    followActionable: false,
+    followAccepted: false,
   }),
   getters: {
     isMatched: (state) => state.state === 'MATCHED',
     isWaiting: (state) => state.state === 'WAITING' || state.state === 'ALREADY_WAITING',
+    needsFollowAction: (state) => state.followStatus === 'PENDING' && state.followActionable,
   },
   actions: {
     setFromStartResponse(payload = {}) {
+      this.resetFollow()
       this.state = payload.state || null
       this.requestId = payload.myRequestId ?? null
       this.partnerRequestId = payload.partnerRequestId ?? null
@@ -104,6 +111,35 @@ export const useMatchStore = defineStore('match', {
           break
       }
     },
+    setFollowState(follow = {}) {
+      if (!follow) {
+        this.resetFollow()
+        return
+      }
+      this.followRequestId = follow.followRequestId ?? null
+      this.followStatus = follow.status || 'NONE'
+      this.followDirection = follow.direction || null
+      this.followActionable = !!follow.actionable
+      this.followAccepted = !!follow.accepted
+      if (typeof follow.message === 'string' && follow.message) {
+        this.statusMessage = follow.message
+      }
+    },
+    applyFollowEvent(event = {}) {
+      if (event.message) {
+        this.statusMessage = event.message
+      }
+      if (event.follow) {
+        this.setFollowState(event.follow)
+      }
+    },
+    resetFollow() {
+      this.followRequestId = null
+      this.followStatus = 'NONE'
+      this.followDirection = null
+      this.followActionable = false
+      this.followAccepted = false
+    },
     setMyDecision(decision, message = '', bothAccepted = false) {
       this.myDecision = decision
       if (message) {
@@ -134,6 +170,7 @@ export const useMatchStore = defineStore('match', {
       this.partnerDecision = null
       this.bothConfirmed = false
       this.sessionClosed = false
+      this.resetFollow()
     },
   },
 })

@@ -209,7 +209,9 @@ public class ChatService {
         }
 
         return ChatMessageResponseDto.builder()
+                .messageId(message.getMessageId())
                 .roomId(message.getRoom().getRoomId())
+                .senderLoginId(message.getSender() != null ? message.getSender().getLoginId() : null)
                 .senderNickName(message.getSender() != null ? message.getSender().getNickName() : null)
                 .content(message.getTextContent())
                 .translatedContent(translatedText)

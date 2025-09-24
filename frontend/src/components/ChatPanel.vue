@@ -271,7 +271,7 @@ function displayError(error) {
 
 function addFriend() {
   if (props.partner) {
-    friends.add(props.partner)
+    friends.upsert({ partnerNickName: props.partner })
   }
 }
 
