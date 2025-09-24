@@ -46,16 +46,44 @@
                   playsinline
                 ></video>
 
-                <v-btn
-                  class="follow-btn"
-                  color="success"
-                  variant="flat"
-                  prepend-icon="mdi-heart-outline"
-                  :loading="followLoading"
-                  @click="handleFollow"
-                >
-                  팔로우
-                </v-btn>
+                <div class="follow-action-group">
+                  <template v-if="followActionRequired">
+                    <v-btn
+                      class="follow-btn"
+                      color="success"
+                      variant="flat"
+                      prepend-icon="mdi-heart"
+                      :loading="followActionLoading && followActionType === 'accept'"
+                      :disabled="followActionLoading"
+                      @click="() => respondFollow(true)"
+                    >
+                      수락
+                    </v-btn>
+                    <v-btn
+                      class="follow-btn decline"
+                      color="grey"
+                      variant="outlined"
+                      prepend-icon="mdi-close"
+                      :loading="followActionLoading && followActionType === 'decline'"
+                      :disabled="followActionLoading"
+                      @click="() => respondFollow(false)"
+                    >
+                      거절
+                    </v-btn>
+                  </template>
+                  <v-btn
+                    v-else
+                    class="follow-btn"
+                    :color="followButtonColor"
+                    variant="flat"
+                    :prepend-icon="followButtonIcon"
+                    :loading="followLoading"
+                    :disabled="followButtonDisabled || followLoading"
+                    @click="handleFollow"
+                  >
+                    {{ followButtonLabel }}
+                  </v-btn>
+                </div>
               </div>
             </div>
 
@@ -115,12 +143,14 @@ import { setupChat } from '../services/chat'
 import { getIceServers } from '../services/turn'
 import api from '../services/api'
 import { useAuthStore } from '../stores/auth'
+import { useFriendsStore } from '../stores/friends'
 import { useMatchStore } from '../stores/match'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const matchStore = useMatchStore()
+const friendsStore = useFriendsStore()
 
 const localVideo = ref(null)
 const remoteVideo = ref(null)
@@ -131,6 +161,8 @@ const chatMessages = ref([])
 const isSendingChat = ref(false)
 const isUploadingFile = ref(false)
 const followLoading = ref(false)
+const followActionLoading = ref(false)
+const followActionType = ref(null)
 
 const client = ref(null)
 const connected = ref(false)
@@ -156,6 +188,7 @@ function logLocalState() {
   })
 }
 let matchSubscription = null
+let followSubscription = null
 let signalRoute = null
 let pc = null
 let audioTransceiver = null
@@ -182,6 +215,45 @@ const shouldInitialize = computed(
     !matchStore.sessionClosed
 )
 const meLoginId = computed(() => auth.user?.loginId || auth.user?.login_id || auth.user?.loginID || null)
+const meNickName = computed(() => auth.user?.nickName || auth.user?.nickname || auth.user?.nick_name || '')
+const followStatus = computed(() => matchStore.followStatus)
+const followDirection = computed(() => matchStore.followDirection)
+const followActionRequired = computed(() => matchStore.needsFollowAction)
+const followAccepted = computed(() => matchStore.followAccepted)
+const followButtonLabel = computed(() => {
+  if (followAccepted.value) {
+    return '팔로우 완료'
+  }
+  if (followStatus.value === 'PENDING') {
+    if (followDirection.value === 'OUTGOING') {
+      return '수락 대기중'
+    }
+    if (followDirection.value === 'INCOMING') {
+      return '팔로우 요청됨'
+    }
+    return '팔로우 대기중'
+  }
+  if (followStatus.value === 'DECLINED') {
+    return '다시 팔로우'
+  }
+  return '팔로우'
+})
+const followButtonDisabled = computed(() => {
+  if (followAccepted.value) {
+    return true
+  }
+  if (followStatus.value === 'PENDING') {
+    if (followDirection.value === 'OUTGOING') {
+      return true
+    }
+    if (followDirection.value === 'INCOMING') {
+      return true
+    }
+  }
+  return false
+})
+const followButtonIcon = computed(() => (followAccepted.value ? 'mdi-heart' : 'mdi-heart-outline'))
+const followButtonColor = computed(() => (followAccepted.value ? 'pink-darken-1' : 'success'))
 
 async function initializeSession() {
   if (initializing.value) {
@@ -581,6 +653,8 @@ function handleIncomingChatMessage(payload) {
   }
   try {
     const sentAt = payload.sentAt ? new Date(payload.sentAt) : new Date()
+    const messageId = payload.messageId ?? payload.message_id ?? null
+    const senderLoginId = payload.senderLoginId ?? payload.sender_login_id ?? null
     let sizeValue = null
     if (typeof payload.sizeBytes === 'number') {
       sizeValue = payload.sizeBytes
@@ -590,9 +664,16 @@ function handleIncomingChatMessage(payload) {
         sizeValue = parsed
       }
     }
+    const computedId =
+      messageId ?? `${payload.roomId ?? ''}-${sentAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`
+    const isFromMe = senderLoginId
+      ? senderLoginId === meLoginId.value
+      : !!payload.senderNickName && payload.senderNickName === meNickName.value
     chatMessages.value.push({
-      id: `${payload.roomId ?? ''}-${sentAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: computedId,
+      messageId,
       roomId: payload.roomId,
+      senderLoginId,
       senderNickName: payload.senderNickName,
       content: payload.content ?? '',
       translatedContent: payload.translatedContent ?? '',
@@ -602,7 +683,7 @@ function handleIncomingChatMessage(payload) {
       mimeType: payload.mimeType ?? '',
       sizeBytes: Number.isFinite(sizeValue) ? sizeValue : null,
       sentAt,
-      fromMe: !!payload.senderNickName && payload.senderNickName === (auth.user?.nickname || auth.user?.nickName || auth.user?.nick_name || ''),
+      fromMe: isFromMe,
     })
   } catch (error) {
     console.error('채팅 메시지 처리 실패', error)
@@ -621,6 +702,18 @@ function handleMatchMessage(frame) {
     void ensurePeerConnection()
   } catch (error) {
     console.error('매칭 이벤트 처리 실패', error)
+  }
+}
+
+function handleFollowMessage(frame) {
+  try {
+    const payload = JSON.parse(frame.body)
+    matchStore.applyFollowEvent(payload)
+    if (payload?.eventType === 'ACCEPTED' || payload?.follow?.accepted) {
+      void friendsStore.refreshFromServer().catch(() => {})
+    }
+  } catch (error) {
+    console.error('팔로우 이벤트 처리 실패', error)
   }
 }
 
@@ -655,13 +748,73 @@ function stopLocalStream() {
   }
 }
 
+async function loadFollowStatus() {
+  if (!matchStore.roomId) {
+    matchStore.resetFollow()
+    return
+  }
+  try {
+    const { data } = await api.get(`/follows/rooms/${matchStore.roomId}`)
+    if (data) {
+      matchStore.setFollowState(data)
+      if (data.accepted) {
+        await friendsStore.refreshFromServer().catch(() => {})
+      }
+    }
+  } catch (error) {
+    console.error('팔로우 상태 조회 실패', error)
+  }
+}
+
+async function respondFollow(accept) {
+  if (!matchStore.followRequestId) {
+    return
+  }
+  if (followActionLoading.value) {
+    return
+  }
+  followActionLoading.value = true
+  followActionType.value = accept ? 'accept' : 'decline'
+  try {
+    const endpoint = `/follows/${matchStore.followRequestId}/${accept ? 'accept' : 'decline'}`
+    const { data } = await api.post(endpoint)
+    if (data) {
+      matchStore.setFollowState(data)
+      if (data.accepted) {
+        await friendsStore.refreshFromServer().catch(() => {})
+      }
+    }
+  } catch (error) {
+    console.error('팔로우 응답 실패', error)
+    const message =
+      error?.response?.data?.message ||
+      error?.message ||
+      (accept ? '팔로우 수락에 실패했습니다.' : '팔로우 거절에 실패했습니다.')
+    window.alert(message)
+  } finally {
+    followActionLoading.value = false
+    followActionType.value = null
+  }
+}
+
 async function handleFollow() {
-  if (followLoading.value) {
+  if (followLoading.value || followButtonDisabled.value) {
+    return
+  }
+  if (!matchStore.roomId) {
+    window.alert('채팅방이 준비되지 않았습니다.')
     return
   }
   followLoading.value = true
   try {
-    window.alert('팔로우 기능은 준비 중입니다.')
+    const { data } = await api.post('/follows', { roomId: matchStore.roomId })
+    if (data) {
+      matchStore.setFollowState(data)
+    }
+  } catch (error) {
+    console.error('팔로우 요청 실패', error)
+    const message = error?.response?.data?.message || error?.message || '팔로우 요청에 실패했습니다.'
+    window.alert(message)
   } finally {
     followLoading.value = false
   }
@@ -717,18 +870,40 @@ watch(
   }
 )
 
+watch(
+  () => matchStore.roomId,
+  (roomId) => {
+    if (roomId && shouldInitialize.value) {
+      void loadFollowStatus()
+    } else if (!roomId) {
+      matchStore.resetFollow()
+    }
+  }
+)
+
+watch(
+  () => shouldInitialize.value,
+  (ready) => {
+    if (ready && matchStore.roomId) {
+      void loadFollowStatus()
+    }
+  }
+)
+
 onMounted(async () => {
   const ready = await initializeSession()
   if (!ready) {
     return
   }
 
+  await loadFollowStatus()
   await initLocalMedia()
 
   client.value = createStompClient(auth.token)
   client.value.onConnect = () => {
     connected.value = true
     matchSubscription = client.value.subscribe('/user/queue/match-results', handleMatchMessage)
+    followSubscription = client.value.subscribe('/user/queue/follow-events', handleFollowMessage)
     ensureChatRoute()
     void ensurePeerConnection()
   }
@@ -736,6 +911,8 @@ onMounted(async () => {
     connected.value = false
     matchSubscription?.unsubscribe()
     matchSubscription = null
+    followSubscription?.unsubscribe()
+    followSubscription = null
     teardownPeerConnection()
     teardownChatRoute()
   }
@@ -748,6 +925,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   matchSubscription?.unsubscribe()
   matchSubscription = null
+  followSubscription?.unsubscribe()
+  followSubscription = null
   if (signalRoute?.sub) {
     signalRoute.sub.unsubscribe()
   }
@@ -829,17 +1008,27 @@ onBeforeUnmount(() => {
   z-index: 3;
 }
 
-.follow-btn {
+.follow-action-group {
   position: absolute;
   left: 32px;
   bottom: 32px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  z-index: 3;
+}
+
+.follow-btn {
   border-radius: 999px;
   padding-inline: 22px;
   font-weight: 600;
-  background: #c6f7d6 !important;
-  color: #1b5e20 !important;
-  box-shadow: 0 18px 32px rgba(42, 157, 143, 0.25);
-  z-index: 3;
+  box-shadow: 0 18px 32px rgba(42, 157, 143, 0.18);
+}
+
+.follow-btn.decline {
+  color: #5f6368 !important;
+  background: #ffffff !important;
+  box-shadow: none;
 }
 
 .chat-column {

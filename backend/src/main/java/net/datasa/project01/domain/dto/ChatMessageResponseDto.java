@@ -10,7 +10,9 @@ import java.time.LocalDateTime;
 @Builder
 @AllArgsConstructor
 public class ChatMessageResponseDto {
+    private final Long messageId;
     private final Long roomId;
+    private final String senderLoginId;
     private final String senderNickName;
     private final String content;
     private final String translatedContent; // 번역된 메시지를 담을 필드
