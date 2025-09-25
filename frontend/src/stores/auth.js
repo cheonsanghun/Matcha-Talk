@@ -6,8 +6,8 @@ export const useAuthStore = defineStore('auth', {
     user: JSON.parse(localStorage.getItem('user') || 'null'),
   }),
   getters: {
-    // ✅ 토큰 또는 사용자 요약 중 하나만 있어도 로그인된 것으로 간주
-    isAuthenticated: (s) => !!(s.token || s.user),
+    isAuthenticated: (s) => Boolean(s.token),
+    hasUserSnapshot: (s) => Boolean(s.user),
   },
   actions: {
     login({ token, user }) {

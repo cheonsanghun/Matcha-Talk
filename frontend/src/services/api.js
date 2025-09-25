@@ -1,6 +1,8 @@
 import axios from 'axios'
 import { camelizeKeys, snakifyKeys, isTransformable } from '../utils/case'
 import { API_BASE_URL } from './endpoints'
+import router from '../router'
+import { useAuthStore } from '../stores/auth'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -41,6 +43,16 @@ api.interceptors.response.use(
   (error) => {
     if (error?.response?.data && isTransformable(error.response.data)) {
       error.response.data = camelizeKeys(error.response.data)
+    }
+
+    if (error?.response?.status === 401) {
+      const auth = useAuthStore()
+      if (auth.isAuthenticated || auth.hasUserSnapshot) {
+        auth.logout()
+        if (router.currentRoute.value.name !== 'login') {
+          router.push({ name: 'login', query: { expired: '1' } }).catch(() => {})
+        }
+      }
     }
     return Promise.reject(error)
   }
