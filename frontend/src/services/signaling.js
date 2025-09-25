@@ -24,6 +24,8 @@ export function setupSignalRoutes(
     const payload = parseBody(msg)
     if (payload) {
       onSignal?.(payload)
+    } else {
+      console.warn('[signaling] Received empty signaling payload. Ignored.')
     }
   })
   subscriptions.push(signalSubscription)
@@ -39,7 +41,18 @@ export function setupSignalRoutes(
   subscriptions.push(errorSubscription)
 
   function sendSignal(signal = {}) {
-    const payload = { senderLoginId: me, ...signal }
+    const { receiverLoginId, data, ...rest } = signal || {}
+    const payload = { senderLoginId: me, ...rest }
+    if (receiverLoginId !== undefined) {
+      payload.receiverLoginId = receiverLoginId
+    }
+    if (data !== undefined) {
+      payload.data = data
+    }
+    if (!payload.receiverLoginId) {
+      console.error('[signaling] receiverLoginId is required but missing. Signal not sent.')
+      return
+    }
     client.publish({
       destination: '/app/signal',
       body: JSON.stringify(payload),
