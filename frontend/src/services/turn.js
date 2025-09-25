@@ -1,4 +1,27 @@
-const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
+const DEFAULT_STUN_URLS = ['stun:stun.relay.metered.ca:80']
+
+const DEFAULT_TURN_URLS = [
+  'turn:seoul.relay.metered.ca:80',
+  'turn:seoul.relay.metered.ca:80?transport=tcp',
+  'turn:seoul.relay.metered.ca:443',
+  'turns:seoul.relay.metered.ca:443?transport=tcp',
+]
+
+const DEFAULT_TURN_USERNAME = '1ef2a88d0379a8048e08c767'
+const DEFAULT_TURN_CREDENTIAL = 'Lj1tozp0QAevEsUd'
+
+const DEFAULT_TURN_CREDENTIALS_URL = 'https://matchatalk.metered.live/api/v1/turn/credentials'
+const DEFAULT_TURN_API_KEY = '2199f562de270d20a2f0cc5134b9bae7dc0d'
+
+const DEFAULT_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  ...DEFAULT_STUN_URLS.map((url) => ({ urls: url })),
+  {
+    urls: [...DEFAULT_TURN_URLS],
+    username: DEFAULT_TURN_USERNAME,
+    credential: DEFAULT_TURN_CREDENTIAL,
+  },
+]
 
 let cachedIceServers = null
 let pendingIceServersPromise = null
@@ -84,13 +107,12 @@ function dedupeIceServers(servers) {
 
 function parseStaticIceServersFromEnv() {
   const urlsEnv = import.meta.env.VITE_TURN_URLS
-  if (!urlsEnv) {
-    return []
-  }
+  const hasCustomUrls = typeof urlsEnv === 'string' && urlsEnv.trim().length > 0
+  const usernameEnv = import.meta.env.VITE_TURN_USERNAME
+  const credentialEnv = import.meta.env.VITE_TURN_CREDENTIAL
 
-  const username = import.meta.env.VITE_TURN_USERNAME
-  const credential = import.meta.env.VITE_TURN_CREDENTIAL
-  const urls = urlsEnv
+  const defaultUrls = [...DEFAULT_STUN_URLS, ...DEFAULT_TURN_URLS]
+  const urls = (hasCustomUrls ? urlsEnv : defaultUrls.join(','))
     .split(',')
     .map((url) => url.trim())
     .filter((url) => url.length > 0)
@@ -99,15 +121,25 @@ function parseStaticIceServersFromEnv() {
     return []
   }
 
+  const username = hasCustomUrls ? usernameEnv : usernameEnv || DEFAULT_TURN_USERNAME
+  const credential = hasCustomUrls ? credentialEnv : credentialEnv || DEFAULT_TURN_CREDENTIAL
+
   if (username || credential) {
-    return dedupeIceServers([{ urls, username: username || undefined, credential: credential || undefined }])
+    return dedupeIceServers([
+      {
+        urls,
+        username: username || undefined,
+        credential: credential || undefined,
+      },
+    ])
   }
 
   return dedupeIceServers(urls.map((url) => ({ urls: url })))
 }
 
 function buildCredentialsRequestUrl() {
-  const baseUrl = import.meta.env.VITE_TURN_CREDENTIALS_URL
+  const configuredUrl = import.meta.env.VITE_TURN_CREDENTIALS_URL
+  const baseUrl = typeof configuredUrl === 'string' && configuredUrl.trim().length > 0 ? configuredUrl : DEFAULT_TURN_CREDENTIALS_URL
   if (!baseUrl) {
     return null
   }
@@ -117,7 +149,8 @@ function buildCredentialsRequestUrl() {
     return null
   }
 
-  const apiKey = import.meta.env.VITE_TURN_API_KEY
+  const configuredApiKey = import.meta.env.VITE_TURN_API_KEY
+  const apiKey = typeof configuredApiKey === 'string' && configuredApiKey.trim().length > 0 ? configuredApiKey : DEFAULT_TURN_API_KEY
   if (!apiKey) {
     return requestUrl
   }
