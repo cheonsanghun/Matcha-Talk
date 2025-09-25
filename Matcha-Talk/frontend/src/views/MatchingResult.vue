@@ -85,32 +85,66 @@ const roomId = ref(null)
 let stompClient = null
 const connectionAttempts = ref(0)
 const maxConnectionAttempts = 3
+const isConnecting = ref(false)
+const subscriptions = []
+let reconnectTimer = null
 
 onMounted(async () => {
   await setupWebSocket()
 })
 
-async function setupWebSocket() {
-  const token = localStorage.getItem('token')
+async function setupWebSocket(forceReconnect = false) {
+  const token = auth.token || localStorage.getItem('token')
   if (!token) {
     console.error('JWT token not found')
     router.push('/login')
     return
   }
 
+  if (stompClient?.connected && !forceReconnect) {
+    console.log('🔁 WebSocket is already connected, skip re-initialization')
+    return
+  }
+
+  if (isConnecting.value) {
+    console.log('⏳ WebSocket connection is in progress, skip duplicate attempt')
+    return
+  }
+
+  isConnecting.value = true
+
+  if (stompClient) {
+    try {
+      await stompClient.deactivate()
+    } catch (deactivateError) {
+      console.warn('⚠️ Failed to deactivate previous STOMP client:', deactivateError)
+    }
+  }
+
   console.log('Setting up WebSocket connection...')
   stompClient = createStompClient(token)
-  
+
   stompClient.onConnect = (frame) => {
     console.log('✅ Connected to WebSocket for matching results')
     console.log('Connection frame:', frame)
+    isConnecting.value = false
     connectionAttempts.value = 0
-    
+
+    // 구독 중복 방지
+    subscriptions.forEach((subscription) => {
+      try {
+        subscription.unsubscribe()
+      } catch (unsubscribeError) {
+        console.warn('⚠️ Failed to clean up old subscription', unsubscribeError)
+      }
+    })
+    subscriptions.length = 0
+
     try {
       // 매칭 결과 구독 - 더 안전한 방식으로 구독
-      const subscription = stompClient.subscribe('/user/queue/match-results', (message) => {
+      const matchResultSubscription = stompClient.subscribe('/user/queue/match-results', (message) => {
         console.log('📨 Received match result:', message.body)
-        
+
         try {
           const matchResult = JSON.parse(message.body)
           handleMatchResult(matchResult)
@@ -121,9 +155,10 @@ async function setupWebSocket() {
         // 구독 헤더에 토큰 추가 (필요한 경우)
         'Authorization': `Bearer ${token}`
       })
-      
+
       console.log('✅ Subscribed to /user/queue/match-results')
-      
+      subscriptions.push(matchResultSubscription)
+
       // 테스트용 공통 토픽도 구독 (매칭 상대가 없을 때 테스트용)
       const testSubscription = stompClient.subscribe('/topic/match-results', (message) => {
         console.log('📨 Received test match result:', message.body)
@@ -134,18 +169,21 @@ async function setupWebSocket() {
           console.error('❌ Error parsing test match result:', error)
         }
       })
-      
+      subscriptions.push(testSubscription)
+
       // 대기 상태 알림 구독
       const statusSubscription = stompClient.subscribe('/topic/match-status', (message) => {
         console.log('📋 Received match status:', message.body)
         sessionStatus.value = message.body || '매칭 대기 중...'
       })
-      
+      subscriptions.push(statusSubscription)
+
       const userStatusSubscription = stompClient.subscribe('/user/queue/match-status', (message) => {
         console.log('📋 Received user match status:', message.body)
         sessionStatus.value = message.body || '매칭 대기 중...'
       })
-      
+      subscriptions.push(userStatusSubscription)
+
     } catch (subscribeError) {
       console.error('❌ Subscription error:', subscribeError)
     }
@@ -155,18 +193,17 @@ async function setupWebSocket() {
     console.error('❌ STOMP error:', frame.headers?.message || 'Unknown error')
     console.error('Details:', frame.body)
     console.error('Full frame:', frame)
-    
-    // 연결 재시도
-    if (connectionAttempts.value < maxConnectionAttempts) {
-      setTimeout(() => {
-        connectionAttempts.value++
-        console.log(`🔄 Retrying WebSocket connection (${connectionAttempts.value}/${maxConnectionAttempts})`)
-        setupWebSocket()
-      }, 2000)
-    } else {
-      console.error('❌ Max connection attempts reached')
-      alert('매칭 서버 연결에 실패했습니다. 페이지를 새로고침해주세요.')
+    isConnecting.value = false
+
+    const errorMessage = frame.headers?.message || ''
+    if (errorMessage.toLowerCase().includes('unauthorized') || errorMessage.toLowerCase().includes('forbidden')) {
+      auth.logout()
+      alert('세션이 만료되었거나 인증 정보가 올바르지 않습니다. 다시 로그인해 주세요.')
+      router.push('/login')
+      return
     }
+
+    scheduleReconnect()
   }
 
   stompClient.onWebSocketError = (event) => {
@@ -175,6 +212,10 @@ async function setupWebSocket() {
 
   stompClient.onWebSocketClose = (event) => {
     console.log('🔌 WebSocket connection closed:', event)
+    isConnecting.value = false
+    if (!event.wasClean) {
+      scheduleReconnect()
+    }
   }
 
   // 연결 전 디버그 정보
@@ -187,7 +228,29 @@ async function setupWebSocket() {
     console.log('🚀 WebSocket activation initiated')
   } catch (error) {
     console.error('❌ Failed to activate WebSocket:', error)
+    isConnecting.value = false
+    scheduleReconnect()
   }
+}
+
+function scheduleReconnect() {
+  if (connectionAttempts.value >= maxConnectionAttempts) {
+    console.error('❌ Max connection attempts reached')
+    alert('매칭 서버 연결에 실패했습니다. 페이지를 새로고침해주세요.')
+    return
+  }
+
+  if (reconnectTimer) {
+    console.log('⏳ Reconnect already scheduled, skip new timer')
+    return
+  }
+
+  connectionAttempts.value++
+  console.log(`🔄 Retrying WebSocket connection (${connectionAttempts.value}/${maxConnectionAttempts})`)
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    setupWebSocket(true)
+  }, 2000)
 }
 
 function handleMatchResult(matchResult) {
@@ -222,10 +285,28 @@ function declineMatch() {
   }
 }
 
-onBeforeUnmount(() => {
-  if (stompClient && stompClient.connected) {
-    stompClient.deactivate()
-    console.log('🔌 Disconnected from WebSocket')
+onBeforeUnmount(async () => {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
+  subscriptions.forEach((subscription) => {
+    try {
+      subscription.unsubscribe()
+    } catch (error) {
+      console.warn('⚠️ Failed to unsubscribe during cleanup', error)
+    }
+  })
+  subscriptions.length = 0
+
+  if (stompClient) {
+    try {
+      await stompClient.deactivate()
+      console.log('🔌 Disconnected from WebSocket')
+    } catch (error) {
+      console.warn('⚠️ Failed to cleanly deactivate STOMP client', error)
+    }
   }
 })
 </script>
