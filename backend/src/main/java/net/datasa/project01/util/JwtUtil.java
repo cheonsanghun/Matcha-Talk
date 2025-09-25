@@ -15,8 +15,8 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import java.security.Key;
 import java.util.Date;
 
-import org.slf4j.Logger; 
-import org.slf4j.LoggerFactory; 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * JWT -> 사용자가 아이디와 비밀번호로 로그인에 성공했을 때 발급하는 토큰(신분증과 비슷함)
@@ -41,15 +41,12 @@ public class JwtUtil {
 
     private Key key;
 
-    private Date serverStartTime;
-
     @PostConstruct
     public void init() {
         if (SECRET_KEY.length() < 32) {
             throw new IllegalArgumentException("JWT secret key must be at least 32 characters long");
         }
         key = Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
-        serverStartTime = new Date();
         logger.info("JwtUtil initialized with expiration time: {} ms", EXPIRATION_TIME);
     }
 
@@ -91,17 +88,6 @@ public class JwtUtil {
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
-
-            Date issuedAt = claims.getIssuedAt();
-            if (issuedAt == null) {
-                logger.warn("JWT token missing issuedAt claim");
-                return false;
-            }
-
-            if (issuedAt.before(serverStartTime)) {
-                logger.info("Rejecting JWT issued at {} because server started at {}", issuedAt, serverStartTime);
-                return false;
-            }
 
             // TODO: 추가 유효성 검사 (블랙리스트 체크 등)
             return true;

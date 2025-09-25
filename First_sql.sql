@@ -154,6 +154,23 @@ CREATE TABLE follow_list (
   INDEX idx_fl_follow_id (follow_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE follow_requests (
+  follow_request_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  room_id           BIGINT NOT NULL,
+  requester_pid     BIGINT NOT NULL,
+  receiver_pid      BIGINT NOT NULL,
+  status            VARCHAR(10) NOT NULL CHECK (status IN ('PENDING','ACCEPTED','DECLINED')),
+  created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  responded_at      TIMESTAMP NULL,
+  CONSTRAINT fk_fr_room      FOREIGN KEY (room_id)       REFERENCES rooms(room_id)      ON DELETE CASCADE,
+  CONSTRAINT fk_fr_requester FOREIGN KEY (requester_pid) REFERENCES users(user_pid)     ON DELETE CASCADE,
+  CONSTRAINT fk_fr_receiver  FOREIGN KEY (receiver_pid)  REFERENCES users(user_pid)     ON DELETE CASCADE,
+  CONSTRAINT uq_fr_room_participants UNIQUE (room_id, requester_pid, receiver_pid),
+  INDEX idx_fr_room_created (room_id, created_at),
+  INDEX idx_fr_requester_status (requester_pid, status, created_at),
+  INDEX idx_fr_receiver_status (receiver_pid, status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 /* =========================================================
  * 4) 랜덤 매칭(대기큐/핸드셰이크)
  *  - rooms를 선행 생성했으므로 FK OK
