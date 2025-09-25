@@ -564,13 +564,20 @@ async function ensurePeerConnection() {
         }
       }
       pc.onicecandidate = (event) => {
-        if (event.candidate && signalRoute) {
-          signalRoute.sendSignal({
-            type: 'ice-candidate',
-            receiverLoginId: matchStore.partnerLoginId,
-            data: event.candidate,
-          })
+        if (!event.candidate || !signalRoute) {
+          // null 후보는 ICE 수집 종료 신호이므로 전송하지 않는다.
+          return
         }
+        const receiverId = matchStore.partnerLoginId
+        if (!receiverId) {
+          console.error('[match-session] Cannot send ICE candidate without receiverLoginId')
+          return
+        }
+        signalRoute.sendSignal({
+          type: 'ice-candidate',
+          receiverLoginId: receiverId,
+          data: event.candidate,
+        })
       }
       pc.oniceconnectionstatechange = () => {
         if (!pc) {
@@ -630,7 +637,7 @@ function scheduleIceRestart(reason) {
 }
 
 async function renegotiate({ iceRestart = false } = {}) {
-  if (!pc || !signalRoute || !matchStore.partnerLoginId) {
+  if (!pc || !signalRoute) {
     return
   }
   if (makingOffer.value) {
@@ -642,11 +649,20 @@ async function renegotiate({ iceRestart = false } = {}) {
     lastOffer.value = offer
     debugLog('create-offer', { offer, iceRestart })
     await pc.setLocalDescription(offer)
-    const description = pc.localDescription || offer
+    const localDescription = pc.localDescription
+    const receiverId = matchStore.partnerLoginId
+    if (!receiverId) {
+      console.error('[match-session] Cannot send offer without receiverLoginId')
+      return
+    }
+    if (!localDescription) {
+      console.error('[match-session] Local description missing while sending offer')
+      return
+    }
     signalRoute.sendSignal({
       type: 'offer',
-      receiverLoginId: matchStore.partnerLoginId,
-      data: description,
+      receiverLoginId: receiverId,
+      data: localDescription,
     })
     offerCreated.value = true
   } catch (error) {
@@ -686,11 +702,20 @@ async function handleSignal(message) {
       lastAnswer.value = answer
       debugLog('create-answer', answer)
       await pc.setLocalDescription(answer)
-      const description = pc.localDescription || answer
+      const localDescription = pc.localDescription
+      const receiverId = message.senderLoginId || matchStore.partnerLoginId
+      if (!receiverId) {
+        console.error('[match-session] Cannot send answer without receiverLoginId')
+        return
+      }
+      if (!localDescription) {
+        console.error('[match-session] Local description missing while sending answer')
+        return
+      }
       signalRoute?.sendSignal({
         type: 'answer',
-        receiverLoginId: matchStore.partnerLoginId,
-        data: description,
+        receiverLoginId: receiverId,
+        data: localDescription,
       })
       offerCreated.value = true
       ignoreOffer.value = false

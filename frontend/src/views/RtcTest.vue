@@ -117,7 +117,18 @@ async function start () {
             await pc.setRemoteDescription(msg.data)
             const answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
-            signal.sendSignal({ type: 'answer', receiverLoginId: msg.senderLoginId, data: answer })
+            const localDescription = pc.localDescription
+            const receiverId = msg.senderLoginId || partner.value
+            // 수신자 또는 SDP가 비어 있으면 서버에서 거부되므로 전송하지 않는다.
+            if (!receiverId) {
+              console.error('[rtc-test] Cannot send answer without receiverLoginId')
+              return
+            }
+            if (!localDescription) {
+              console.error('[rtc-test] Local description missing while sending answer')
+              return
+            }
+            signal.sendSignal({ type: 'answer', receiverLoginId: receiverId, data: localDescription })
           } else if (msg.type === 'answer') {
             await pc.setRemoteDescription(msg.data)
           } else if (msg.type === 'ice-candidate') {
@@ -159,23 +170,40 @@ async function start () {
         if (remoteVideo.value) remoteVideo.value.srcObject = e.streams[0]
       }
       pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          signal?.sendSignal?.({
-            type: 'ice-candidate',
-            receiverLoginId: partner.value,
-            data: e.candidate
-          })
+        if (!e.candidate) {
+          // null 후보는 ICE 수집이 완료되었음을 의미하므로 전송하지 않는다.
+          return
         }
+        const receiverId = partner.value
+        if (!receiverId) {
+          console.error('[rtc-test] Cannot send ICE candidate without receiverLoginId')
+          return
+        }
+        signal?.sendSignal?.({
+          type: 'ice-candidate',
+          receiverLoginId: receiverId,
+          data: e.candidate
+        })
       }
 
       // 7) 발신자면 offer 생성/전송
       if (isInitiator.value) {
         const offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
+        const localDescription = pc.localDescription
+        const receiverId = partner.value
+        if (!receiverId) {
+          console.error('[rtc-test] Cannot send offer without receiverLoginId')
+          return
+        }
+        if (!localDescription) {
+          console.error('[rtc-test] Local description missing while sending offer')
+          return
+        }
         signal.sendSignal({
           type: 'offer',
-          receiverLoginId: partner.value,
-          data: offer
+          receiverLoginId: receiverId,
+          data: localDescription
         })
       }
     }
