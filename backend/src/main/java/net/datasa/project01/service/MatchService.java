@@ -34,7 +34,8 @@ public class MatchService {
         User me = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-        MatchRequest existingWaiting = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING)
+        MatchRequest existingWaiting = matchRequestRepository
+                .findFirstByUserAndStatusOrderByRequestedAtDesc(me, MatchRequest.MatchStatus.WAITING)
                 .orElse(null);
         if (existingWaiting != null) {
             log.debug("User {} is already waiting for a match", loginId);
@@ -208,12 +209,14 @@ public class MatchService {
     }
 
     private MatchRequest findActiveMatch(User user) {
-        MatchRequest matched = matchRequestRepository.findByUserAndStatus(user, MatchRequest.MatchStatus.MATCHED)
+        MatchRequest matched = matchRequestRepository
+                .findFirstByUserAndStatusOrderByRequestedAtDesc(user, MatchRequest.MatchStatus.MATCHED)
                 .orElse(null);
         if (matched != null) {
             return matched;
         }
-        return matchRequestRepository.findByUserAndStatus(user, MatchRequest.MatchStatus.CONFIRMED)
+        return matchRequestRepository
+                .findFirstByUserAndStatusOrderByRequestedAtDesc(user, MatchRequest.MatchStatus.CONFIRMED)
                 .orElse(null);
     }
 

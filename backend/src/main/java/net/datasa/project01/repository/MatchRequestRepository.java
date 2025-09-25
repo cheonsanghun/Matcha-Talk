@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long> {
-    Optional<MatchRequest> findByUserAndStatus(User user, MatchRequest.MatchStatus status);
+    Optional<MatchRequest> findFirstByUserAndStatusOrderByRequestedAtDesc(User user, MatchRequest.MatchStatus status);
 
     Optional<MatchRequest> findByRequestIdAndUser_LoginId(Long requestId, String loginId);
 
