@@ -18,7 +18,7 @@ function buildHeaders(token) {
   }
   const bearer = `Bearer ${token}`
   return {
-    Authorization: bearer,
+    //Authorization: bearer,
     authorization: bearer,
   }
 }
