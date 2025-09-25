@@ -188,7 +188,9 @@ export function createStompClient(options = {}) {
     const message = frame?.headers?.message || ''
     const body = frame?.body || ''
     const combined = `${message} ${body}`.toLowerCase()
-    const authError = /unauthor|forbidden|denied|expired/.test(combined)
+    const authError =
+      /unauthor|forbidden|denied|expired|access\s*denied/.test(combined) ||
+      /권한|만료|접근\s*거부/.test(`${message} ${body}`)
 
     if (typeof client.__userOnStompError === 'function') {
       try {
@@ -212,7 +214,13 @@ export function createStompClient(options = {}) {
   client.onWebSocketClose = async (event) => {
     const reason = `${event?.reason || ''}`.toLowerCase()
     const code = event?.code ?? 0
-    const authHint = reason.includes('401') || reason.includes('unauthor') || code === 4001
+    const authHint =
+      reason.includes('401') ||
+      reason.includes('403') ||
+      reason.includes('unauthor') ||
+      reason.includes('forbidden') ||
+      reason.includes('denied') ||
+      code === 4001
 
     if (typeof client.__userOnWebSocketClose === 'function') {
       try {

@@ -27,6 +27,7 @@ public class StompHandler implements ChannelInterceptor {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String UNAUTHORIZED_PREFIX = "UNAUTHORIZED: ";
     
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
@@ -48,25 +49,25 @@ public class StompHandler implements ChannelInterceptor {
 
         if (!StringUtils.hasText(authHeader)) {
             log.warn("STOMP CONNECT rejected: missing Authorization header. sessionId={}", accessor.getSessionId());
-            throw new AccessDeniedException("Authorization header가 누락된 WebSocket 연결입니다.");
+            throw new AccessDeniedException(UNAUTHORIZED_PREFIX + "Authorization header가 누락된 WebSocket 연결입니다.");
         }
 
         if (!authHeader.startsWith(BEARER_PREFIX)) {
             log.warn("STOMP CONNECT rejected: Authorization header is not Bearer. sessionId={}, header={}",
                     accessor.getSessionId(), authHeader);
-            throw new AccessDeniedException("Bearer 타입의 Authorization 헤더만 허용됩니다.");
+            throw new AccessDeniedException(UNAUTHORIZED_PREFIX + "Bearer 타입의 Authorization 헤더만 허용됩니다.");
         }
 
         String token = authHeader.substring(BEARER_PREFIX.length()).trim();
         if (!StringUtils.hasText(token)) {
             log.warn("STOMP CONNECT rejected: empty token after Bearer prefix. sessionId={}", accessor.getSessionId());
-            throw new AccessDeniedException("JWT 토큰이 비어 있습니다.");
+            throw new AccessDeniedException(UNAUTHORIZED_PREFIX + "JWT 토큰이 비어 있습니다.");
         }
 
         try {
             if (!jwtUtil.validateToken(token)) {
                 log.warn("STOMP CONNECT rejected: invalid JWT token. sessionId={}", accessor.getSessionId());
-                throw new AccessDeniedException("유효하지 않은 JWT 토큰입니다.");
+                throw new AccessDeniedException(UNAUTHORIZED_PREFIX + "유효하지 않은 JWT 토큰입니다.");
             }
 
             String loginId = jwtUtil.getUsernameFromToken(token);
@@ -87,7 +88,7 @@ public class StompHandler implements ChannelInterceptor {
             SecurityContextHolder.clearContext();
             log.warn("STOMP CONNECT rejected: authentication failure. sessionId={}, cause={}",
                     accessor.getSessionId(), e.getMessage(), e);
-            throw new AccessDeniedException("WebSocket 인증에 실패했습니다.", e);
+            throw new AccessDeniedException(UNAUTHORIZED_PREFIX + "WebSocket 인증에 실패했습니다.", e);
         }
     }
 
