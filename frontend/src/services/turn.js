@@ -161,7 +161,7 @@ async function fetchIceServersFromApi() {
 
     return dedupeIceServers(candidates)
   } catch (error) {
-    console.error('TURN credentials를 가져오는 중 오류가 발생했습니다.', error)
+    console.warn('TURN credentials를 가져오는 중 오류가 발생했습니다. 기본 STUN으로 폴백합니다.', error)
     return []
   }
 }
@@ -193,6 +193,20 @@ export async function getIceServers() {
 
   try {
     cachedIceServers = await pendingIceServersPromise
+    if (import.meta.env.DEV) {
+      const redacted = cachedIceServers.map((server) => {
+        if (!server || typeof server !== 'object') {
+          return server
+        }
+        const masked = { ...server }
+        if (masked.credential && typeof masked.credential === 'string') {
+          const prefix = masked.credential.slice(0, 3)
+          masked.credential = `${prefix}***`
+        }
+        return masked
+      })
+      console.log('[turn] Using ICE server configuration', redacted)
+    }
   } catch (error) {
     console.error('ICE 서버 구성을 불러오는 중 오류가 발생했습니다.', error)
     cachedIceServers = DEFAULT_ICE_SERVERS.map((server) => ({ ...server }))

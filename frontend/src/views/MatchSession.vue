@@ -179,6 +179,12 @@ const lastSignal = ref(null)
 const lastOffer = ref(null)
 const lastAnswer = ref(null)
 const lastIceCandidates = ref([])
+const signalError = ref(null)
+
+const makingOffer = ref(false)
+const ignoreOffer = ref(false)
+const settingRemoteAnswerPending = ref(false)
+let iceRestartTimeout = null
 
 function debugLog(label, payload) {
   // eslint-disable-next-line no-console
@@ -198,6 +204,13 @@ function logLocalState() {
     requestId: matchStore.requestId,
     partnerRequestId: matchStore.partnerRequestId,
   })
+}
+
+function handleTokenRefresh(nextToken) {
+  if (!nextToken) {
+    return
+  }
+  auth.login({ token: nextToken, user: auth.user })
 }
 let matchSubscription = null
 let followSubscription = null
@@ -239,6 +252,14 @@ const effectiveShouldCreateOffer = computed(() => {
 })
 const meLoginId = computed(() => auth.user?.loginId || auth.user?.login_id || auth.user?.loginID || null)
 const meNickName = computed(() => auth.user?.nickName || auth.user?.nickname || auth.user?.nick_name || '')
+const isPolitePeer = computed(() => {
+  const myId = meLoginId.value || ''
+  const partnerId = matchStore.partnerLoginId || ''
+  if (!myId || !partnerId) {
+    return false
+  }
+  return myId.localeCompare(partnerId) > 0
+})
 const followStatus = computed(() => matchStore.followStatus)
 const followDirection = computed(() => matchStore.followDirection)
 const followActionRequired = computed(() => matchStore.needsFollowAction)
@@ -503,6 +524,16 @@ async function ensurePeerConnection() {
       // 아래 로직은 기존 연결에 대해 계속 진행합니다.
     } else {
       pc = new RTCPeerConnection({ iceServers })
+      pc.onnegotiationneeded = async () => {
+        if (!pc || !matchStore.partnerLoginId) {
+          return
+        }
+        if (!isPolitePeer.value && pc.signalingState !== 'stable') {
+          debugLog('negotiation-skipped', { reason: 'impolite-and-unstable' })
+          return
+        }
+        await renegotiate({ iceRestart: false })
+      }
       pc.ontrack = (event) => {
         const track = event.track
         let [stream] = event.streams
@@ -541,9 +572,22 @@ async function ensurePeerConnection() {
           })
         }
       }
-      pc.onconnectionstatechange = () => {
-        if (pc && ['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+      pc.oniceconnectionstatechange = () => {
+        if (!pc) {
+          return
+        }
+        const state = pc.iceConnectionState
+        debugLog('ice-state', state)
+        if (state === 'failed' || state === 'disconnected') {
           hasRemoteStream.value = false
+          scheduleIceRestart(state)
+        } else if (state === 'closed') {
+          hasRemoteStream.value = false
+        } else if (state === 'connected' || state === 'completed') {
+          if (iceRestartTimeout) {
+            clearTimeout(iceRestartTimeout)
+            iceRestartTimeout = null
+          }
         }
       }
     }
@@ -555,33 +599,60 @@ async function ensurePeerConnection() {
     signalRoute = setupSignalRoutes(client.value, {
       me: meLoginId.value,
       onSignal: handleSignal,
+      onError: handleSignalError,
     })
   }
 
   if (effectiveShouldCreateOffer.value && !offerCreated.value) {
-    await createOffer()
+    await renegotiate({ iceRestart: false })
   }
 }
 
-async function createOffer() {
+function scheduleIceRestart(reason) {
+  if (iceRestartTimeout || !pc) {
+    return
+  }
+  iceRestartTimeout = setTimeout(async () => {
+    iceRestartTimeout = null
+    if (!pc) {
+      return
+    }
+    debugLog('ice-restart', reason)
+    try {
+      if (typeof pc.restartIce === 'function') {
+        pc.restartIce()
+      }
+    } catch (error) {
+      console.warn('ICE restart invocation failed', error)
+    }
+    await renegotiate({ iceRestart: true })
+  }, 1500)
+}
+
+async function renegotiate({ iceRestart = false } = {}) {
   if (!pc || !signalRoute || !matchStore.partnerLoginId) {
     return
   }
+  if (makingOffer.value) {
+    return
+  }
   try {
-    const offer = await pc.createOffer()
+    makingOffer.value = true
+    const offer = await pc.createOffer(iceRestart ? { iceRestart: true } : undefined)
     lastOffer.value = offer
-    debugLog('create-offer', offer)
+    debugLog('create-offer', { offer, iceRestart })
     await pc.setLocalDescription(offer)
-    const payload = {
+    const description = pc.localDescription || offer
+    signalRoute.sendSignal({
       type: 'offer',
       receiverLoginId: matchStore.partnerLoginId,
-      data: offer,
-    }
-    debugLog('send-signal', payload)
-    signalRoute.sendSignal(payload)
+      data: description,
+    })
     offerCreated.value = true
   } catch (error) {
-    console.error('WebRTC Offer 생성 실패', error)
+    console.error('WebRTC negotiation 실패', error)
+  } finally {
+    makingOffer.value = false
   }
 }
 
@@ -591,6 +662,7 @@ async function handleSignal(message) {
   }
   lastSignal.value = message
   debugLog('signal-received', message)
+  signalError.value = null
   if (!pc) {
     await ensurePeerConnection()
   }
@@ -599,55 +671,102 @@ async function handleSignal(message) {
   }
 
   try {
-    if (message.type === 'offer') {
-      offerCreated.value = true
+    if (message.type === 'offer' && message.data) {
+      const offerCollision = makingOffer.value || pc.signalingState !== 'stable'
+      ignoreOffer.value = !isPolitePeer.value && offerCollision
+      debugLog('offer-received', { offerCollision, ignore: ignoreOffer.value })
+      if (ignoreOffer.value) {
+        return
+      }
+
+      settingRemoteAnswerPending.value = true
       await pc.setRemoteDescription(message.data)
       remoteDescriptionSet.value = true
       const answer = await pc.createAnswer()
       lastAnswer.value = answer
       debugLog('create-answer', answer)
       await pc.setLocalDescription(answer)
-      const payload = {
+      const description = pc.localDescription || answer
+      signalRoute?.sendSignal({
         type: 'answer',
         receiverLoginId: matchStore.partnerLoginId,
-        data: answer,
-      }
-      debugLog('send-signal', payload)
-      signalRoute?.sendSignal(payload)
-    } else if (message.type === 'answer') {
+        data: description,
+      })
       offerCreated.value = true
+      ignoreOffer.value = false
+    } else if (message.type === 'answer' && message.data) {
+      if (ignoreOffer.value) {
+        debugLog('answer-ignored', message)
+        return
+      }
       await pc.setRemoteDescription(message.data)
       remoteDescriptionSet.value = true
+      offerCreated.value = true
+      ignoreOffer.value = false
     } else if (message.type === 'ice-candidate' && message.data) {
       lastIceCandidates.value = [...lastIceCandidates.value, message.data]
       debugLog('ice-candidate-received', message.data)
+      const applyCandidate = async () => {
+        try {
+          await pc.addIceCandidate(message.data)
+        } catch (error) {
+          console.error('ICE candidate 적용 실패', error)
+        }
+      }
       if (!remoteDescriptionSet.value) {
         setTimeout(() => {
-          void pc?.addIceCandidate(message.data).catch((error) => {
-            console.error('ICE candidate 적용 실패', error)
-          })
+          void applyCandidate()
         }, 100)
         return
       }
-      await pc.addIceCandidate(message.data)
+      await applyCandidate()
     }
   } catch (error) {
     console.error('시그널 처리 실패', error)
+    signalError.value = error
+  } finally {
+    if (message.type === 'offer') {
+      settingRemoteAnswerPending.value = false
+    }
+  }
+}
+
+function handleSignalError(payload) {
+  signalError.value = payload
+  const message = payload?.message || '시그널 처리 중 오류가 발생했습니다.'
+  matchStore.statusMessage = message
+  if (import.meta.env.DEV) {
+    console.warn('[match-session] signal-error', payload)
   }
 }
 
 function teardownPeerConnection() {
-  if (signalRoute?.sub) {
-    signalRoute.sub.unsubscribe()
+  if (signalRoute?.unsubscribe) {
+    signalRoute.unsubscribe()
+  } else {
+    signalRoute?.sub?.unsubscribe?.()
+    signalRoute?.errorSub?.unsubscribe?.()
   }
   signalRoute = null
+  if (iceRestartTimeout) {
+    clearTimeout(iceRestartTimeout)
+    iceRestartTimeout = null
+  }
   if (pc) {
-    pc.close()
+    try {
+      pc.close()
+    } catch (error) {
+      console.warn('RTCPeerConnection close failed', error)
+    }
     pc = null
   }
   audioTransceiver = null
   videoTransceiver = null
   offerCreated.value = false
+  makingOffer.value = false
+  ignoreOffer.value = false
+  settingRemoteAnswerPending.value = false
+  signalError.value = null
   if (remoteVideo.value) {
     remoteVideo.value.srcObject = null
   }
@@ -957,7 +1076,13 @@ onMounted(async () => {
   await loadFollowStatus()
   await initLocalMedia()
 
-  client.value = createStompClient(auth.token)
+  const refreshTokenFn = typeof auth.refreshToken === 'function' ? auth.refreshToken.bind(auth) : undefined
+
+  client.value = createStompClient({
+    token: auth.token,
+    refreshToken: refreshTokenFn,
+    onTokenRefreshed: handleTokenRefresh,
+  })
   client.value.onConnect = () => {
     connected.value = true
     matchSubscription = client.value.subscribe('/user/queue/match-results', handleMatchMessage)
@@ -985,8 +1110,11 @@ onBeforeUnmount(() => {
   matchSubscription = null
   followSubscription?.unsubscribe()
   followSubscription = null
-  if (signalRoute?.sub) {
-    signalRoute.sub.unsubscribe()
+  if (signalRoute?.unsubscribe) {
+    signalRoute.unsubscribe()
+  } else {
+    signalRoute?.sub?.unsubscribe?.()
+    signalRoute?.errorSub?.unsubscribe?.()
   }
   signalRoute = null
   client.value?.deactivate?.()

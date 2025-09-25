@@ -1,15 +1,20 @@
 package net.datasa.project01.config;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.util.StringUtils;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-import jakarta.annotation.PostConstruct;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSocketMessageBroker
@@ -17,7 +22,15 @@ import jakarta.annotation.PostConstruct;
 @Slf4j
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
+    private static final List<String> DEFAULT_ALLOWED_ORIGINS = List.of(
+            "http://localhost:*",
+            "https://localhost:*",
+            "http://127.0.0.1:*",
+            "https://127.0.0.1:*"
+    );
+
     private final StompHandler stompHandler;
+    private final Environment environment;
 
     @PostConstruct
     public void init() {
@@ -26,32 +39,41 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        List<String> allowedOrigins = resolveAllowedOrigins();
+        String[] originPatterns = allowedOrigins.isEmpty()
+                ? DEFAULT_ALLOWED_ORIGINS.toArray(String[]::new)
+                : allowedOrigins.toArray(String[]::new);
+
         registry.addEndpoint("/ws-stomp")
-                //.setAllowedOriginPatterns("http://localhost:5173","https://*.ngrok-free.app") // 개발용
-                .setAllowedOriginPatterns(
-                        "http://localhost:*",
-                        "https://localhost:*",
-                        "http://127.0.0.1:*",
-                        "https://127.0.0.1:*",
-                        "http://192.168.*.*:*",
-                        "https://192.168.*.*:*",
-                        "http://[::1]:*",
-                        "https://[::1]:*",
-                        "https://*.ngrok-free.app"
-                ) // 개발용
-                .withSockJS();  // ★ SockJS 필수
+                .setAllowedOriginPatterns(originPatterns)
+                .withSockJS()
+                .setClientLibraryUrl("https://cdn.jsdelivr.net/sockjs/1.5.1/sockjs.min.js");
+
+        log.debug("Registered /ws-stomp endpoint with origins: {}", Arrays.toString(originPatterns));
     }
 
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.setApplicationDestinationPrefixes("/app");
-        registry.enableSimpleBroker("/topic", "/queue");
+        registry.enableSimpleBroker("/topic", "/queue")
+                .setHeartbeatValue(new long[]{25_000L, 25_000L});
     }
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         log.debug("Configuring client inbound channel with StompHandler interceptor");
         registration.interceptors(stompHandler);
+    }
+
+    private List<String> resolveAllowedOrigins() {
+        String raw = environment.getProperty("app.ws.allowed-origins", "");
+        if (!StringUtils.hasText(raw)) {
+            return List.of();
+        }
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toList());
     }
 }

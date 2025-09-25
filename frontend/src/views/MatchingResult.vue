@@ -253,6 +253,13 @@ function checkSessionTransition() {
   }
 }
 
+function handleTokenRefresh(nextToken) {
+  if (!nextToken) {
+    return
+  }
+  auth.login({ token: nextToken, user: auth.user })
+}
+
 watch(
   () => matchStore.bothConfirmed,
   (confirmed) => {
@@ -286,7 +293,13 @@ watch(
 onMounted(() => {
   ensureStatusPolling(true)
 
-  client.value = createStompClient(auth.token)
+  const refreshTokenFn = typeof auth.refreshToken === 'function' ? auth.refreshToken.bind(auth) : undefined
+
+  client.value = createStompClient({
+    token: auth.token,
+    refreshToken: refreshTokenFn,
+    onTokenRefreshed: handleTokenRefresh,
+  })
   client.value.onConnect = () => {
     connected.value = true
     matchSubscription = client.value.subscribe('/user/queue/match-results', handleMatchMessage)
