@@ -71,6 +71,15 @@
                       거절
                     </v-btn>
                   </template>
+                  <v-chip
+                    v-else-if="followAccepted"
+                    color="pink-darken-1"
+                    variant="flat"
+                    prepend-icon="mdi-heart"
+                    class="font-weight-semibold px-4 py-2"
+                  >
+                    팔로우 완료
+                  </v-chip>
                   <v-btn
                     v-else
                     class="follow-btn"

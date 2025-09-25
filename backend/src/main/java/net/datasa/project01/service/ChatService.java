@@ -91,6 +91,8 @@ public class ChatService {
         Room room = roomRepository.findById(requestDto.getRoomId())
                 .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
 
+        ensureActiveParticipant(room, sender);
+
         // 1. 원본 메시지를 DB에 저장
         RoomMessage savedMessage = roomMessageRepository.saveAndFlush(RoomMessage.builder()
                 .room(room)
@@ -124,6 +126,8 @@ public class ChatService {
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+        ensureActiveParticipant(room, sender);
 
         String originalFilename = StringUtils.cleanPath(multipartFile.getOriginalFilename() == null
                 ? "file"
@@ -252,6 +256,15 @@ public class ChatService {
 
     private String buildRelativePath(Long roomId, String storedFileName) {
         return roomId + "/" + storedFileName;
+    }
+
+    private void ensureActiveParticipant(Room room, User user) {
+        if (room.getClosedAt() != null) {
+            throw new IllegalArgumentException("종료된 채팅방입니다.");
+        }
+
+        roomMemberRepository.findByRoomAndUserAndLeftAtIsNull(room, user)
+                .orElseThrow(() -> new IllegalArgumentException("채팅방에 참여 중인 사용자만 메시지를 보낼 수 있습니다."));
     }
 
     // TODO: 추가 필요한 메서드들

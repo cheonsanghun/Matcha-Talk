@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import net.datasa.project01.domain.dto.ChatMessageRequestDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.dto.SignalMessage;
+import net.datasa.project01.domain.entity.Room;
+import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.service.ChatService;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -21,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 public class WebSocketChatController {
     private final ChatService chatService;
     private final SimpMessageSendingOperations messagingTemplate;
+    private final RoomMemberRepository roomMemberRepository;
 
     /**
      * 텍스트 채팅 메시지를 처리
@@ -57,6 +60,10 @@ public class WebSocketChatController {
     @MessageMapping("/signal")
     public void handleSignal(SignalMessage signalMessage, Principal principal) {
         try {
+            if (principal == null) {
+                log.warn("Rejected signal message due to missing principal");
+                return;
+            }
             if (signalMessage == null) {
                 log.warn("Received null signal message from user: {}", principal.getName());
                 return;
@@ -69,6 +76,15 @@ public class WebSocketChatController {
             }
 
             signalMessage.setSenderLoginId(principal.getName());
+
+            if (!roomMemberRepository.existsActiveRoomBetweenUsers(
+                    signalMessage.getSenderLoginId(),
+                    signalMessage.getReceiverLoginId(),
+                    Room.RoomType.PRIVATE)) {
+                log.warn("WebRTC signal blocked due to missing active private room between {} and {}",
+                        signalMessage.getSenderLoginId(), signalMessage.getReceiverLoginId());
+                return;
+            }
 
             messagingTemplate.convertAndSendToUser(
                     signalMessage.getReceiverLoginId(),

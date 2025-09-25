@@ -16,14 +16,14 @@ public class WebSocketSecurityConfig {
     public AuthorizationManager<Message<?>> messageAuthorizationManager(
             MessageMatcherDelegatingAuthorizationManager.Builder messages) {
         messages
-            .simpDestMatchers("/app/**").authenticated()
-            .simpDestMatchers("/topic/**", "/queue/**").authenticated()
             .simpTypeMatchers(
-                SimpMessageType.CONNECT, 
-                SimpMessageType.HEARTBEAT, 
-                SimpMessageType.UNSUBSCRIBE, 
+                SimpMessageType.CONNECT,
+                SimpMessageType.HEARTBEAT,
+                SimpMessageType.UNSUBSCRIBE,
                 SimpMessageType.DISCONNECT
             ).permitAll()
+            .simpDestMatchers("/app/**", "/topic/**", "/queue/**", "/user/**").authenticated()
+            .simpSubscribeDestMatchers("/topic/**", "/queue/**", "/user/**").authenticated()
             .anyMessage().denyAll();
 
         return messages.build();
