@@ -1,0 +1,12 @@
+.DS_Store
+.idea/
+*.iml
+node_modules/
+dist/
+.vite/
+coverage/
+target/
+build/
+.gradle/
+out/
+.env
