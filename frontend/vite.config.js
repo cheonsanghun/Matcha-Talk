@@ -1,4 +1,5 @@
 import fs from 'fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -15,7 +16,7 @@ const resolvePath = (p) => {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const backendOrigin = env.VITE_DEV_BACKEND_ORIGIN ?? 'http://localhost:8080'
-  const lanHost = (env.VITE_DEV_ALLOWED_HOST || '').trim()
+  const lanHostsEnv = (env.VITE_DEV_ALLOWED_HOSTS || env.VITE_DEV_ALLOWED_HOST || '').trim()
   const keyEnv = (env.VITE_DEV_HTTPS_KEY || '').trim()
   const certEnv = (env.VITE_DEV_HTTPS_CERT || '').trim()
   const keyPath = resolvePath(keyEnv)
@@ -28,10 +29,22 @@ export default defineConfig(({ mode }) => {
   const fallbackKeyPath = resolvePath('dev-key.pem')
   const fallbackCertPath = resolvePath('dev-cert.pem')
 
-  const allowedHosts = ['.ngrok-free.app']
-  if (lanHost) {
-    allowedHosts.push(lanHost)
+  const allowedHosts = new Set(['.ngrok-free.app', 'localhost', '127.0.0.1', '0.0.0.0', '[::1]'])
+  if (lanHostsEnv) {
+    lanHostsEnv
+        .split(',')
+        .map((host) => host.trim())
+        .filter(Boolean)
+        .forEach((host) => allowedHosts.add(host))
   }
+  Object.values(os.networkInterfaces())
+      .flatMap((netIfaces) => netIfaces ?? [])
+      .filter((details) => Boolean(details) && !details.internal)
+      .forEach((details) => {
+        const host = details?.address?.trim()
+        if (!host) return
+        allowedHosts.add(host)
+      })
 
   let httpsConfig = false
   if (keyPath && certPath) {
@@ -62,7 +75,7 @@ export default defineConfig(({ mode }) => {
       host: devHost,
       port: Number.isFinite(devPort) ? devPort : 5173,
       open: true,
-      allowedHosts,
+      allowedHosts: Array.from(allowedHosts),
       https: httpsConfig,
       hmr: hmrHost || hmrPort || hmrProtocol
         ? {

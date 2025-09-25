@@ -66,7 +66,22 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         log.debug("Configuring client inbound channel with StompHandler interceptor");
+        registration.taskExecutor()
+                .corePoolSize(8)
+                .maxPoolSize(16)
+                .queueCapacity(200)
+                .keepAliveSeconds(60);
         registration.interceptors(stompHandler);
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        log.debug("Configuring client outbound channel with custom task executor");
+        registration.taskExecutor()
+                .corePoolSize(8)
+                .maxPoolSize(16)
+                .queueCapacity(200)
+                .keepAliveSeconds(60);
     }
 
     private List<String> resolveAllowedOrigins() {
