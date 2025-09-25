@@ -179,12 +179,15 @@ function debugLog(label, payload) {
 function logLocalState() {
   debugLog('local-state', {
     shouldCreateOffer: matchStore.shouldCreateOffer,
+    effectiveShouldCreateOffer: effectiveShouldCreateOffer.value,
     offerCreated: offerCreated.value,
     bothConfirmed: matchStore.bothConfirmed,
     lastSignal: lastSignal.value,
     lastOffer: lastOffer.value,
     lastAnswer: lastAnswer.value,
     iceCount: lastIceCandidates.value.length,
+    requestId: matchStore.requestId,
+    partnerRequestId: matchStore.partnerRequestId,
   })
 }
 let matchSubscription = null
@@ -214,6 +217,17 @@ const shouldInitialize = computed(
     !!matchStore.partnerLoginId &&
     !matchStore.sessionClosed
 )
+const effectiveShouldCreateOffer = computed(() => {
+  if (matchStore.shouldCreateOffer) {
+    return true
+  }
+  const myRequestId = matchStore.requestId
+  const partnerRequestId = matchStore.partnerRequestId
+  if (!myRequestId || !partnerRequestId) {
+    return false
+  }
+  return myRequestId > partnerRequestId
+})
 const meLoginId = computed(() => auth.user?.loginId || auth.user?.login_id || auth.user?.loginID || null)
 const meNickName = computed(() => auth.user?.nickName || auth.user?.nickname || auth.user?.nick_name || '')
 const followStatus = computed(() => matchStore.followStatus)
@@ -395,9 +409,18 @@ function syncLocalTracksToPeerConnection() {
     audioTransceiver.direction = audioTrack ? 'sendrecv' : 'recvonly'
     const sender = audioTransceiver.sender
     if (sender) {
-      sender.replaceTrack(audioTrack).catch((replaceError) => {
-        console.error('로컬 오디오 트랙 동기화 실패', replaceError)
-      })
+      sender
+        .replaceTrack(audioTrack)
+        .catch((replaceError) => {
+          console.error('로컬 오디오 트랙 동기화 실패', replaceError)
+        })
+      if (typeof sender.setStreams === 'function') {
+        if (stream && audioTrack) {
+          sender.setStreams(stream)
+        } else if (!audioTrack) {
+          sender.setStreams()
+        }
+      }
     }
   }
 
@@ -405,9 +428,18 @@ function syncLocalTracksToPeerConnection() {
     videoTransceiver.direction = videoTrack ? 'sendrecv' : 'recvonly'
     const sender = videoTransceiver.sender
     if (sender) {
-      sender.replaceTrack(videoTrack).catch((replaceError) => {
-        console.error('로컬 비디오 트랙 동기화 실패', replaceError)
-      })
+      sender
+        .replaceTrack(videoTrack)
+        .catch((replaceError) => {
+          console.error('로컬 비디오 트랙 동기화 실패', replaceError)
+        })
+      if (typeof sender.setStreams === 'function') {
+        if (stream && videoTrack) {
+          sender.setStreams(stream)
+        } else if (!videoTrack) {
+          sender.setStreams()
+        }
+      }
     }
   }
 }
@@ -463,17 +495,34 @@ async function ensurePeerConnection() {
     } else {
       pc = new RTCPeerConnection({ iceServers })
       pc.ontrack = (event) => {
-        const [stream] = event.streams
-        if (stream && remoteVideo.value) {
-          remoteVideo.value.srcObject = stream
-          hasRemoteStream.value = true
+        const track = event.track
+        let [stream] = event.streams
+
+        if (!stream) {
+          const current = remoteVideo.value?.srcObject
+          if (current instanceof MediaStream) {
+            stream = current
+          } else {
+            stream = new MediaStream()
+          }
+          if (track && !stream.getTracks().includes(track)) {
+            stream.addTrack(track)
+          }
+        }
+
+        if (remoteVideo.value && stream) {
+          if (remoteVideo.value.srcObject !== stream) {
+            remoteVideo.value.srcObject = stream
+          }
+          const hasActiveTrack = stream.getTracks().some((mediaTrack) => mediaTrack.readyState !== 'ended')
+          hasRemoteStream.value = hasActiveTrack || stream.getTracks().length > 0
           Promise.resolve()
-          .then(() => remoteVideo.value?.play?.())
-          .catch((error) => {
-            console.warn('원격 영상 자동 재생 실패', error)
-          })
+            .then(() => remoteVideo.value?.play?.())
+            .catch((error) => {
+              console.warn('원격 영상 자동 재생 실패', error)
+            })
+        }
       }
-    }
       pc.onicecandidate = (event) => {
         if (event.candidate && signalRoute) {
           signalRoute.sendSignal({
@@ -500,7 +549,7 @@ async function ensurePeerConnection() {
     })
   }
 
-  if (matchStore.shouldCreateOffer && !offerCreated.value) {
+  if (effectiveShouldCreateOffer.value && !offerCreated.value) {
     await createOffer()
   }
 }
@@ -841,7 +890,7 @@ function leaveSession() {
 }
 
 watch(
-  () => [connected.value, shouldInitialize.value, matchStore.partnerLoginId, matchStore.shouldCreateOffer],
+  () => [connected.value, shouldInitialize.value, matchStore.partnerLoginId, effectiveShouldCreateOffer.value],
   () => {
     if (!shouldInitialize.value || !connected.value) {
       return
