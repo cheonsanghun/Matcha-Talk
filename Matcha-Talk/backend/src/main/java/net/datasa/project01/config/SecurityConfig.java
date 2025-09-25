@@ -46,11 +46,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // HTTP 요청 권한 설정
                 .authorizeHttpRequests(reg -> reg
-                        // WebSocket 연결 경로 허용 - SockJS 폴백 포함
-                        .requestMatchers("/ws-stomp/**").permitAll()
-                        .requestMatchers("/ws-stomp/*/xhr_streaming").permitAll()
-                        .requestMatchers("/ws-stomp/*/websocket").permitAll()
-                        .requestMatchers("/ws-stomp/info").permitAll()
+                        // WebSocket 연결 경로 허용 (토큰은 핸드셰이크 인터셉터에서 검증)
+                        .requestMatchers("/ws/chat/**").permitAll()
                         // 회원가입, 로그인, 중복확인, 이메일 인증 등 인증 없이 접근해야 하는 경로 허용
                         .requestMatchers("/api/auth/login", "/api/auth/find-id", "/api/auth/password-reset/**", "/api/users/signup", "/api/users/exists", "/api/users/email/**").permitAll()
                         // 오류 및 상태 체크 엔드포인트는 인증 없이 접근 허용

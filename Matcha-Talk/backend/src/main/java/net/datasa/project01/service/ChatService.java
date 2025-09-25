@@ -158,6 +158,17 @@ public class ChatService {
                 return RoomDetailResponseDto.fromEntity(room, members);
         }
 
+        @Transactional(readOnly = true)
+        public java.util.List<String> findParticipantLoginIds(Long roomId) {
+                Room room = roomRepository.findById(roomId)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+                return roomMemberRepository.findByRoom(room).stream()
+                        .map(RoomMember::getUser)
+                        .map(User::getLoginId)
+                        .toList();
+        }
+
     // TODO: 추가 필요한 메서드들
     // public void joinRoom(Long roomId, String loginId) { }
     // public void leaveRoom(Long roomId, String loginId) { }

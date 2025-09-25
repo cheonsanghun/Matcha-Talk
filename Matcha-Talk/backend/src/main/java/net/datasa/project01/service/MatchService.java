@@ -9,9 +9,9 @@ import net.datasa.project01.domain.dto.MatchRequestDto;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
+import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
 import net.datasa.project01.repository.UserRepository;
-import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +29,7 @@ public class MatchService {
     private final MatchRequestRepository matchRequestRepository;
     private final UserRepository userRepository;
     private final ChatService chatService;
-    private final SimpMessageSendingOperations messagingTemplate;
+    private final RealTimeMessagingService messagingService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -133,10 +133,7 @@ public class MatchService {
             log.info("🚀 Sending match result to user: {}", loginId);
             
             // 사용자별 큐로 전송
-            messagingTemplate.convertAndSendToUser(loginId, "/queue/match-results", response);
-            
-            // 테스트용: 공통 토픽으로도 전송
-            messagingTemplate.convertAndSend("/topic/match-results", response);
+            messagingService.sendEventToUser(loginId, "match-result", response);
             
             log.info("✅ Match result sent successfully to: {}", loginId);
         } catch (Exception e) {
@@ -154,10 +151,7 @@ public class MatchService {
             String waitingMessage = "매칭 대기 중입니다. 상대방을 찾고 있어요...";
             
             // 사용자별 큐로 전송
-            messagingTemplate.convertAndSendToUser(loginId, "/queue/match-status", waitingMessage);
-            
-            // 테스트용: 공통 토픽으로도 전송
-            messagingTemplate.convertAndSend("/topic/match-status", waitingMessage);
+            messagingService.sendEventToUser(loginId, "match-status", waitingMessage);
             
             log.info("✅ Waiting notification sent to: {}", loginId);
         } catch (Exception e) {

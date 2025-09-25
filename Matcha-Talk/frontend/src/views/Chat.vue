@@ -120,9 +120,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch, onUnmounted } from 'vue' // Added onUnmounted
+import { ref, computed, onMounted, nextTick, watch, onUnmounted } from 'vue'
 import { useFriendsStore } from '../stores/friends'
-import { createStompClient } from '../services/ws' // Added import for createStompClient
+import { useAuthStore } from '../stores/auth'
+import { createRealtimeClient } from '../services/ws'
 
 const query = ref('')
 const tab = ref('direct')
@@ -138,62 +139,46 @@ const conversations = ref({
 })
 
 const chatMessagesContainer = ref(null)
-const stompClient = ref(null); // Declared stompClient ref
-
 const friendsStore = useFriendsStore()
+const auth = useAuthStore()
+
+let realtimeClient = null
+let reconnectTimer = null
+let manualDisconnect = false
+let isConnecting = false
+let reconnectAttempts = 0
+const maxReconnectAttempts = 3
+const teardownHandlers = []
 
 onMounted(() => {
   chats.value = friendsStore.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
   current.value = chats.value[0] || groups.value[0]
   scrollToBottom()
-
-  // WebSocket Connection Logic
-  const token = localStorage.getItem('token'); // Get token from localStorage
-  if (!token) {
-    console.error("JWT token not found in localStorage. Cannot establish WebSocket connection.");
-    return;
-  }
-
-  stompClient.value = createStompClient(token);
-
-  stompClient.value.onConnect = () => {
-    console.log('Connected to WebSocket');
-    // Subscribe to public chat topic
-    stompClient.value.subscribe('/topic/public', onMessageReceived);
-    // Subscribe to user-specific queue for private messages/notifications
-    // Assuming user's loginId is available, e.g., from a user store or decoded from token
-    // For now, we'll use a placeholder or assume it's part of the user object in localStorage
-    const user = JSON.parse(localStorage.getItem('user') || 'null');
-    if (user && user.loginId) {
-      stompClient.value.subscribe(`/user/${user.loginId}/queue/messages`, onMessageReceived);
-    } else {
-      console.warn("User loginId not found in localStorage. Cannot subscribe to private queue.");
-    }
-  };
-
-  stompClient.value.onStompError = (frame) => {
-    console.error('Broker reported error: ' + frame.headers['message']);
-    console.error('Details: ' + frame.body);
-  };
-
-  stompClient.value.onWebSocketError = (event) => {
-    console.error('WebSocket Error: ', event);
-  };
-
-  stompClient.value.activate();
+  connectRealtime()
 })
 
 onUnmounted(() => {
-  if (stompClient.value && stompClient.value.connected) {
-    stompClient.value.deactivate();
-    console.log('Disconnected from WebSocket');
+  manualDisconnect = true
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
+  teardownHandlers.forEach((fn) => {
+    try { fn?.() } catch (error) { console.warn('Failed to remove handler', error) }
+  })
+  teardownHandlers.length = 0
+
+  if (realtimeClient) {
+    realtimeClient.disconnect()
+    realtimeClient = null
   }
 })
 
 friendsStore.$subscribe((_, state) => {
   chats.value = state.list.map((name, idx) => ({ id: idx + 1, name, last: '' }))
 })
-
 
 const filteredChats = computed(() =>
   chats.value.filter(c =>
@@ -207,7 +192,7 @@ const filteredGroups = computed(() =>
 )
 
 const isGroup = computed(() =>
-    groups.value.some(g => g.id === current.value.id)
+  groups.value.some(g => g.id === current.value.id)
 )
 const groupParticipants = computed(() => {
   const g = groups.value.find(g => g.id === current.value.id)
@@ -216,7 +201,7 @@ const groupParticipants = computed(() => {
 
 const messages = computed(() => conversations.value[current.value.id] || [])
 
-function scrollToBottom() {
+function scrollToBottom () {
   nextTick(() => {
     const el = chatMessagesContainer.value
     if (el) {
@@ -225,13 +210,13 @@ function scrollToBottom() {
   })
 }
 
-function openChat(item) {
+function openChat (item) {
   current.value = item
   if (!conversations.value[item.id]) conversations.value[item.id] = []
   scrollToBottom()
 }
 
-function inviteParticipant() {
+function inviteParticipant () {
   const group = groups.value.find(g => g.id === current.value.id)
   if (!group) return
   if (group.participants.length >= 4) {
@@ -242,51 +227,146 @@ function inviteParticipant() {
   if (name) group.participants.push(name)
 }
 
-function startVideoCall() {
+function startVideoCall () {
   alert('영상 통화를 시작합니다')
 }
 
-function send() {
-  if (!draft.value) return
-  const formatted = new Date().toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-  const msg = { text: draft.value, time: formatted, me: true }
-  conversations.value[current.value.id] = conversations.value[current.value.id] || []
-  conversations.value[current.value.id].push(msg)
-  let chat = chats.value.find(c => c.id === current.value.id)
-  if (!chat) chat = groups.value.find(c => c.id === current.value.id)
-  if (chat) chat.last = draft.value
+async function connectRealtime () {
+  if (isConnecting || manualDisconnect) return
 
-  draft.value = ''
+  const token = auth.token || localStorage.getItem('token')
+  if (!token) {
+    console.error('JWT token not found. Cannot establish WebSocket connection.')
+    return
+  }
+
+  if (!realtimeClient) {
+    realtimeClient = createRealtimeClient({ token })
+    teardownHandlers.push(
+      realtimeClient.onOpen(() => {
+        console.log('[chat] WebSocket connected')
+        isConnecting = false
+        reconnectAttempts = 0
+      }),
+      realtimeClient.onClose((event) => {
+        console.log('[chat] WebSocket closed', event)
+        isConnecting = false
+        if (manualDisconnect) return
+        scheduleReconnect()
+      }),
+      realtimeClient.onError((event) => {
+        console.error('[chat] WebSocket error', event)
+      }),
+      realtimeClient.onEvent('chat', handleIncomingMessage)
+    )
+  } else {
+    realtimeClient.setToken(token)
+  }
+
+  isConnecting = true
+
+  try {
+    await realtimeClient.connect()
+  } catch (error) {
+    console.error('[chat] Failed to connect WebSocket', error)
+    isConnecting = false
+  }
+}
+
+function scheduleReconnect () {
+  if (manualDisconnect) return
+  if (reconnectAttempts >= maxReconnectAttempts) {
+    console.error('[chat] Max reconnect attempts reached')
+    return
+  }
+  if (reconnectTimer) return
+
+  reconnectAttempts += 1
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    connectRealtime()
+  }, 2000)
+}
+
+function formatTime (isoString) {
+  if (!isoString) {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function ensureConversation (roomId) {
+  if (!conversations.value[roomId]) {
+    conversations.value[roomId] = []
+  }
+  return conversations.value[roomId]
+}
+
+function handleIncomingMessage (payload) {
+  if (!payload) return
+
+  const roomKey = payload.roomId ?? payload.room_id
+  if (!roomKey) return
+
+  const messagesForRoom = ensureConversation(roomKey)
+  const myNickname = auth.user?.nickName || auth.user?.nickname
+  const content = payload.content ?? ''
+  const senderNickname = payload.senderNickName || payload.senderNickname || '상대방'
+
+  messagesForRoom.push({
+    text: content,
+    time: formatTime(payload.sentAt),
+    sender: senderNickname,
+    me: myNickname ? senderNickname === myNickname : false
+  })
+
+  let chat = chats.value.find(c => c.id === roomKey)
+  if (!chat) {
+    chat = { id: roomKey, name: senderNickname, last: content }
+    chats.value.push(chat)
+  } else {
+    chat.last = content
+  }
+
+  if (current.value?.id !== roomKey) {
+    current.value = chat
+  }
+
   scrollToBottom()
 }
 
-function onMessageReceived(payload) {
-  const message = JSON.parse(payload.body);
-  console.log("Received message:", message);
+async function send () {
+  const message = draft.value.trim()
+  if (!message) return
 
-  // Determine if it's a message for the current chat or another chat
-  // This logic needs to be refined based on your backend message structure
-  // For now, let's assume all messages are for the current chat for simplicity
-  const formattedTime = new Date().toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  const roomKey = current.value?.id
+  if (!roomKey) {
+    alert('채팅방이 선택되지 않았습니다.')
+    return
+  }
 
-  const msg = {
-    text: message.content, // Assuming message has a 'content' field
-    time: formattedTime,
-    me: message.senderId === JSON.parse(localStorage.getItem('user') || 'null').id // Assuming senderId and user.id
-  };
+  if (!realtimeClient?.isConnected()) {
+    await connectRealtime()
+    if (!realtimeClient?.isConnected()) {
+      console.warn('WebSocket not connected. Message was not sent.')
+      return
+    }
+  }
 
-  // Add message to the correct conversation
-  // This part needs to be dynamic based on message.roomId or message.senderId
-  // For now, adding to current chat
-  conversations.value[current.value.id] = conversations.value[current.value.id] || [];
-  conversations.value[current.value.id].push(msg);
-  scrollToBottom();
+  try {
+    realtimeClient.send({
+      type: 'CHAT',
+      roomId: Number(roomKey),
+      content: message
+    })
+    draft.value = ''
+  } catch (error) {
+    console.error('Failed to send chat message', error)
+  }
 }
 
 watch(messages, () => scrollToBottom())

@@ -2,45 +2,78 @@ package net.datasa.project01.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.datasa.project01.websocket.JwtHandshakeInterceptor;
+import net.datasa.project01.websocket.ReactiveChatWebSocketHandler;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.messaging.simp.config.ChannelRegistration;
-import org.springframework.messaging.simp.config.MessageBrokerRegistry;
-import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
-import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
-import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.config.annotation.EnableWebSocket;
+import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 
-import jakarta.annotation.PostConstruct;
+import java.security.Principal;
+import java.util.Map;
 
 @Configuration
-@EnableWebSocketMessageBroker
+@EnableWebSocket
 @RequiredArgsConstructor
 @Slf4j
-public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+public class WebSocketConfig implements WebSocketConfigurer {
 
-    private final StompHandler stompHandler;
-
-    @PostConstruct
-    public void init() {
-        log.info("WebSocketConfig initialized with StompHandler");
-    }
+    private final ReactiveChatWebSocketHandler chatWebSocketHandler;
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
 
     @Override
-    public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws-stomp")
-                .setAllowedOriginPatterns("*") // 개발/테스트용 - 모든 IP 허용
-                .withSockJS();  // ★ SockJS 필수
+    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        registry.addHandler(wrapLoggingHandler(chatWebSocketHandler), "/ws/chat")
+                .addInterceptors(jwtHandshakeInterceptor)
+                .setHandshakeHandler(new DefaultHandshakeHandler() {
+                    @Override
+                    protected Principal determineUser(org.springframework.http.server.ServerHttpRequest request,
+                                                       WebSocketHandler wsHandler,
+                                                       Map<String, Object> attributes) {
+                        String loginId = (String) attributes.get("loginId");
+                        return () -> loginId;
+                    }
+                })
+                .setAllowedOriginPatterns("*");
     }
 
+    private WebSocketHandler wrapLoggingHandler(WebSocketHandler delegate) {
+        return new WebSocketHandler() {
+            @Override
+            public void afterConnectionEstablished(org.springframework.web.socket.WebSocketSession session) throws Exception {
+                log.info("✅ WebSocket connection established for user: {}", session.getPrincipal() != null ? session.getPrincipal().getName() : "anonymous");
+                delegate.afterConnectionEstablished(session);
+            }
 
-    @Override
-    public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.setApplicationDestinationPrefixes("/app");
-        registry.enableSimpleBroker("/topic", "/queue");
-    }
+            @Override
+            public void handleMessage(org.springframework.web.socket.WebSocketSession session,
+                                      org.springframework.web.socket.WebSocketMessage<?> message) throws Exception {
+                delegate.handleMessage(session, message);
+            }
 
-    @Override
-    public void configureClientInboundChannel(ChannelRegistration registration) {
-        log.debug("Configuring client inbound channel with StompHandler interceptor");
-        registration.interceptors(stompHandler);
+            @Override
+            public void handleTransportError(org.springframework.web.socket.WebSocketSession session, Throwable exception) throws Exception {
+                log.warn("⚠️ WebSocket transport error for user {}: {}",
+                        session.getPrincipal() != null ? session.getPrincipal().getName() : "anonymous",
+                        exception.getMessage());
+                delegate.handleTransportError(session, exception);
+            }
+
+            @Override
+            public void afterConnectionClosed(org.springframework.web.socket.WebSocketSession session,
+                                              org.springframework.web.socket.CloseStatus closeStatus) throws Exception {
+                log.info("🔌 WebSocket connection closed for user {} with status {}",
+                        session.getPrincipal() != null ? session.getPrincipal().getName() : "anonymous",
+                        closeStatus);
+                delegate.afterConnectionClosed(session, closeStatus);
+            }
+
+            @Override
+            public boolean supportsPartialMessages() {
+                return delegate.supportsPartialMessages();
+            }
+        };
     }
 }

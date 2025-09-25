@@ -51,10 +51,9 @@
 import { ref, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { createStompClient } from '../services/ws'
-import { setupSignalRoutes } from '../services/signaling'
+import { createRealtimeClient } from '../services/ws'
+import { setupSignalHandlers } from '../services/signaling'
 
-// 기본 상태
 const route = useRoute()
 const auth = useAuthStore()
 
@@ -69,133 +68,158 @@ const remoteVideo = ref(null)
 const chats = ref([])
 const draft = ref('')
 
-// WebRTC PeerConnection
 const pc = new RTCPeerConnection({
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 })
 
-// STOMP & signaling 핸들
-let client = null
-let signal = null
-let chatSub = null
+let realtimeClient = null
+let signalClient = null
+const teardownHandlers = []
 
 async function start () {
   try {
     if (connected.value) return
 
-    // 1) STOMP 클라이언트를 먼저 생성
-    if (!client) {
-      client = createStompClient(auth.token)
+    const token = auth.token || localStorage.getItem('token')
+    if (!token) {
+      console.error('JWT token not found. Cannot start WebRTC test.')
+      return
     }
 
-    // 2) 이벤트 핸들러를 설정
-    client.onConnect = async () => {
-      console.log('[STOMP] connected')
-      connected.value = true
+    ensureRealtimeClient(token)
 
-      // v-if 전환으로 비디오 노드가 DOM에 뜨도록 대기
-      await nextTick()
+    await realtimeClient.connect()
+    connected.value = true
 
-      // 3) 시그널 라우트 설정 (구독 포함)
-      signal = setupSignalRoutes(client, {
-        me: me.value,
-        subscribeDest: '/user/queue/signals',
-        onSignal: async (msg) => {
-          if (msg.type === 'offer') {
-            await pc.setRemoteDescription(msg.data)
-            const answer = await pc.createAnswer()
-            await pc.setLocalDescription(answer)
-            signal.sendSignal({ type: 'answer', receiverLoginId: msg.senderLoginId, data: answer })
-          } else if (msg.type === 'answer') {
-            await pc.setRemoteDescription(msg.data)
-          } else if (msg.type === 'ice-candidate') {
-            try {
-              await pc.addIceCandidate(msg.data)
-            } catch (e) {
-              console.warn('Failed to add ICE candidate:', e)
-            }
-          }
-        }
+    await nextTick()
+
+    if (signalClient) {
+      signalClient.dispose()
+    }
+    signalClient = setupSignalHandlers(realtimeClient, {
+      onSignal: handleIncomingSignal
+    })
+
+    await setupMedia()
+    setupPeerCallbacks()
+
+    if (isInitiator.value) {
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      await sendSignal({
+        type: 'offer',
+        receiverLoginId: partner.value,
+        data: offer
       })
-
-      // 4) 채팅 구독
-      chatSub = client.subscribe(`/topic/rooms/${roomId.value}`, (msg) => {
-        try {
-          const payload = JSON.parse(msg.body || '{}')
-          const nick = payload.senderNickname ?? 'unknown'
-          const content = payload.content ?? ''
-          chats.value.push(`${nick}: ${content}`)
-        } catch (e) {
-          console.warn('Invalid chat payload:', e)
-        }
-      })
-
-      // 5) 미디어 스트림 획득 & 바인딩
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        stream.getTracks().forEach(t => pc.addTrack(t, stream))
-        if (localVideo.value) localVideo.value.srcObject = stream
-      } catch (e) {
-        console.error('getUserMedia failed:', e)
-      }
-
-      // 6) 원격 트랙/ICE 콜백
-      pc.ontrack = (e) => {
-        if (remoteVideo.value) remoteVideo.value.srcObject = e.streams[0]
-      }
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          signal?.sendSignal?.({
-            type: 'ice-candidate',
-            receiverLoginId: partner.value,
-            data: e.candidate
-          })
-        }
-      }
-
-      // 7) 발신자면 offer 생성/전송
-      if (isInitiator.value) {
-        const offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
-        signal.sendSignal({
-          type: 'offer',
-          receiverLoginId: partner.value,
-          data: offer
-        })
-      }
     }
-
-    client.onStompError = (frame) => {
-      console.error('STOMP broker error:', frame.headers?.message, frame.body)
-    }
-    client.onWebSocketError = (ev) => {
-      console.error('WebSocket error:', ev)
-    }
-
-    // 3) 마지막으로 활성화
-    if (!client.active) client.activate()
-  } catch (err) {
-    console.error('start() failed:', err)
+  } catch (error) {
+    console.error('start() failed:', error)
   }
 }
 
-function sendChat () {
-  if (!draft.value?.trim()) return
-  if (!client || !client.connected) {
+function ensureRealtimeClient (token) {
+  if (!realtimeClient) {
+    realtimeClient = createRealtimeClient({ token })
+    teardownHandlers.push(
+      realtimeClient.onClose(() => {
+        connected.value = false
+      }),
+      realtimeClient.onError((event) => {
+        console.error('[rtc] WebSocket error', event)
+      }),
+      realtimeClient.onEvent('chat', handleIncomingChat)
+    )
+  } else {
+    realtimeClient.setToken(token)
+  }
+}
+
+async function setupMedia () {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    stream.getTracks().forEach(track => pc.addTrack(track, stream))
+    if (localVideo.value) localVideo.value.srcObject = stream
+  } catch (error) {
+    console.error('getUserMedia failed:', error)
+  }
+}
+
+function setupPeerCallbacks () {
+  pc.ontrack = (event) => {
+    if (remoteVideo.value) remoteVideo.value.srcObject = event.streams[0]
+  }
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendSignal({
+        type: 'ice-candidate',
+        receiverLoginId: partner.value,
+        data: event.candidate
+      })
+    }
+  }
+}
+
+async function handleIncomingSignal (msg) {
+  try {
+    if (msg.type === 'offer') {
+      await pc.setRemoteDescription(msg.data)
+      const answer = await pc.createAnswer()
+      await pc.setLocalDescription(answer)
+      await sendSignal({ type: 'answer', receiverLoginId: msg.senderLoginId, data: answer })
+    } else if (msg.type === 'answer') {
+      await pc.setRemoteDescription(msg.data)
+    } else if (msg.type === 'ice-candidate') {
+      try {
+        await pc.addIceCandidate(msg.data)
+      } catch (error) {
+        console.warn('Failed to add ICE candidate:', error)
+      }
+    }
+  } catch (error) {
+    console.error('Failed to handle incoming signal:', error)
+  }
+}
+
+async function sendSignal (signal) {
+  if (!signalClient) {
+    throw new Error('Signal client is not initialized.')
+  }
+  await signalClient.sendSignal(signal)
+}
+
+function handleIncomingChat (payload) {
+  if (!payload) return
+  const nick = payload.senderNickName ?? payload.senderNickname ?? 'unknown'
+  const content = payload.content ?? ''
+  chats.value.push(`${nick}: ${content}`)
+}
+
+async function sendChat () {
+  const message = draft.value.trim()
+  if (!message) return
+  if (!realtimeClient?.isConnected()) {
     console.warn('Not connected; cannot send chat.')
     return
   }
-  client.publish({
-    destination: `/app/chat.sendMessage/${roomId.value}`,
-    body: JSON.stringify({ content: draft.value })
-  })
-  draft.value = ''
+  try {
+    realtimeClient.send({
+      type: 'CHAT',
+      roomId: Number(roomId.value),
+      content: message
+    })
+    draft.value = ''
+  } catch (error) {
+    console.error('Failed to send chat message:', error)
+  }
 }
 
 onBeforeUnmount(() => {
-  try { chatSub?.unsubscribe?.() } catch {}
-  try { signal?.sub?.unsubscribe?.() } catch {}
-  try { client?.deactivate?.() } catch {}
+  try { signalClient?.dispose?.() } catch {}
+  teardownHandlers.forEach((fn) => {
+    try { fn?.() } catch {}
+  })
+  try { realtimeClient?.disconnect?.() } catch {}
   try { pc?.close?.() } catch {}
 })
 </script>
