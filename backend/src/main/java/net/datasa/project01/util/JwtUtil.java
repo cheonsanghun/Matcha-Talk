@@ -1,22 +1,25 @@
 package net.datasa.project01.util;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-
-import io.jsonwebtoken.security.Keys;
-import jakarta.annotation.PostConstruct;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtParserBuilder;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.SignatureException;
 import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.SignatureAlgorithm;
-
-import java.security.Key;
-import java.util.Date;
-
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SignatureException;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.Key;
+import java.util.Date;
 
 /**
  * JWT -> 사용자가 아이디와 비밀번호로 로그인에 성공했을 때 발급하는 토큰(신분증과 비슷함)
@@ -31,9 +34,15 @@ public class JwtUtil {
     
     @Value("${jwt.secret}")
     private String SECRET_KEY;
-    
+
     @Value("${jwt.expiration:86400000}") // 24시간 기본값
     private long EXPIRATION_TIME;
+
+    @Value("${jwt.issuer:MatchTalk}")
+    private String issuer;
+
+    @Value("${jwt.expected-type:access}")
+    private String expectedTokenType;
     
     // TODO: Refresh Token 지원을 위한 설정 추가
     // @Value("${jwt.refresh.expiration:604800000}") // 7일 기본값
@@ -43,11 +52,29 @@ public class JwtUtil {
 
     @PostConstruct
     public void init() {
-        if (SECRET_KEY.length() < 32) {
-            throw new IllegalArgumentException("JWT secret key must be at least 32 characters long");
+        if (!StringUtils.hasText(SECRET_KEY)) {
+            throw new IllegalArgumentException("JWT secret key must not be empty");
         }
-        key = Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
-        logger.info("JwtUtil initialized with expiration time: {} ms", EXPIRATION_TIME);
+
+        byte[] keyBytes = resolveKeyBytes(SECRET_KEY);
+        if (keyBytes.length < 32) {
+            logger.warn("JWT secret key length is {} bytes which is below the recommended 32 bytes for HS256. "
+                    + "Falling back to SecretKeySpec for compatibility with jsonwebtoken-generated tokens.", keyBytes.length);
+            key = new SecretKeySpec(keyBytes, SignatureAlgorithm.HS256.getJcaName());
+        } else {
+            key = Keys.hmacShaKeyFor(keyBytes);
+        }
+
+        if (!StringUtils.hasText(issuer)) {
+            issuer = null; // treat empty as not enforced
+        }
+
+        if (!StringUtils.hasText(expectedTokenType)) {
+            expectedTokenType = null;
+        }
+
+        logger.info("JwtUtil initialized with expiration time: {} ms, issuer: {}, expected token type: {}", EXPIRATION_TIME,
+                issuer, expectedTokenType);
     }
 
     public String createToken(String username) {
@@ -60,34 +87,50 @@ public class JwtUtil {
                 .setSubject(username)
                 .setIssuedAt(now)
                 .setExpiration(expiration)
-                .setIssuer("MatchTalk") // 토큰 발급자
-                .claim("type", "access") // 토큰 타입
+                .setIssuer(issuer != null ? issuer : "MatchTalk") // 토큰 발급자
+                .claim("type", expectedTokenType != null ? expectedTokenType : "access") // 토큰 타입
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 
     public String getUsernameFromToken(String token) {
         try {
-            Claims claims = Jwts.parserBuilder()
-                .setSigningKey(key)
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
-                
-            return claims.getSubject();
+            Claims claims = parseClaims(token);
+            String subject = claims.getSubject();
+            if (!StringUtils.hasText(subject)) {
+                throw new IllegalArgumentException("JWT token does not contain a subject (sub)");
+            }
+            return subject;
         } catch (Exception e) {
             logger.error("Error extracting username from token", e);
             throw new IllegalArgumentException("Invalid token", e);
         }
     }
-    
+
     public boolean validateToken(String token) {
         try {
-            Claims claims = Jwts.parserBuilder()
-                .setSigningKey(key)
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
+            Claims claims = parseClaims(token);
+
+            if (expectedTokenType != null) {
+                String tokenType = claims.get("type", String.class);
+                if (!expectedTokenType.equals(tokenType)) {
+                    logger.warn("JWT token type mismatch. expected={}, actual={}", expectedTokenType, tokenType);
+                    return false;
+                }
+            }
+
+            if (issuer != null) {
+                String tokenIssuer = claims.getIssuer();
+                if (!issuer.equals(tokenIssuer)) {
+                    logger.warn("JWT token issuer mismatch. expected={}, actual={}", issuer, tokenIssuer);
+                    return false;
+                }
+            }
+
+            if (!StringUtils.hasText(claims.getSubject())) {
+                logger.warn("JWT token subject (sub) claim is empty");
+                return false;
+            }
 
             // TODO: 추가 유효성 검사 (블랙리스트 체크 등)
             return true;
@@ -103,6 +146,31 @@ public class JwtUtil {
             logger.error("Unexpected error during token validation", e);
         }
         return false;
+    }
+
+    private Claims parseClaims(String token) {
+        JwtParserBuilder builder = Jwts.parserBuilder()
+                .setSigningKey(key);
+
+        if (issuer != null) {
+            builder.requireIssuer(issuer);
+        }
+
+        return builder.build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
+
+    private byte[] resolveKeyBytes(String secret) {
+        byte[] keyBytes;
+        try {
+            keyBytes = Decoders.BASE64.decode(secret);
+            logger.info("JWT secret treated as BASE64 encoded value ({} bytes after decoding)", keyBytes.length);
+        } catch (IllegalArgumentException ex) {
+            keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+            logger.info("JWT secret treated as plain text value ({} bytes)", keyBytes.length);
+        }
+        return keyBytes;
     }
     
     // TODO: 추가 필요한 메서드들
