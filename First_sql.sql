@@ -274,3 +274,5 @@ CREATE TABLE user_penalties (
   CONSTRAINT fk_up_user FOREIGN KEY (user_pid) REFERENCES users(user_pid) ON DELETE CASCADE,
   INDEX idx_up_user_window (user_pid, starts_at, ends_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+
