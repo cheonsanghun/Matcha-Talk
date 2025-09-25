@@ -69,7 +69,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registration.taskExecutor()
                 .corePoolSize(8)
                 .maxPoolSize(16)
-                .queueCapacity(200)
+                .queueCapacity(1000)
                 .keepAliveSeconds(60);
         registration.interceptors(stompHandler);
     }
@@ -80,7 +80,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registration.taskExecutor()
                 .corePoolSize(8)
                 .maxPoolSize(16)
-                .queueCapacity(200)
+                .queueCapacity(1000)
                 .keepAliveSeconds(60);
     }
 
