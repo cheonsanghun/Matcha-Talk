@@ -66,14 +66,13 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { createStompClient } from '../services/ws'
-import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import { createRealtimeClient } from '../services/ws'
 
 const router = useRouter()
 const auth = useAuthStore()
 
-// 매칭 상태
 const matchFound = ref(false)
 const partnerName = ref('')
 const partnerAvatar = ref('https://via.placeholder.com/150')
@@ -81,19 +80,22 @@ const sessionStatus = ref('대기 중')
 const mediaUrl = ref('')
 const roomId = ref(null)
 
-// WebSocket 관련
-let stompClient = null
 const connectionAttempts = ref(0)
 const maxConnectionAttempts = 3
 const isConnecting = ref(false)
-const subscriptions = []
-let reconnectTimer = null
 
-onMounted(async () => {
-  await setupWebSocket()
+let websocketClient = null
+let reconnectTimer = null
+let manualDisconnect = false
+const teardownHandlers = []
+
+onMounted(() => {
+  connectWebSocket()
 })
 
-async function setupWebSocket(forceReconnect = false) {
+async function connectWebSocket () {
+  if (isConnecting.value || manualDisconnect) return
+
   const token = auth.token || localStorage.getItem('token')
   if (!token) {
     console.error('JWT token not found')
@@ -101,142 +103,51 @@ async function setupWebSocket(forceReconnect = false) {
     return
   }
 
-  if (stompClient?.connected && !forceReconnect) {
-    console.log('🔁 WebSocket is already connected, skip re-initialization')
-    return
-  }
-
-  if (isConnecting.value) {
-    console.log('⏳ WebSocket connection is in progress, skip duplicate attempt')
-    return
+  if (!websocketClient) {
+    websocketClient = createRealtimeClient({ token })
+    teardownHandlers.push(
+      websocketClient.onOpen(() => {
+        console.log('✅ WebSocket connected for matching results')
+        isConnecting.value = false
+        connectionAttempts.value = 0
+        sessionStatus.value = '매칭 서버에 연결되었습니다.'
+      }),
+      websocketClient.onClose((event) => {
+        console.log('🔌 WebSocket connection closed:', event)
+        isConnecting.value = false
+        if (manualDisconnect) return
+        if (!event.wasClean) {
+          scheduleReconnect()
+        }
+      }),
+      websocketClient.onError((event) => {
+        console.error('❌ WebSocket error:', event)
+      }),
+      websocketClient.onEvent('match-result', handleMatchResult),
+      websocketClient.onEvent('match-status', handleMatchStatus),
+      websocketClient.onEvent('connected', () => {
+        sessionStatus.value = '매칭 대기 중입니다...'
+      })
+    )
+  } else {
+    websocketClient.setToken(token)
   }
 
   isConnecting.value = true
 
-  if (stompClient) {
-    try {
-      await stompClient.deactivate()
-    } catch (deactivateError) {
-      console.warn('⚠️ Failed to deactivate previous STOMP client:', deactivateError)
-    }
-  }
-
-  console.log('Setting up WebSocket connection...')
-  stompClient = createStompClient(token)
-
-  stompClient.onConnect = (frame) => {
-    console.log('✅ Connected to WebSocket for matching results')
-    console.log('Connection frame:', frame)
-    isConnecting.value = false
-    connectionAttempts.value = 0
-
-    // 구독 중복 방지
-    subscriptions.forEach((subscription) => {
-      try {
-        subscription.unsubscribe()
-      } catch (unsubscribeError) {
-        console.warn('⚠️ Failed to clean up old subscription', unsubscribeError)
-      }
-    })
-    subscriptions.length = 0
-
-    try {
-      // 매칭 결과 구독 - 더 안전한 방식으로 구독
-      const matchResultSubscription = stompClient.subscribe('/user/queue/match-results', (message) => {
-        console.log('📨 Received match result:', message.body)
-
-        try {
-          const matchResult = JSON.parse(message.body)
-          handleMatchResult(matchResult)
-        } catch (error) {
-          console.error('❌ Error parsing match result:', error)
-        }
-      }, {
-        // 구독 헤더에 토큰 추가 (필요한 경우)
-        'Authorization': `Bearer ${token}`
-      })
-
-      console.log('✅ Subscribed to /user/queue/match-results')
-      subscriptions.push(matchResultSubscription)
-
-      // 테스트용 공통 토픽도 구독 (매칭 상대가 없을 때 테스트용)
-      const testSubscription = stompClient.subscribe('/topic/match-results', (message) => {
-        console.log('📨 Received test match result:', message.body)
-        try {
-          const matchResult = JSON.parse(message.body)
-          handleMatchResult(matchResult)
-        } catch (error) {
-          console.error('❌ Error parsing test match result:', error)
-        }
-      })
-      subscriptions.push(testSubscription)
-
-      // 대기 상태 알림 구독
-      const statusSubscription = stompClient.subscribe('/topic/match-status', (message) => {
-        console.log('📋 Received match status:', message.body)
-        sessionStatus.value = message.body || '매칭 대기 중...'
-      })
-      subscriptions.push(statusSubscription)
-
-      const userStatusSubscription = stompClient.subscribe('/user/queue/match-status', (message) => {
-        console.log('📋 Received user match status:', message.body)
-        sessionStatus.value = message.body || '매칭 대기 중...'
-      })
-      subscriptions.push(userStatusSubscription)
-
-    } catch (subscribeError) {
-      console.error('❌ Subscription error:', subscribeError)
-    }
-  }
-
-  stompClient.onStompError = (frame) => {
-    console.error('❌ STOMP error:', frame.headers?.message || 'Unknown error')
-    console.error('Details:', frame.body)
-    console.error('Full frame:', frame)
-    isConnecting.value = false
-
-    const errorMessage = frame.headers?.message || ''
-    if (errorMessage.toLowerCase().includes('unauthorized') || errorMessage.toLowerCase().includes('forbidden')) {
-      auth.logout()
-      alert('세션이 만료되었거나 인증 정보가 올바르지 않습니다. 다시 로그인해 주세요.')
-      router.push('/login')
-      return
-    }
-
-    scheduleReconnect()
-  }
-
-  stompClient.onWebSocketError = (event) => {
-    console.error('❌ WebSocket error:', event)
-  }
-
-  stompClient.onWebSocketClose = (event) => {
-    console.log('🔌 WebSocket connection closed:', event)
-    isConnecting.value = false
-    if (!event.wasClean) {
-      scheduleReconnect()
-    }
-  }
-
-  // 연결 전 디버그 정보
-  stompClient.debug = (str) => {
-    console.log('🔍 STOMP Debug:', str)
-  }
-
   try {
-    stompClient.activate()
-    console.log('🚀 WebSocket activation initiated')
+    await websocketClient.connect()
   } catch (error) {
-    console.error('❌ Failed to activate WebSocket:', error)
+    console.error('❌ Failed to establish WebSocket connection:', error)
     isConnecting.value = false
-    scheduleReconnect()
   }
 }
 
-function scheduleReconnect() {
+function scheduleReconnect () {
+  if (manualDisconnect) return
   if (connectionAttempts.value >= maxConnectionAttempts) {
     console.error('❌ Max connection attempts reached')
-    alert('매칭 서버 연결에 실패했습니다. 페이지를 새로고침해주세요.')
+    sessionStatus.value = '매칭 서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.'
     return
   }
 
@@ -245,68 +156,72 @@ function scheduleReconnect() {
     return
   }
 
-  connectionAttempts.value++
+  connectionAttempts.value += 1
   console.log(`🔄 Retrying WebSocket connection (${connectionAttempts.value}/${maxConnectionAttempts})`)
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
-    setupWebSocket(true)
+    connectWebSocket()
   }, 2000)
 }
 
-function handleMatchResult(matchResult) {
-  console.log('🎉 Match found!', matchResult)
-  
+function handleMatchResult (payload) {
+  if (!payload) return
+
+  console.log('🎉 Match found!', payload)
   matchFound.value = true
-  partnerName.value = matchResult.partnerNickName || '상대방'
-  roomId.value = matchResult.roomId
+  partnerName.value = payload.partnerNickName || '상대방'
+  roomId.value = payload.roomId ?? null
   sessionStatus.value = '매칭 성공!'
-  
-  // TODO: 파트너 아바타 정보가 있으면 설정
-  // partnerAvatar.value = matchResult.partnerAvatar || partnerAvatar.value
 }
 
-function acceptMatch() {
+function handleMatchStatus (payload) {
+  if (typeof payload === 'string') {
+    sessionStatus.value = payload || '매칭 대기 중입니다...'
+  } else if (payload?.message) {
+    sessionStatus.value = payload.message
+  } else {
+    sessionStatus.value = '매칭 대기 중입니다...'
+  }
+}
+
+function acceptMatch () {
   if (!roomId.value) {
     alert('채팅방 정보가 없습니다.')
     return
   }
-  
-  // 채팅방으로 이동
+
   router.push({
     name: 'chat',
     query: { roomId: roomId.value }
   })
 }
 
-function declineMatch() {
+function declineMatch () {
   if (confirm('매칭을 거절하시겠습니까?')) {
-    // TODO: 매칭 거절 API 호출
     router.push({ name: 'match' })
   }
 }
 
-onBeforeUnmount(async () => {
+onBeforeUnmount(() => {
+  manualDisconnect = true
+
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
 
-  subscriptions.forEach((subscription) => {
+  teardownHandlers.forEach((teardown) => {
     try {
-      subscription.unsubscribe()
+      teardown?.()
     } catch (error) {
-      console.warn('⚠️ Failed to unsubscribe during cleanup', error)
+      console.warn('⚠️ Failed to remove WebSocket handler during cleanup', error)
     }
   })
-  subscriptions.length = 0
+  teardownHandlers.length = 0
 
-  if (stompClient) {
-    try {
-      await stompClient.deactivate()
-      console.log('🔌 Disconnected from WebSocket')
-    } catch (error) {
-      console.warn('⚠️ Failed to cleanly deactivate STOMP client', error)
-    }
+  if (websocketClient) {
+    websocketClient.disconnect()
+    websocketClient = null
   }
 })
 </script>
