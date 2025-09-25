@@ -28,13 +28,15 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+//import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '../stores/auth'
 
 const store = useAuthStore()
-const { isAuthenticated: isAuth } = storeToRefs(store)
-const isAdmin = computed(() => store.isAdmin())
+//const { isAuthenticated: isAuth } = storeToRefs(store)
+//const isAdmin = computed(() => store.isAdmin())
+
+const { isAuthenticated: isAuth, isAdmin } = storeToRefs(store)
 </script>
 
 <style scoped>
