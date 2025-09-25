@@ -69,6 +69,13 @@ const remoteVideo = ref(null)
 const chats = ref([])
 const draft = ref('')
 
+function handleTokenRefresh(nextToken) {
+  if (!nextToken) {
+    return
+  }
+  auth.login({ token: nextToken, user: auth.user })
+}
+
 // WebRTC PeerConnection
 const pc = new RTCPeerConnection({
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -85,7 +92,12 @@ async function start () {
 
     // 1) STOMP 클라이언트를 먼저 생성
     if (!client) {
-      client = createStompClient(auth.token)
+      const refreshTokenFn = typeof auth.refreshToken === 'function' ? auth.refreshToken.bind(auth) : undefined
+      client = createStompClient({
+        token: auth.token,
+        refreshToken: refreshTokenFn,
+        onTokenRefreshed: handleTokenRefresh,
+      })
     }
 
     // 2) 이벤트 핸들러를 설정
@@ -115,7 +127,10 @@ async function start () {
               console.warn('Failed to add ICE candidate:', e)
             }
           }
-        }
+        },
+        onError: (payload) => {
+          console.warn('[rtc-test] signaling error', payload)
+        },
       })
 
       // 4) 채팅 구독
@@ -194,7 +209,7 @@ function sendChat () {
 
 onBeforeUnmount(() => {
   try { chatSub?.unsubscribe?.() } catch {}
-  try { signal?.sub?.unsubscribe?.() } catch {}
+  try { signal?.unsubscribe?.() ?? signal?.sub?.unsubscribe?.() } catch {}
   try { client?.deactivate?.() } catch {}
   try { pc?.close?.() } catch {}
 })

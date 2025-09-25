@@ -263,6 +263,13 @@ const connectionReady = computed(() => {
   return Boolean(connected.value && currentRoomId.value)
 })
 
+function handleTokenRefresh(nextToken) {
+  if (!nextToken) {
+    return
+  }
+  auth.login({ token: nextToken, user: auth.user })
+}
+
 const connectionStatusText = computed(() => {
   if (isGroup.value) {
     return groupParticipants.value || '그룹 채팅'
@@ -488,7 +495,12 @@ function initStompClient() {
   if (client.value) {
     return
   }
-  client.value = createStompClient(auth.token)
+  const refreshTokenFn = typeof auth.refreshToken === 'function' ? auth.refreshToken.bind(auth) : undefined
+  client.value = createStompClient({
+    token: auth.token,
+    refreshToken: refreshTokenFn,
+    onTokenRefreshed: handleTokenRefresh,
+  })
   client.value.onConnect = () => {
     connected.value = true
     ensureChatRoute()

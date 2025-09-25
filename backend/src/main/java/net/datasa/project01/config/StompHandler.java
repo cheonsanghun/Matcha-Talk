@@ -9,11 +9,16 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.NativeMessageHeaderAccessor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import java.util.List;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -41,48 +46,78 @@ public class StompHandler implements ChannelInterceptor {
     private void authenticateWebSocketConnection(StompHeaderAccessor accessor) {
         String authHeader = resolveAuthorizationHeader(accessor);
 
-        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
-            Object nativeHeaders = accessor.getMessageHeaders().get(NativeMessageHeaderAccessor.NATIVE_HEADERS);
-            log.warn("No valid authorization header found for WebSocket connection. headers={}, raw={}", nativeHeaders, authHeader);
-            throw new IllegalArgumentException("Authorization header가 누락된 WebSocket 연결입니다.");
+        if (!StringUtils.hasText(authHeader)) {
+            log.warn("STOMP CONNECT rejected: missing Authorization header. sessionId={}", accessor.getSessionId());
+            throw new AccessDeniedException("Authorization header가 누락된 WebSocket 연결입니다.");
         }
 
-        String token = authHeader.substring(BEARER_PREFIX.length());
+        if (!authHeader.startsWith(BEARER_PREFIX)) {
+            log.warn("STOMP CONNECT rejected: Authorization header is not Bearer. sessionId={}, header={}",
+                    accessor.getSessionId(), authHeader);
+            throw new AccessDeniedException("Bearer 타입의 Authorization 헤더만 허용됩니다.");
+        }
+
+        String token = authHeader.substring(BEARER_PREFIX.length()).trim();
+        if (!StringUtils.hasText(token)) {
+            log.warn("STOMP CONNECT rejected: empty token after Bearer prefix. sessionId={}", accessor.getSessionId());
+            throw new AccessDeniedException("JWT 토큰이 비어 있습니다.");
+        }
 
         try {
             if (!jwtUtil.validateToken(token)) {
-                log.warn("Invalid JWT token for WebSocket connection");
-                throw new IllegalArgumentException("유효하지 않은 JWT 토큰입니다.");
+                log.warn("STOMP CONNECT rejected: invalid JWT token. sessionId={}", accessor.getSessionId());
+                throw new AccessDeniedException("유효하지 않은 JWT 토큰입니다.");
             }
 
             String loginId = jwtUtil.getUsernameFromToken(token);
             UserDetails userDetails = userDetailsService.loadUserByUsername(loginId);
 
             UsernamePasswordAuthenticationToken authentication =
-                new UsernamePasswordAuthenticationToken(
-                    userDetails, null, userDetails.getAuthorities());
+                    new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities());
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
             accessor.setUser(authentication);
 
-            log.info("WebSocket authentication successful for user: {}", loginId);
+            log.debug("STOMP CONNECT authenticated. user={}, sessionId={}", loginId, accessor.getSessionId());
+        } catch (AccessDeniedException ex) {
+            SecurityContextHolder.clearContext();
+            throw ex;
         } catch (Exception e) {
-            log.error("Error during WebSocket authentication", e);
-            if (e instanceof IllegalArgumentException illegalArgumentException) {
-                throw illegalArgumentException;
-            }
-            throw new IllegalArgumentException("WebSocket 인증에 실패했습니다.", e);
+            SecurityContextHolder.clearContext();
+            log.warn("STOMP CONNECT rejected: authentication failure. sessionId={}, cause={}",
+                    accessor.getSessionId(), e.getMessage(), e);
+            throw new AccessDeniedException("WebSocket 인증에 실패했습니다.", e);
         }
     }
 
     private String resolveAuthorizationHeader(StompHeaderAccessor accessor) {
         String header = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
-        if (header == null) {
-            header = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER.toLowerCase());
+        if (StringUtils.hasText(header)) {
+            return header;
         }
-        if (header == null) {
-            header = accessor.getFirstNativeHeader("AUTHORIZATION");
+
+        @SuppressWarnings("unchecked")
+        Map<String, List<String>> nativeHeaders = (Map<String, List<String>>) accessor.getHeader(
+                NativeMessageHeaderAccessor.NATIVE_HEADERS);
+
+        if (nativeHeaders == null || nativeHeaders.isEmpty()) {
+            return null;
         }
-        return header;
+
+        for (Map.Entry<String, List<String>> entry : nativeHeaders.entrySet()) {
+            if (entry.getKey() == null) {
+                continue;
+            }
+            if (AUTHORIZATION_HEADER.equalsIgnoreCase(entry.getKey())) {
+                List<String> values = entry.getValue();
+                if (values == null || values.isEmpty()) {
+                    continue;
+                }
+                return values.get(0);
+            }
+        }
+
+        return null;
     }
 }
