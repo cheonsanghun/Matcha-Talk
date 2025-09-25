@@ -8,12 +8,16 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
-import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Component
 @RequiredArgsConstructor
@@ -34,53 +38,78 @@ public class StompHandler implements ChannelInterceptor {
         log.debug("Processing STOMP message with command: {}", command);
         
         // CONNECT 명령에서만 인증 수행
-        if (StompCommand.CONNECT.equals(command)) {
-            try {
+        try {
+            if (StompCommand.CONNECT.equals(command)) {
                 authenticateWebSocketConnection(accessor);
-            } catch (Exception e) {
-                log.error("WebSocket authentication failed", e);
-                // 인증 실패 시에도 연결은 허용하되 로그로 기록
-                // 실제 메시지 처리에서는 Security Context가 없으면 자동으로 거부됨
+            } else if (StompCommand.DISCONNECT.equals(command)) {
+                log.debug("Clearing security context on WebSocket disconnect");
+                SecurityContextHolder.clearContext();
+            } else {
+                propagateAuthentication(accessor);
             }
+        } catch (AuthenticationCredentialsNotFoundException | BadCredentialsException ex) {
+            log.warn("❌ WebSocket authentication rejected: {}", ex.getMessage());
+            SecurityContextHolder.clearContext();
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Unexpected error during STOMP processing", ex);
+            SecurityContextHolder.clearContext();
+            throw ex;
         }
-        
+
         return message;
     }
-    
+
     private void authenticateWebSocketConnection(StompHeaderAccessor accessor) {
         String authHeader = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
-        
-        log.debug("Authorization header: {}", authHeader != null ? "Present" : "Missing");
-        
-        // 인증 헤더가 없는 경우 - 경고만 로그하고 진행
-        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
-            log.warn("No valid authorization header found for WebSocket connection");
-            // 테스트 환경에서는 인증 없이도 연결 허용
+
+        log.debug("Authorization header present: {}", authHeader != null);
+
+        if (!StringUtils.hasText(authHeader)) {
+            throw new AuthenticationCredentialsNotFoundException("Authorization header is missing");
+        }
+
+        if (!authHeader.startsWith(BEARER_PREFIX)) {
+            throw new BadCredentialsException("Authorization header must start with 'Bearer '");
+        }
+
+        String token = authHeader.substring(BEARER_PREFIX.length()).trim();
+        if (!StringUtils.hasText(token)) {
+            throw new BadCredentialsException("JWT token is empty");
+        }
+
+        if (!jwtUtil.validateToken(token)) {
+            throw new BadCredentialsException("JWT token is invalid or expired");
+        }
+
+        String loginId = jwtUtil.getUsernameFromToken(token);
+        log.debug("Extracted loginId {} from JWT for WebSocket", loginId);
+
+        try {
+            UserDetails userDetails = userDetailsService.loadUserByUsername(loginId);
+
+            UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                    userDetails, null, userDetails.getAuthorities());
+
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            accessor.setUser(authentication);
+
+            log.info("✅ WebSocket authentication successful for user: {}", loginId);
+        } catch (UsernameNotFoundException ex) {
+            throw new BadCredentialsException("User not found for WebSocket authentication");
+        }
+    }
+
+    private void propagateAuthentication(StompHeaderAccessor accessor) {
+        Authentication current = SecurityContextHolder.getContext().getAuthentication();
+        if (current != null) {
             return;
         }
-        
-        String token = authHeader.substring(BEARER_PREFIX.length());
-        log.debug("Extracted JWT token for WebSocket authentication");
-        
-        try {
-            if (jwtUtil.validateToken(token)) {
-                String loginId = jwtUtil.getUsernameFromToken(token);
-                UserDetails userDetails = userDetailsService.loadUserByUsername(loginId);
-                
-                UsernamePasswordAuthenticationToken authentication = 
-                    new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-                        
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-                accessor.setUser(authentication);
-                
-                log.info("✅ WebSocket authentication successful for user: {}", loginId);
-            } else {
-                log.warn("❌ Invalid JWT token for WebSocket connection");
-            }
-        } catch (Exception e) {
-            log.error("❌ Error during WebSocket authentication: {}", e.getMessage());
-            // 예외가 발생해도 연결은 허용 (테스트 환경)
+
+        if (accessor.getUser() instanceof Authentication authentication) {
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            log.trace("Propagated WebSocket authentication for user {}", authentication.getName());
         }
     }
 }
