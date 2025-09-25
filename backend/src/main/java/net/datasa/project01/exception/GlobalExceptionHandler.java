@@ -27,4 +27,10 @@ public class GlobalExceptionHandler {
                 : "요청이 올바르지 않습니다.";
         return ResponseEntity.badRequest().body(Map.of("message", msg));
     }
+
+    @ExceptionHandler(AuthException.class)
+    public ResponseEntity<?> handleAuth(AuthException e) {
+        return ResponseEntity.status(e.getStatus())
+                .body(Map.of("message", e.getMessage()));
+    }
 }

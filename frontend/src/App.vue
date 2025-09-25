@@ -1,9 +1,14 @@
 <template>
   <v-app>
-    <AppHeader/>
+    <!-- 헤더 -->
+    <AppHeader />
+
+    <!-- 본문 -->
     <v-main class="bg-pink-lighten-5">
-      <router-view/>
+      <router-view />
     </v-main>
+
+    <!-- 푸터 상단 정보 -->
     <v-container class="py-8">
       <v-row>
         <v-col cols="12" md="4" class="mb-6 mb-md-0">
@@ -23,6 +28,8 @@
         </v-col>
       </v-row>
     </v-container>
+
+    <!-- 푸터 -->
     <v-footer class="bg-white">
       <v-row class="mt-8">
         <v-col cols="12" class="text-center">
@@ -34,7 +41,25 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue'
 import AppHeader from './components/AppHeader.vue'
+import { useAuthStore } from '@/stores/auth'
+
+// 앱 시작 시 한 번 사용자 정보(me) 하이드레이트
+const auth = useAuthStore()
+onMounted(async () => {
+  try {
+    if (typeof auth.hydrateMeIfNeeded === 'function') {
+      await auth.hydrateMeIfNeeded()
+    } else if (typeof auth.me === 'function') {
+      // 스토어에 hydrate 함수가 없으면 me() 호출 시도
+      await auth.me()
+    }
+  } catch (e) {
+    // 사용자 정보가 없거나 토큰 만료 시 조용히 통과
+    // 필요하면 여기서 콘솔 로그 추가 가능
+  }
+})
 </script>
 
 <style>

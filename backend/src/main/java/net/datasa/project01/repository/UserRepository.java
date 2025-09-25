@@ -1,7 +1,8 @@
-package net.datasa.project01.repository; // 리포지토리 클래스가 모여있는 패키지 선언
+// src/main/java/net/datasa/project01/repository/UserRepository.java
+package net.datasa.project01.repository;
 
-import net.datasa.project01.domain.entity.User; // User 엔티티 import
-import java.util.Optional; // 값이 있을 수도, 없을 수도 있는 타입
+import net.datasa.project01.domain.entity.User;
+import java.util.Optional;
 
 /**
  * User 엔티티를 위한 리포지토리 인터페이스입니다.
@@ -34,7 +35,7 @@ public interface UserRepository {
      * @param email 이메일 주소
      * @return 조회된 사용자(Optional, 없으면 empty)
      */
-    Optional<User> findByEmail(String email); // ★ 추가
+    Optional<User> findByEmail(String email);
 
     /**
      * 해당 로그인 ID가 이미 존재하는지 확인합니다.

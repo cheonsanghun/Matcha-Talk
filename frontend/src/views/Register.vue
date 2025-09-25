@@ -7,51 +7,52 @@
 
           <v-form @submit.prevent="onSubmit">
             <v-text-field
-                v-model="form.nick_name"
-                label="이름"
-                variant="outlined"
-                class="mb-4"
-                :error-messages="errors.nick_name"
-                @blur="validate('nick_name')"
+              v-model="form.nick_name"
+              label="이름"
+              variant="outlined"
+              class="mb-4"
+              :error-messages="errors.nick_name"
+              @blur="validate('nick_name')"
             />
 
             <div class="d-flex align-end mb-4">
               <v-text-field
-                  v-model="form.login_id"
-                  label="아이디"
-                  variant="outlined"
-                  class="flex-grow-1 me-2"
-                  :error-messages="errors.login_id"
-                  @blur="validate('login_id')"
+                v-model="form.login_id"
+                label="아이디"
+                variant="outlined"
+                class="flex-grow-1 me-2"
+                :error-messages="errors.login_id"
+                @blur="validate('login_id')"
               />
-              <v-btn variant="outlined" color="pink" @click="checkLoginId" :disabled="loginIdAvailable">중복 확인</v-btn>
+              <v-btn variant="outlined" color="pink" @click="checkLoginId" :disabled="loginIdAvailable">
+                중복 확인
+              </v-btn>
             </div>
 
             <div class="d-flex align-end mb-4">
               <v-text-field
-                  v-model="form.email"
-                  label="이메일"
-                  variant="outlined"
-                  class="flex-grow-1 me-2"
-                  :error-messages="errors.email"
-                  @blur="validate('email')"
-                  :disabled="emailVerified"
+                v-model="form.email"
+                label="이메일"
+                variant="outlined"
+                class="flex-grow-1 me-2"
+                :error-messages="errors.email"
+                @blur="validate('email')"
+                :disabled="emailVerified"
               />
               <v-btn
-                  variant="outlined"
-                  color="pink"
-                  @click="requestEmailVerify"
-                  :disabled="emailVerified"
-              >이메일 인증
-              </v-btn>
+                variant="outlined"
+                color="pink"
+                @click="requestEmailVerify"
+                :disabled="emailVerified"
+              >이메일 인증</v-btn>
             </div>
 
             <div class="d-flex align-end mb-4" v-if="verificationSent && !emailVerified">
               <v-text-field
-                  v-model="verificationToken"
-                  label="인증번호"
-                  variant="outlined"
-                  class="flex-grow-1 me-2"
+                v-model="verificationToken"
+                label="인증번호"
+                variant="outlined"
+                class="flex-grow-1 me-2"
               />
               <v-btn variant="outlined" color="pink" @click="confirmEmailVerify">확인</v-btn>
             </div>
@@ -60,74 +61,77 @@
             </div>
 
             <v-text-field
-                v-model="form.password"
-                type="password"
-                label="비밀번호"
-                variant="outlined"
-                class="mb-4"
-                :error-messages="errors.password"
-                @blur="validate('password')"
+              v-model="form.password"
+              type="password"
+              label="비밀번호"
+              variant="outlined"
+              class="mb-4"
+              :error-messages="errors.password"
+              @blur="validate('password')"
             />
 
             <v-text-field
-                v-model="form.password2"
-                type="password"
-                label="비밀번호 확인"
-                variant="outlined"
-                class="mb-4"
-                :error-messages="errors.password2"
-                @blur="validate('password2')"
+              v-model="form.password2"
+              type="password"
+              label="비밀번호 확인"
+              variant="outlined"
+              class="mb-4"
+              :error-messages="errors.password2"
+              @blur="validate('password2')"
             />
 
             <div class="mb-4">
               <div class="d-flex" style="gap: 8px;">
                 <v-select
-                    v-model="birth.year"
-                    :items="yearItems"
-                    label="년도"
-                    variant="outlined"
-                    class="flex-grow-1"
-                    @blur="validate('birth')"
+                  v-model="birth.year"
+                  :items="yearItems"
+                  label="년도"
+                  variant="outlined"
+                  class="flex-grow-1"
+                  @blur="validate('birth')"
                 />
                 <v-select
-                    v-model="birth.month"
-                    :items="monthItems"
-                    label="월"
-                    variant="outlined"
-                    class="flex-grow-1"
-                    @blur="validate('birth')"
+                  v-model="birth.month"
+                  :items="monthItems"
+                  label="월"
+                  variant="outlined"
+                  class="flex-grow-1"
+                  @blur="validate('birth')"
                 />
                 <v-select
-                    v-model="birth.day"
-                    :items="dayItems"
-                    label="일"
-                    variant="outlined"
-                    class="flex-grow-1"
-                    @blur="validate('birth')"
+                  v-model="birth.day"
+                  :items="dayItems"
+                  label="일"
+                  variant="outlined"
+                  class="flex-grow-1"
+                  @blur="validate('birth')"
                 />
               </div>
               <span class="text-caption text-pink-darken-2">{{ errors.birth }}</span>
             </div>
 
             <v-select
-                v-model="form.gender"
-                :items="genderItems"
-                label="성별"
-                variant="outlined"
-                class="mb-4"
-                :error-messages="errors.gender"
-                @blur="validate('gender')"
+              v-model="form.gender"
+              :items="genderItems"
+              item-title="title"
+              item-value="value"
+              label="성별"
+              variant="outlined"
+              class="mb-4"
+              :error-messages="errors.gender"
+              @blur="validate('gender')"
             />
 
             <v-select
-                v-model="form.country_code"
-                :items="countryItems"
-                label="국적"
-                variant="outlined"
-                class="mb-6"
-                :error-messages="errors.country_code"
-                @blur="validate('country_code')"
+              v-model="form.country_code"
+              :items="countryItems"
+              label="국적"
+              variant="outlined"
+              class="mb-6"
+              :error-messages="errors.country_code"
+              @blur="validate('country_code')"
             />
+
             <v-btn type="submit" color="pink" block :disabled="!valid">회원가입</v-btn>
           </v-form>
         </v-card>
@@ -138,23 +142,33 @@
 
 <script setup>
 import api from '../services/api'
-import {ref, computed, watch} from 'vue'
-import {useRouter} from 'vue-router'
+import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const genderItems = ['M', 'F']
+
+// value는 반드시 'M' / 'F'
+const genderItems = [
+  { title: '남자', value: 'M' },
+  { title: '여자', value: 'F' },
+]
+// 대문자 2글자 코드
 const countryItems = ['KR', 'JP']
 
 const form = ref({
-  nick_name: '', login_id: '', email: '',
-  password: '', password2: '',
-  gender: null, country_code: null
+  nick_name: '',
+  login_id: '',
+  email: '',
+  password: '',
+  password2: '',
+  gender: null,
+  country_code: null,
 })
 
-const birth = ref({year: null, month: null, day: null})
-const yearItems = Array.from({length: 100}, (_, i) => new Date().getFullYear() - i)
-const monthItems = Array.from({length: 12}, (_, i) => i + 1)
-const dayItems = Array.from({length: 31}, (_, i) => i + 1)
+const birth = ref({ year: null, month: null, day: null })
+const yearItems = Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i)
+const monthItems = Array.from({ length: 12 }, (_, i) => i + 1)
+const dayItems = Array.from({ length: 31 }, (_, i) => i + 1)
 
 const errors = ref({
   nick_name: '', login_id: '', email: '', password: '', password2: '',
@@ -166,14 +180,16 @@ const verificationToken = ref('')
 const emailVerified = ref(false)
 const loginIdAvailable = ref(false)
 
-const valid = computed(
-    () => Object.values(errors.value).every(e => !e) && emailVerified.value && loginIdAvailable.value
+const valid = computed(() =>
+  Object.values(errors.value).every(e => !e) &&
+  emailVerified.value &&
+  loginIdAvailable.value
 )
 
 const r = {
   required: v => !!v || '필수 입력입니다.',
   len: (min, max) => v => (v && v.length >= min && v.length <= max) || `${min}~${max}자`,
-  email: v => !!/^[A-Za-z0-9._%+-]+@gmail\.com$/.test(v) || 'Gmail 주소만 사용 가능'
+  email: v => !!/^[A-Za-z0-9._%+-]+@gmail\.com$/.test(v) || 'Gmail 주소만 사용 가능',
 }
 
 function checkRules(value, rules) {
@@ -201,10 +217,11 @@ function validate(field) {
     case 'password2':
       errors.value.password2 = form.value.password2 === form.value.password ? '' : '비밀번호가 일치하지 않습니다.'
       break
-    case 'birth':
-      const {year, month, day} = birth.value
+    case 'birth': {
+      const { year, month, day } = birth.value
       errors.value.birth = year && month && day ? '' : '생년월일을 입력하세요.'
       break
+    }
     case 'gender':
       errors.value.gender = form.value.gender ? '' : '성별을 선택하세요.'
       break
@@ -222,20 +239,25 @@ async function onSubmit() {
   ;['nick_name', 'login_id', 'email', 'password', 'password2', 'birth', 'gender', 'country_code'].forEach(validate)
   if (!valid.value) return
 
-  const birth_date = `${birth.value.year}-${String(birth.value.month).padStart(2, '0')}-${String(birth.value.day).padStart(2, '0')}`
+  // YYYY-MM-DD
+  const birthDate = `${birth.value.year}-${String(birth.value.month).padStart(2, '0')}-${String(birth.value.day).padStart(2, '0')}`
+
+  // ✅ 백엔드 DTO가 요구하는 camelCase로 변환
   const payload = {
-    login_id: form.value.login_id,
+    loginId: form.value.login_id,
     password: form.value.password,
-    confirm_password: form.value.password2,
-    nick_name: form.value.nick_name,
+    confirmPassword: form.value.password2,
+    nickName: form.value.nick_name,
     email: form.value.email,
-    verification_token: verificationToken.value,
-    country_code: form.value.country_code,
-    gender: form.value.gender,
-    birth_date
+    verificationToken: verificationToken.value,
+    countryCode: (form.value.country_code || '').toUpperCase(),
+    gender: form.value.gender,     // 'M' / 'F'
+    birthDate
   }
+  // 디버그용
+  // console.log('signup payload', payload)
+
   try {
-    // await api.post('/auth/register', payload)
     await api.post('/users/signup', payload)
     alert('회원가입이 완료되었습니다.')
     router.push('/login')
@@ -248,7 +270,7 @@ async function requestEmailVerify() {
   validate('email')
   if (errors.value.email) return
   try {
-    await api.post('/users/email/verify/request', {email: form.value.email})
+    await api.post('/users/email/verify/request', { email: form.value.email })
     verificationSent.value = true
     alert('인증번호가 전송되었습니다.')
   } catch (e) {
@@ -260,7 +282,7 @@ async function checkLoginId() {
   validate('login_id')
   if (errors.value.login_id) return
   try {
-    const {data} = await api.get('/users/exists', {params: {loginId: form.value.login_id}})
+    const { data } = await api.get('/users/exists', { params: { loginId: form.value.login_id } })
     if (data.exists) {
       errors.value.login_id = '이미 사용 중인 아이디입니다.'
       loginIdAvailable.value = false
@@ -279,7 +301,7 @@ async function confirmEmailVerify() {
   try {
     await api.post('/users/email/verify/confirm', {
       email: form.value.email,
-      token: verificationToken.value
+      token: verificationToken.value,
     })
     emailVerified.value = true
     alert('이메일 인증이 완료되었습니다.')

@@ -3,6 +3,7 @@ package net.datasa.project01.repository;
 import net.datasa.project01.domain.entity.User;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
@@ -17,6 +18,7 @@ import java.util.Optional;
  */
 @Repository
 @Profile("db") // db 프로필에서만 활성화됨
+@Primary
 public class DbUserRepository implements UserRepository {
 
     @PersistenceContext

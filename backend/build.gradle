@@ -33,6 +33,8 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'                 // JUnit 테스트 런처(테스트 실행 시 필요)
 
 	implementation 'org.springframework.boot:spring-boot-starter-mail'           // 이메일 발송 기능(인증 메일 등)
+
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 }
 
 tasks.named('test') { useJUnitPlatform() }

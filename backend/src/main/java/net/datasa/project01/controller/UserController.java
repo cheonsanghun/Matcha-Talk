@@ -1,5 +1,6 @@
 package net.datasa.project01.controller;
 
+import net.datasa.project01.domain.dto.UserProfileUpdateRequest;
 import net.datasa.project01.domain.dto.UserResponse;
 import net.datasa.project01.domain.dto.UserSignUpRequest;
 import net.datasa.project01.service.UserService;
@@ -68,5 +69,11 @@ public class UserController {
         String token = body.getOrDefault("token", "").trim();
         if (email.isBlank() || token.isBlank()) throw new IllegalArgumentException("이메일과 인증번호를 입력하세요.");
         return emailVerifSvc.confirmVerifyEmail(email, token);
+    }
+
+    @PatchMapping("/{id}")
+    public UserResponse updateMyProfile(@PathVariable("id") Long userPid,
+                                        @RequestBody @Valid UserProfileUpdateRequest req) {
+        return userService.updateProfile(userPid, req);
     }
 }
