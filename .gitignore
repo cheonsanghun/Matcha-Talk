@@ -1,0 +1,168 @@
+# 🍃 Matcha-Talk .gitignore
+
+# ===== 백엔드 (Spring Boot + Gradle) =====
+
+# Gradle
+backend/.gradle/
+backend/build/
+backend/gradle-wrapper.properties
+backend/bin/
+backend/out/
+backend/*.jar
+backend/*.war
+backend/*.zip
+backend/*.tar.gz
+backend/*.rar
+
+# IDE
+backend/.idea/
+backend/.vscode/
+backend/*.iml
+backend/*.ipr
+backend/*.iws
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+backend/logs/
+backend/*.log
+backend/*.log.*
+
+# Runtime data
+backend/pids
+backend/*.pid
+backend/*.seed
+
+# ===== 프론트엔드 (Vue.js + Node.js) =====
+
+# Dependencies
+frontend/node_modules/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# Build outputs
+frontend/dist/
+frontend/build/
+frontend/.nuxt/
+frontend/.output/
+frontend/.vite/
+
+# IDE
+frontend/.idea/
+frontend/.vscode/
+frontend/*.swp
+frontend/*.swo
+
+# Environment variables
+frontend/.env.local
+frontend/.env.*.local
+
+# Cache
+frontend/.cache/
+frontend/.eslintcache
+frontend/.stylelintcache
+
+# Coverage directory used by tools like istanbul
+frontend/coverage/
+frontend/nyc_output/
+
+# ===== 데이터베이스 =====
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== 공통 =====
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Package files
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Eclipse
+.eclipse
+.metadata
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
+
+# NetBeans
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+nbactions.xml
+nb-configuration.xml
+
+# ===== 보안 관련 =====
+# API Keys, passwords, credentials
+.env
+.env.*
+!.env.example
+secrets.json
+config/secrets.yml
+application-*.properties
+!application-example.properties
+
+# ===== 기타 =====
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
