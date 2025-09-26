@@ -1,5 +1,45 @@
 # 🍃 Matcha-Talk 프로젝트 개발 가이드
 
+## ⚠️ 구조 정리 필요! (우선 작업)
+
+**현재 GitHub 저장소에 불필요한 파일들이 올라가 있습니다:**
+
+### 🚨 제거해야 할 파일들
+```bash
+# 로컬에서 이 파일들을 삭제한 후 커밋하세요
+rm -rf backend/.gradle/
+rm -rf backend/build/  
+rm -rf frontend/node_modules/
+rm -f backend/First_sql.sql    # 중복 (루트에 있음)
+rm -f backend/LICENSE           # 중복 (루트에 있음)
+
+# 그 다음 재설치
+cd frontend && npm install
+cd backend && ./gradlew clean build
+```
+
+### ✅ 올바른 프로젝트 구조
+```
+Matcha-Talk/
+├── .gitignore                 ✅ 추가됨
+├── README.md                  ✅ 추가됨
+├── PROJECT_GUIDE.txt          ✅ 현재 파일
+├── First_sql.sql              ✅ DB 스키마
+├── LICENSE                    ✅ 라이센스
+├── backend/                   
+│   ├── src/                   ✅ 소스코드만
+│   ├── build.gradle           ✅ 빌드설정
+│   ├── gradlew                ✅ Gradle Wrapper
+│   └── settings.gradle        ✅ 프로젝트 설정
+└── frontend/
+    ├── src/                   ✅ 소스코드만  
+    ├── package.json           ✅ 의존성 설정
+    ├── vite.config.js         ✅ 빌드설정
+    └── index.html             ✅ HTML 진입점
+```
+
+---
+
 ## 📋 프로젝트 개요
 - **프로젝트명**: Matcha-Talk (랜덤 채팅 웹앱)
 - **저장소**: https://github.com/cheonsanghun/Matcha-Talk
@@ -83,7 +123,7 @@ backend/src/main/java/net/datasa/project01/
 ├── Project01Application.java          # 메인 애플리케이션 클래스
 ├── config/                            # 설정 파일들 (Security, CORS 등)
 ├── controller/
-│   ├── UserController.java           # 회원 관련 API
+│   ├── UserController.java           # 회원 관련 API ⭐
 │   ├── AuthController.java           # 인증 관련 API  
 │   └── HomeController.java           # 기본 컨트롤러
 ├── domain/
@@ -124,20 +164,39 @@ frontend/src/
 
 ### 설정 파일들
 ```
-backend/
-├── build.gradle                     # Gradle 빌드 설정 ⭐
-├── src/main/resources/
-│   ├── application.properties       # 스프링 설정
-│   └── application-dev.properties   # 개발환경 설정
-
-frontend/  
-├── package.json                     # npm 의존성 ⭐
-├── vite.config.js                   # Vite 빌드 설정
-├── .env.development                 # 개발환경 변수
-└── index.html                       # HTML 엔트리포인트
+Matcha-Talk/
+├── .gitignore                       # Git 무시 파일 ⭐
+├── README.md                        # 프로젝트 개요
+├── PROJECT_GUIDE.txt                # 현재 파일 ⭐
+├── backend/
+│   ├── build.gradle                 # Gradle 빌드 설정 ⭐
+│   └── src/main/resources/
+│       ├── application.properties   # 스프링 설정
+│       └── application-dev.properties # 개발환경 설정
+└── frontend/  
+    ├── package.json                 # npm 의존성 ⭐
+    ├── vite.config.js               # Vite 빌드 설정
+    ├── .env.development             # 개발환경 변수
+    └── index.html                   # HTML 엔트리포인트
 ```
 
 ## 🔧 자주 사용하는 명령어
+
+### 프로젝트 초기 설정 (로컬 정리용)
+```bash
+# 1. 저장소 클론 및 브랜치 전환
+git clone https://github.com/cheonsanghun/Matcha-Talk.git
+cd Matcha-Talk
+git checkout newtestbranch
+
+# 2. 불필요한 파일 제거 (이미 .gitignore에 추가됨)
+rm -rf backend/.gradle/ backend/build/ frontend/node_modules/
+rm -f backend/First_sql.sql backend/LICENSE
+
+# 3. 의존성 설치
+cd frontend && npm install
+cd ../backend && ./gradlew clean build
+```
 
 ### 개발 서버 실행
 ```bash
@@ -176,6 +235,12 @@ git push origin newtestbranch
 ```
 
 ## 🚧 다음 작업 계획 (우선순위 순)
+
+### 0단계: 저장소 정리 (최우선!)
+- [x] .gitignore 파일 추가
+- [x] README.md 추가
+- [ ] 로컬에서 불필요한 파일 제거 후 커밋
+- [ ] 깨끗한 저장소 구조 확정
 
 ### 1단계: 로그인 시스템 완성
 - [ ] AuthController 로그인 API 구현
@@ -260,6 +325,10 @@ spring.mail.host=smtp.gmail.com
 - **증상**: 로그인 후 일정시간 후 API 호출 실패  
 - **해결**: 토큰 리프레시 로직 구현 예정
 
+### 이슈 4: 프로젝트 구조 문제 (현재)
+- **증상**: GitHub에 불필요한 파일들 업로드됨
+- **해결**: 위의 "프로젝트 초기 설정" 섹션 참조
+
 ## 📞 긴급 참조
 
 ### 주요 포트
@@ -283,10 +352,16 @@ lsof -i :3000
 # MySQL 접속
 mysql -u root -p matcha_talk
 
-# 로그 확인
-tail -f backend/logs/application.log
+# Git 상태 확인
+git status
+git log --oneline -10
+
+# 프로젝트 정리 (긴급시)
+git clean -fd
+git reset --hard HEAD
 ```
 
 ---
 **📝 마지막 업데이트**: 2024년 12월 (newtestbranch)  
-**🔄 다음 세션에서**: 이 문서를 먼저 읽고 현재 진행상황 파악 후 작업 시작!
+**🚨 중요**: 다음 작업 전에 반드시 저장소 정리부터 진행!  
+**🔄 다음 세션에서**: 이 문서를 먼저 읽고 구조 정리 후 개발 시작!
