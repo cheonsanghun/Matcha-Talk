@@ -123,6 +123,18 @@
             />
 
             <v-select
+              v-model="form.language_code"
+              :items="languageItems"
+              item-title="title"
+              item-value="value"
+              label="사용 언어"
+              variant="outlined"
+              class="mb-4"
+              :error-messages="errors.language_code"
+              @blur="validate('language_code')"
+            />
+
+            <v-select
               v-model="form.country_code"
               :items="countryItems"
               label="국적"
@@ -152,7 +164,12 @@ const genderItems = [
   { title: '남자', value: 'M' },
   { title: '여자', value: 'F' },
 ]
-// 대문자 2글자 코드
+// 언어 코드는 백엔드 DTO가 소문자('ko','ja')를 요구합니다.
+const languageItems = [
+  { title: '한국어', value: 'ko' },
+  { title: '일본어', value: 'ja' },
+]
+// 대문자 2글자 ISO 국가 코드
 const countryItems = ['KR', 'JP']
 
 const form = ref({
@@ -162,6 +179,7 @@ const form = ref({
   password: '',
   password2: '',
   gender: null,
+  language_code: 'ko',
   country_code: null,
 })
 
@@ -171,8 +189,15 @@ const monthItems = Array.from({ length: 12 }, (_, i) => i + 1)
 const dayItems = Array.from({ length: 31 }, (_, i) => i + 1)
 
 const errors = ref({
-  nick_name: '', login_id: '', email: '', password: '', password2: '',
-  birth: '', gender: '', country_code: ''
+  nick_name: '',
+  login_id: '',
+  email: '',
+  password: '',
+  password2: '',
+  birth: '',
+  gender: '',
+  language_code: '',
+  country_code: '',
 })
 
 const verificationSent = ref(false)
@@ -253,6 +278,7 @@ async function onSubmit() {
     nickName: form.value.nick_name,
     email: form.value.email,
     verificationToken: verificationToken.value,
+    languageCode: form.value.language_code,
     countryCode: (form.value.country_code || '').toUpperCase(),
     gender: form.value.gender,     // 'M' / 'F'
     birthDate
@@ -285,7 +311,7 @@ async function checkLoginId() {
   validate('login_id')
   if (errors.value.login_id) return
   try {
-    const { data } = await api.get('/users/exists', { params: { loginId: form.value.login_id } })
+    const { data } = await api.get('/users/exists', { params: { loginId: form.value.login_id }, skipSnakifyParams: true })
     if (data.exists) {
       errors.value.login_id = '이미 사용 중인 아이디입니다.'
       loginIdAvailable.value = false

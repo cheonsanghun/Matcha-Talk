@@ -19,7 +19,15 @@ function resolveHttpOrigin() {
 }
 
 const HTTP_ORIGIN = resolveHttpOrigin()
-const WS_ENDPOINT_PATH = import.meta.env.VITE_WS_PATH || '/ws/chat'
+let configuredEndpoint = import.meta.env.VITE_WS_PATH || '/ws/chat'
+if (typeof configuredEndpoint === 'string' && configuredEndpoint.includes('ws-stomp')) {
+  console.warn('[ws] Detected legacy VITE_WS_PATH ("%s"), falling back to /ws/chat.', configuredEndpoint)
+  configuredEndpoint = '/ws/chat'
+}
+if (configuredEndpoint && !configuredEndpoint.startsWith('/')) {
+  configuredEndpoint = '/' + configuredEndpoint
+}
+const WS_ENDPOINT_PATH = configuredEndpoint
 
 function buildWebSocketUrl(token) {
   const wsOrigin = HTTP_ORIGIN.replace(/^http/, 'ws')
@@ -94,21 +102,33 @@ class RealtimeWebSocketClient {
           try { handler(event) } catch (error) { console.error('[ws] raw message handler failed', error) }
         })
 
-        try {
-          const parsed = JSON.parse(event.data)
-          const eventName = parsed?.event
-          const payload = parsed?.payload
+        const handlePayload = (text) => {
+          try {
+            const parsed = JSON.parse(text)
+            const eventName = parsed?.event
+            const payload = parsed?.payload
 
-          if (eventName) {
-            const handlers = this.eventHandlers.get(eventName)
-            if (handlers?.size) {
-              handlers.forEach((handler) => {
-                try { handler(payload, parsed) } catch (error) { console.error(`[ws] handler for ${eventName} failed`, error) }
-              })
+            if (eventName) {
+              const handlers = this.eventHandlers.get(eventName)
+              if (handlers?.size) {
+                handlers.forEach((handler) => {
+                  try { handler(payload, parsed) } catch (error) { console.error(`[ws] handler for ${eventName} failed`, error) }
+                })
+              }
             }
+          } catch (error) {
+            console.error('[ws] Failed to parse WebSocket payload', error, text)
           }
-        } catch (error) {
-          console.error('[ws] Failed to parse WebSocket payload', error, event.data)
+        }
+
+        if (typeof event.data === 'string') {
+          handlePayload(event.data)
+        } else if (event.data instanceof Blob) {
+          event.data.text().then(handlePayload).catch((error) => {
+            console.error('[ws] Failed to read Blob payload', error)
+          })
+        } else {
+          console.warn('[ws] Unsupported message data type:', typeof event.data)
         }
       }
 

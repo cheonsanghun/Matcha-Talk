@@ -69,6 +69,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createRealtimeClient } from '../services/ws'
+import { camelizeKeys } from '../utils/case'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -167,18 +168,21 @@ function scheduleReconnect () {
 function handleMatchResult (payload) {
   if (!payload) return
 
-  console.log('🎉 Match found!', payload)
+  const normalized = camelizeKeys(payload)
+
+  console.log('🎉 Match found!', normalized)
   matchFound.value = true
-  partnerName.value = payload.partnerNickName || '상대방'
-  roomId.value = payload.roomId ?? null
+  partnerName.value = normalized.partnerNickName || normalized.partnerNickname || '상대방'
+  roomId.value = normalized.roomId ?? normalized.room_id ?? null
   sessionStatus.value = '매칭 성공!'
 }
 
 function handleMatchStatus (payload) {
   if (typeof payload === 'string') {
     sessionStatus.value = payload || '매칭 대기 중입니다...'
-  } else if (payload?.message) {
-    sessionStatus.value = payload.message
+  } else if (payload) {
+    const normalized = camelizeKeys(payload)
+    sessionStatus.value = normalized.message || '매칭 대기 중입니다...'
   } else {
     sessionStatus.value = '매칭 대기 중입니다...'
   }
@@ -190,9 +194,13 @@ function acceptMatch () {
     return
   }
 
+  manualDisconnect = true
   router.push({
     name: 'chat',
-    query: { roomId: roomId.value }
+    query: {
+      roomId: String(roomId.value),
+      partner: partnerName.value || undefined
+    }
   })
 }
 
