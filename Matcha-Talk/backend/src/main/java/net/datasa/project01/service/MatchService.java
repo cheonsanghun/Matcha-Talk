@@ -6,11 +6,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.MatchFoundResponseDto;
 import net.datasa.project01.domain.dto.MatchRequestDto;
+import net.datasa.project01.domain.dto.MatchStartResponseDto;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
+import net.datasa.project01.domain.entity.RoomMember;
 import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
+import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +31,7 @@ public class MatchService {
 
     private final MatchRequestRepository matchRequestRepository;
     private final UserRepository userRepository;
+    private final RoomMemberRepository roomMemberRepository;
     private final ChatService chatService;
     private final RealTimeMessagingService messagingService;
     private final ObjectMapper objectMapper;
@@ -37,7 +41,7 @@ public class MatchService {
      * @param loginId 요청한 사용자의 ID
      * @param requestDto 매칭 조건
      */
-    public void startOrFindMatch(String loginId, MatchRequestDto requestDto) throws JsonProcessingException {
+    public MatchStartResponseDto startOrFindMatch(String loginId, MatchRequestDto requestDto) throws JsonProcessingException {
         User me = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
@@ -45,10 +49,10 @@ public class MatchService {
         Optional<MatchRequest> existingRequest = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
         if (existingRequest.isPresent()) {
             log.info("User {} is already in the matching queue.", loginId);
-            
+
             // ✅ 테스트용: 이미 대기열에 있는 사용자에게 대기 상태 알림
             sendWaitingNotification(loginId);
-            return;
+            return MatchStartResponseDto.queued(true);
         }
 
         // 2. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
@@ -97,6 +101,8 @@ public class MatchService {
             sendMatchResult(me.getLoginId(), myResponse);
             sendMatchResult(opponent.getLoginId(), opponentResponse);
 
+            return MatchStartResponseDto.matched(myResponse);
+
         } else {
             // 5. 매칭 실패 -> 대기열에 등록
             log.info("❌ No match found for user {}. Adding to queue.", loginId);
@@ -110,10 +116,29 @@ public class MatchService {
                     .status(MatchRequest.MatchStatus.WAITING)
                     .build();
             matchRequestRepository.save(newRequest);
-            
+
             // ✅ 테스트용: 대기열에 등록된 사용자에게 대기 상태 알림
             sendWaitingNotification(loginId);
+            return MatchStartResponseDto.queued(false);
         }
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<MatchFoundResponseDto> findLatestMatch(String loginId) {
+        User me = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        return roomMemberRepository
+                .findFirstByUserAndRoom_RoomTypeOrderByJoinedAtDesc(me, Room.RoomType.PRIVATE)
+                .flatMap(membership -> {
+                    Room room = membership.getRoom();
+                    List<RoomMember> participants = roomMemberRepository.findByRoom(room);
+                    return participants.stream()
+                            .map(RoomMember::getUser)
+                            .filter(user -> !user.getLoginId().equals(loginId))
+                            .findFirst()
+                            .map(opponent -> new MatchFoundResponseDto(room.getRoomId(), opponent.getNickName()));
+                });
     }
     
     /**
