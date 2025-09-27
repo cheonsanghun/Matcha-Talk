@@ -12,5 +12,10 @@ public class ChatMessageResponseDto {
     private final String senderNickName;
     private final String senderLanguageCode; // 발신자의 언어 코드
     private final String content;
+    private final String contentType;
+    private final String fileName;
+    private final String fileUrl;
+    private final String mimeType;
+    private final Long sizeBytes;
     private final LocalDateTime sentAt;
 }

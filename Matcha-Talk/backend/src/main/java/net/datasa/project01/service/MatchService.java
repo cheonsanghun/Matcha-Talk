@@ -54,25 +54,16 @@ public class MatchService {
         // 2. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
         List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
                 me.getUserPid(),
-                MatchRequest.MatchStatus.WAITING
+                MatchRequest.MatchStatus.WAITING,
+                requestDto.getRegionCode()
         );
 
         // 3. Java 코드로 최종 매칭 상대 결정 (역방향 검증)
         MatchRequest matchedOpponentRequest = null;
         for (MatchRequest opponentRequest : potentialMatches) {
-            User opponent = opponentRequest.getUser();
-            long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
-
-            // 상대방의 희망 성별이 '모두(A)'이거나 '나의 성별'과 일치하는지 확인
-            boolean isGenderMatch = opponentRequest.getChoiceGender() == MatchRequest.Gender.A ||
-                                    opponentRequest.getChoiceGender().name().equals(me.getGender().toString());
-            
-            // 나의 나이가 상대방의 희망 나이 범위에 속하는지 확인
-            boolean isAgeMatch = myAge >= opponentRequest.getMinAge() && myAge <= opponentRequest.getMaxAge();
-
-            if (isGenderMatch && isAgeMatch) {
+            if (isMutuallyCompatible(me, requestDto, opponentRequest)) {
                 matchedOpponentRequest = opponentRequest;
-                break; // 첫 번째로 찾은 짝과 매칭
+                break;
             }
         }
 
@@ -156,6 +147,72 @@ public class MatchService {
             log.info("✅ Waiting notification sent to: {}", loginId);
         } catch (Exception e) {
             log.error("❌ Failed to send waiting notification to user {}: {}", loginId, e.getMessage());
+        }
+    }
+
+    private boolean isMutuallyCompatible(User me, MatchRequestDto myRequestDto, MatchRequest opponentRequest) {
+        User opponent = opponentRequest.getUser();
+        long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
+        long opponentAge = ChronoUnit.YEARS.between(opponent.getBirthDate(), LocalDate.now());
+
+        if (!isGenderSatisfied(opponentRequest.getChoiceGender(), me.getGender())) {
+            return false;
+        }
+        if (!isGenderSatisfied(MatchRequest.Gender.valueOf(myRequestDto.getChoiceGender()), opponent.getGender())) {
+            return false;
+        }
+
+        if (!isAgeWithinBounds(myAge, opponentRequest.getMinAge(), opponentRequest.getMaxAge())) {
+            return false;
+        }
+        if (!isAgeWithinBounds(opponentAge, myRequestDto.getMinAge(), myRequestDto.getMaxAge())) {
+            return false;
+        }
+
+        if (!hasInterestOverlap(myRequestDto.getInterests(), opponentRequest.getInterestsJson())) {
+            return false;
+        }
+
+        String requestedRegion = myRequestDto.getRegionCode();
+        if (requestedRegion != null && !requestedRegion.equals(opponentRequest.getRegionCode())) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean isGenderSatisfied(MatchRequest.Gender desiredGender, Character targetGender) {
+        if (desiredGender == MatchRequest.Gender.A) {
+            return true;
+        }
+        return targetGender != null && desiredGender.name().equalsIgnoreCase(targetGender.toString());
+    }
+
+    private boolean isAgeWithinBounds(long age, Integer minAge, Integer maxAge) {
+        if (minAge != null && age < minAge) {
+            return false;
+        }
+        if (maxAge != null && age > maxAge) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean hasInterestOverlap(List<String> myInterests, String opponentInterestsJson) {
+        if (myInterests == null || myInterests.isEmpty()) {
+            return false;
+        }
+        try {
+            List<String> opponentInterests = objectMapper.readValue(opponentInterestsJson, objectMapper.getTypeFactory()
+                    .constructCollectionType(List.class, String.class));
+            return opponentInterests.stream()
+                    .map(String::toLowerCase)
+                    .anyMatch(opponentInterest -> myInterests.stream()
+                            .map(String::toLowerCase)
+                            .anyMatch(myInterest -> myInterest.equals(opponentInterest)));
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse opponent interests JSON: {}", opponentInterestsJson, e);
+            return false;
         }
     }
 }
