@@ -8,10 +8,11 @@ import net.datasa.project01.domain.dto.LoginResponse;
 public interface AuthService {
 
     /**
-     * 로컬 로그인(ID/비밀번호)을 처리하고, 성공 시 사용자 정보와 JWT를 반환합니다.
+     * 로컬 로그인(ID/비밀번호)을 처리하고, 성공 시 사용자 정보를 반환합니다.
+     * 세션 기반 인증이므로 JSESSIONID 쿠키가 함께 발급됩니다.
      * @param loginId 사용자 ID
      * @param rawPassword 사용자 비밀번호
-     * @return LoginResponse (사용자 정보 + JWT)
+     * @return LoginResponse (사용자 정보)
      */
     LoginResponse loginLocal(String loginId, String rawPassword);
 }

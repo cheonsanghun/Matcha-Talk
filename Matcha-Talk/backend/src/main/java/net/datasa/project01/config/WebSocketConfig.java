@@ -2,7 +2,7 @@ package net.datasa.project01.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.datasa.project01.websocket.JwtHandshakeInterceptor;
+import net.datasa.project01.websocket.SessionHandshakeInterceptor;
 import net.datasa.project01.websocket.ReactiveChatWebSocketHandler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.WebSocketHandler;
@@ -21,12 +21,12 @@ import java.util.Map;
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final ReactiveChatWebSocketHandler chatWebSocketHandler;
-    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
+    private final SessionHandshakeInterceptor sessionHandshakeInterceptor;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(wrapLoggingHandler(chatWebSocketHandler), "/ws/chat")
-                .addInterceptors(jwtHandshakeInterceptor)
+                .addInterceptors(sessionHandshakeInterceptor)
                 .setHandshakeHandler(new DefaultHandshakeHandler() {
                     @Override
                     protected Principal determineUser(org.springframework.http.server.ServerHttpRequest request,

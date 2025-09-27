@@ -1,8 +1,12 @@
 package net.datasa.project01.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import java.util.Arrays;
 
 /**
  * 애플리케이션의 전역 CORS(Cross-Origin Resource Sharing) 설정을 담당합니다.
@@ -10,19 +14,21 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    private final String[] allowedOrigins;
+
+    public WebConfig(@Value("${app.cors.allowed-origins}") String allowedOriginsProperty) {
+        this.allowedOrigins = Arrays.stream(allowedOriginsProperty.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .toArray(String[]::new);
+    }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**") // 애플리케이션의 모든 경로에 대해 CORS 설정을 적용합니다.
-                // ngrok 주소, localhost의 모든 포트, 그리고 Vue 개발 서버 주소를 명시적으로 허용합니다.
-                .allowedOriginPatterns(
-                    "https://*.ngrok-free.app", 
-                    "http://localhost:*", 
-                    "http://127.0.0.1:*",
-                    "http://192.168.0.165:*",  // ✅ 추가: 팀원 접속용 IP 허용
-                    "http://192.168.*:*"       // ✅ 추가: 같은 네트워크 대역 모두 허용
-                ) 
-                .allowedMethods("*") // 모든 HTTP 메소드(GET, POST, PUT 등)를 허용합니다.
-                .allowedHeaders("*") // 모든 헤더를 허용합니다.
-                .allowCredentials(true); // 인증 정보(쿠키, JWT 등)를 포함한 요청을 허용합니다.
+        registry.addMapping("/**")
+                .allowedOrigins(allowedOrigins)
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
     }
 }

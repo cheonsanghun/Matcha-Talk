@@ -12,9 +12,15 @@ import net.datasa.project01.domain.dto.UserSummary;
 import net.datasa.project01.exception.AuthException;
 import net.datasa.project01.service.AuthService;
 import net.datasa.project01.service.EmailVerificationService;
+import net.datasa.project01.service.UserDetailsServiceImpl;
 import net.datasa.project01.service.UserService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,6 +32,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 
 /**
  * 인증/계정 관련 REST 엔드포인트.
@@ -40,13 +49,31 @@ public class AuthController {
     private final AuthService authService;
     private final UserService userService;
     private final EmailVerificationService emailVerificationService;
+    private final UserDetailsServiceImpl userDetailsService;
 
     /* =====================
      * 로그인
      * ===================== */
     @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<LoginResponse> loginLocal(@RequestBody @Validated LoginRequest req) {
+    public ResponseEntity<LoginResponse> loginLocal(@RequestBody @Validated LoginRequest req,
+                                                    HttpServletRequest request) {
         LoginResponse response = authService.loginLocal(req.getLoginId(), req.getPassword());
+
+        UserDetails userDetails = userDetailsService.loadUserByUsername(response.getUser().getLoginId());
+        UsernamePasswordAuthenticationToken authentication = UsernamePasswordAuthenticationToken.authenticated(
+                userDetails,
+                null,
+                userDetails.getAuthorities()
+        );
+
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+
+        HttpSession session = request.getSession(true);
+        session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
+        request.changeSessionId();
+
         return ResponseEntity.ok(response);
     }
 
