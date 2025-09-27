@@ -11,7 +11,7 @@ import net.datasa.project01.repository.UserRepository;
 import net.datasa.project01.service.translation.TranslateService;
 import net.datasa.project01.service.translation.TranslationResult;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.lang.Nullable;
+import jakarta.annotation.Nullable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

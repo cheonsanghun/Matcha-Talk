@@ -1,3 +1,6 @@
+import { Client } from '@stomp/stompjs'
+import SockJS from 'sockjs-client/dist/sockjs'
+
 const DEFAULT_HTTP_ORIGIN = (() => {
   if (typeof window !== 'undefined' && window.location?.origin) {
     return window.location.origin
@@ -12,30 +15,23 @@ function resolveHttpOrigin() {
       const url = new URL(configured, DEFAULT_HTTP_ORIGIN)
       return url.origin
     } catch (error) {
-      console.warn('[ws] Failed to parse VITE_API_BASE_URL, fallback to default origin.', error)
+      console.warn('[ws] VITE_API_BASE_URL 파싱에 실패하여 기본 오리진으로 대체합니다.', error)
     }
   }
   return DEFAULT_HTTP_ORIGIN
 }
 
-const HTTP_ORIGIN = resolveHttpOrigin()
-let configuredEndpoint = import.meta.env.VITE_WS_PATH || '/ws/chat'
-if (typeof configuredEndpoint === 'string' && configuredEndpoint.includes('ws-stomp')) {
-  console.warn('[ws] Detected legacy VITE_WS_PATH ("%s"), falling back to /ws/chat.', configuredEndpoint)
-  configuredEndpoint = '/ws/chat'
+function ensureLeadingSlash(path) {
+  if (!path) return '/ws'
+  return path.startsWith('/') ? path : `/${path}`
 }
-if (configuredEndpoint && !configuredEndpoint.startsWith('/')) {
-  configuredEndpoint = '/' + configuredEndpoint
-}
-const WS_ENDPOINT_PATH = configuredEndpoint
 
-function buildWebSocketUrl(token) {
-  const wsOrigin = HTTP_ORIGIN.replace(/^http/, 'ws')
-  const url = new URL(WS_ENDPOINT_PATH, wsOrigin.endsWith('/') ? wsOrigin : `${wsOrigin}/`)
-  if (token) {
-    url.searchParams.set('token', token)
-  }
-  return url.toString()
+const HTTP_ORIGIN = resolveHttpOrigin()
+const WS_ENDPOINT_PATH = ensureLeadingSlash(import.meta.env.VITE_WS_PATH || '/ws')
+
+function buildEndpointUrl() {
+  const base = new URL(WS_ENDPOINT_PATH, HTTP_ORIGIN)
+  return base.toString()
 }
 
 function ensureHandlerSet(map, key) {
@@ -45,145 +41,194 @@ function ensureHandlerSet(map, key) {
   return map.get(key)
 }
 
-class RealtimeWebSocketClient {
-  constructor({ token } = {}) {
-    this.token = token
-    this.socket = null
+function createSockJsSocket(endpointUrl) {
+  if (typeof window === 'undefined') {
+    throw new Error('Realtime STOMP 클라이언트는 브라우저 환경에서만 사용할 수 있습니다.')
+  }
+  const Sock = typeof window.SockJS === 'function' ? window.SockJS : SockJS
+  if (typeof Sock !== 'function') {
+    throw new Error('SockJS 클라이언트를 초기화할 수 없습니다.')
+  }
+  return new Sock(endpointUrl, null, {
+    transports: ['websocket', 'xhr-streaming', 'xhr-polling'],
+    withCredentials: true,
+  })
+}
+
+class RealtimeStompClient {
+  constructor(options = {}) {
+    if (typeof options === 'string') {
+      console.warn('[ws] loginId 인자는 더 이상 필요하지 않습니다. 세션 쿠키로 인증합니다.')
+      options = {}
+    }
+
+    this.connectHeaders = { ...(options.connectHeaders ?? {}) }
+    this.client = null
     this.connectPromise = null
-    this.manualClose = false
+    this.manualDisconnect = false
 
     this.eventHandlers = new Map()
     this.openHandlers = new Set()
     this.closeHandlers = new Set()
     this.errorHandlers = new Set()
-    this.rawMessageHandlers = new Set()
+    this.eventSubscription = null
   }
 
-  setToken(token) {
-    this.token = token
+  setLoginId() {
+    console.warn('[ws] loginId 설정은 사용되지 않습니다. 세션 쿠키를 통해 인증합니다.')
+  }
+
+  // 호환성을 위해 유지하되 더 이상 사용되지 않음을 안내
+  setToken() {
+    console.warn('[ws] 토큰 기반 STOMP 인증은 비활성화되었습니다. 세션 쿠키를 확인하세요.')
+  }
+
+  setConnectHeaders(headers = {}) {
+    this.connectHeaders = { ...headers }
   }
 
   isConnected() {
-    return this.socket?.readyState === WebSocket.OPEN
+    return !!this.client?.connected
   }
 
   async connect() {
-    if (this.isConnected()) {
-      return
-    }
+    if (this.isConnected()) return
+    if (this.connectPromise) return this.connectPromise
 
-    if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
-      return this.connectPromise
-    }
+    const endpointUrl = buildEndpointUrl()
+    this.manualDisconnect = false
 
-    if (!this.token) {
-      throw new Error('WebSocket token is required before connecting.')
-    }
-
-    const url = buildWebSocketUrl(this.token)
-    this.manualClose = false
+    this.client = new Client({
+      debug: () => {},
+      reconnectDelay: 0,
+      connectHeaders: { ...this.connectHeaders },
+      webSocketFactory: () => createSockJsSocket(endpointUrl),
+    })
 
     this.connectPromise = new Promise((resolve, reject) => {
-      const socket = new WebSocket(url)
-      this.socket = socket
-      let opened = false
+      const client = this.client
+      let settled = false
 
-      socket.onopen = (event) => {
-        opened = true
+      client.onConnect = (frame) => {
+        settled = true
         this.connectPromise = null
+        this._ensureEventSubscription()
         this.openHandlers.forEach((handler) => {
-          try { handler(event) } catch (error) { console.error('[ws] onopen handler failed', error) }
+          try {
+            handler(frame)
+          } catch (error) {
+            console.error('[ws] onConnect 핸들러 실행 중 오류', error)
+          }
         })
         resolve()
       }
 
-      socket.onmessage = (event) => {
-        this.rawMessageHandlers.forEach((handler) => {
-          try { handler(event) } catch (error) { console.error('[ws] raw message handler failed', error) }
-        })
-
-        const handlePayload = (text) => {
-          try {
-            const parsed = JSON.parse(text)
-            const eventName = parsed?.event
-            const payload = parsed?.payload
-
-            if (eventName) {
-              const handlers = this.eventHandlers.get(eventName)
-              if (handlers?.size) {
-                handlers.forEach((handler) => {
-                  try { handler(payload, parsed) } catch (error) { console.error(`[ws] handler for ${eventName} failed`, error) }
-                })
-              }
-            }
-          } catch (error) {
-            console.error('[ws] Failed to parse WebSocket payload', error, text)
-          }
-        }
-
-        if (typeof event.data === 'string') {
-          handlePayload(event.data)
-        } else if (event.data instanceof Blob) {
-          event.data.text().then(handlePayload).catch((error) => {
-            console.error('[ws] Failed to read Blob payload', error)
-          })
-        } else {
-          console.warn('[ws] Unsupported message data type:', typeof event.data)
-        }
-      }
-
-      socket.onerror = (event) => {
+      client.onStompError = (frame) => {
         this.errorHandlers.forEach((handler) => {
-          try { handler(event) } catch (error) { console.error('[ws] onerror handler failed', error) }
+          try {
+            handler(frame)
+          } catch (error) {
+            console.error('[ws] onStompError 핸들러 실행 중 오류', error)
+          }
         })
       }
 
-      socket.onclose = (event) => {
-        this.connectPromise = null
-        this.socket = null
-
-        this.closeHandlers.forEach((handler) => {
-          try { handler(event) } catch (error) { console.error('[ws] onclose handler failed', error) }
+      client.onWebSocketError = (event) => {
+        this.errorHandlers.forEach((handler) => {
+          try {
+            handler(event)
+          } catch (error) {
+            console.error('[ws] onWebSocketError 핸들러 실행 중 오류', error)
+          }
         })
+      }
 
-        if (!opened) {
-          reject(new Error(`WebSocket connection closed before opening (code=${event.code})`))
+      client.onWebSocketClose = (event) => {
+        this.eventSubscription?.unsubscribe?.()
+        this.eventSubscription = null
+        this.closeHandlers.forEach((handler) => {
+          try {
+            handler(event)
+          } catch (error) {
+            console.error('[ws] onClose 핸들러 실행 중 오류', error)
+          }
+        })
+        this.client = null
+        if (!settled && !this.manualDisconnect) {
+          reject(new Error(`웹소켓 연결이 완료되기 전에 종료되었습니다. code=${event?.code ?? 'unknown'}`))
+        } else if (!settled) {
+          reject(new Error('웹소켓 연결이 정상적으로 수립되지 못했습니다.'))
         }
+        this.connectPromise = null
+      }
+
+      try {
+        client.activate()
+      } catch (error) {
+        this.connectPromise = null
+        this.client = null
+        reject(error)
       }
     })
 
     return this.connectPromise
   }
 
-  disconnect(code, reason) {
-    this.manualClose = true
-    if (this.socket) {
-      try {
-        this.socket.close(code ?? 1000, reason)
-      } catch (error) {
-        console.warn('[ws] Failed to close WebSocket cleanly', error)
-      }
+  async disconnect() {
+    this.manualDisconnect = true
+    if (!this.client) return
+    try {
+      await this.client.deactivate()
+    } finally {
+      this.client = null
+      this.eventSubscription = null
+      this.connectPromise = null
     }
-    this.socket = null
-    this.connectPromise = null
   }
 
-  send(payload) {
+  subscribe(destination, callback, headers = {}) {
+    if (!this.client) {
+      throw new Error('STOMP 클라이언트가 초기화되지 않았습니다. connect()를 먼저 호출하세요.')
+    }
     if (!this.isConnected()) {
-      throw new Error('Cannot send message because WebSocket is not connected.')
+      throw new Error('연결이 완료되기 전에 구독을 요청했습니다.')
     }
-    try {
-      const json = typeof payload === 'string' ? payload : JSON.stringify(payload)
-      this.socket.send(json)
-    } catch (error) {
-      console.error('[ws] Failed to send WebSocket message', error)
-      throw error
+    const subscription = this.client.subscribe(destination, (message) => {
+      try {
+        callback(message)
+      } catch (error) {
+        console.error(`[ws] ${destination} 구독 처리 중 오류`, error)
+      }
+    }, headers)
+
+    return {
+      unsubscribe() {
+        try {
+          subscription.unsubscribe()
+        } catch (error) {
+          console.warn('[ws] 구독 해제 중 오류', error)
+        }
+      },
     }
+  }
+
+  publish({ destination, body, headers = {} }) {
+    if (!this.client) {
+      throw new Error('STOMP 클라이언트가 초기화되지 않았습니다. connect()를 먼저 호출하세요.')
+    }
+    if (!this.isConnected()) {
+      throw new Error('STOMP 연결이 활성화되어 있지 않아 메시지를 전송할 수 없습니다.')
+    }
+    const payload = typeof body === 'string' ? body : JSON.stringify(body ?? {})
+    this.client.publish({ destination, body: payload, headers })
   }
 
   onEvent(eventName, handler) {
     const handlers = ensureHandlerSet(this.eventHandlers, eventName)
     handlers.add(handler)
+    if (this.isConnected()) {
+      this._ensureEventSubscription()
+    }
     return () => handlers.delete(handler)
   }
 
@@ -202,17 +247,41 @@ class RealtimeWebSocketClient {
     return () => this.errorHandlers.delete(handler)
   }
 
-  onRawMessage(handler) {
-    this.rawMessageHandlers.add(handler)
-    return () => this.rawMessageHandlers.delete(handler)
+  _ensureEventSubscription() {
+    if (!this.client || !this.client.connected) return
+    if (this.eventSubscription) return
+
+    this.eventSubscription = this.client.subscribe('/user/queue/events', (message) => {
+      let parsed
+      try {
+        parsed = JSON.parse(message.body)
+      } catch (error) {
+        console.error('[ws] 이벤트 페이로드 파싱 실패', error, message.body)
+        return
+      }
+
+      const eventName = parsed?.event
+      if (!eventName) return
+
+      const handlers = this.eventHandlers.get(eventName)
+      if (!handlers?.size) return
+
+      handlers.forEach((handler) => {
+        try {
+          handler(parsed.payload, parsed)
+        } catch (error) {
+          console.error(`[ws] ${eventName} 이벤트 처리 중 오류`, error)
+        }
+      })
+    })
   }
 }
 
-export function createRealtimeClient(options = {}) {
+function createRealtimeClient(options = {}) {
   if (typeof options === 'string') {
-    return new RealtimeWebSocketClient({ token: options })
+    return new RealtimeStompClient(options)
   }
-  return new RealtimeWebSocketClient(options)
+  return new RealtimeStompClient(options)
 }
 
-export { RealtimeWebSocketClient }
+export { RealtimeStompClient, RealtimeStompClient as RealtimeWebSocketClient, createRealtimeClient }

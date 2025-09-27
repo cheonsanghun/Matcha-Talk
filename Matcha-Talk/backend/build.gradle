@@ -25,8 +25,6 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'     // Redis 연동(Spring Data Redis)
     implementation 'org.springframework.session:spring-session-data-redis'       // Spring Session + Redis 기반 세션 저장소
     runtimeOnly 'com.mysql:mysql-connector-j'                                    // MySQL DB 드라이버(실행 시 필요)
-
-
     compileOnly 'org.projectlombok:lombok'                                      // 롬복(코드 자동 생성, 컴파일 시만 필요)
     annotationProcessor 'org.projectlombok:lombok'                              // 롬복 어노테이션 처리용(컴파일 시)
 
@@ -38,7 +36,6 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation 'org.springframework.security:spring-security-messaging' // WebSocketSecurityConfig 쓸 때
-    implementation 'org.flywaydb:flyway-core'
 
     runtimeOnly 'com.h2database:h2'
 }

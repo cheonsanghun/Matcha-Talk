@@ -6,6 +6,7 @@ import net.datasa.project01.config.handler.RestAccessDeniedHandler;
 import net.datasa.project01.config.handler.RestAuthenticationEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -34,12 +35,16 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .ignoringRequestMatchers(
+                                "/api/**"
+                        )
                 )
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(reg -> reg
                         .requestMatchers("/api/auth/login", "/api/auth/csrf", "/api/auth/find-id", "/api/auth/password-reset/**", "/api/users/signup", "/api/users/exists", "/api/users/email/**").permitAll()
                         .requestMatchers("/error", "/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .formLogin(AbstractHttpConfigurer::disable)

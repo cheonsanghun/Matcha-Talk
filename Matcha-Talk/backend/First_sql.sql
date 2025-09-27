@@ -216,11 +216,12 @@ CREATE TABLE room_messages
     sender_pid   BIGINT NULL,
     content_type VARCHAR(10) NOT NULL CHECK (content_type IN ('TEXT', 'IMAGE', 'FILE', 'SYSTEM')),
     text_content TEXT,
-    file_name    VARCHAR(300),
-    file_path    VARCHAR(500),
-    mime_type    VARCHAR(100),
-    size_bytes   BIGINT,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    file_name     VARCHAR(300),
+    file_path     VARCHAR(500),
+    mime_type     VARCHAR(100),
+    size_bytes    BIGINT,
+    client_msg_id VARCHAR(64) NULL,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_msg_room FOREIGN KEY (room_id) REFERENCES rooms (room_id) ON DELETE CASCADE,
     CONSTRAINT fk_msg_user FOREIGN KEY (sender_pid) REFERENCES users (user_pid) ON DELETE SET NULL,
     CONSTRAINT ck_msg_payload_min CHECK (
@@ -228,7 +229,8 @@ CREATE TABLE room_messages
             OR (content_type IN ('FILE', 'IMAGE') AND file_path IS NOT NULL)
             OR (content_type = 'SYSTEM')
         ),
-    INDEX        idx_msg_room_time (room_id, created_at)
+    UNIQUE KEY uq_msg_room_client (room_id, client_msg_id),
+    INDEX idx_msg_room_time (room_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 /* =========================================================

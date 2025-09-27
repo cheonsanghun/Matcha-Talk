@@ -1,6 +1,6 @@
 package net.datasa.project01.service.translation;
 
-import org.springframework.lang.Nullable;
+import jakarta.annotation.Nullable;
 
 public interface TranslateService {
 

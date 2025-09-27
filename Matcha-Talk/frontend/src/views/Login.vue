@@ -63,7 +63,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../services/api'
@@ -106,6 +106,16 @@ function startTimer (seconds) {
 }
 onBeforeUnmount(clearTimer)
 
+onMounted(fetchCsrfToken)
+
+async function fetchCsrfToken () {
+  try {
+    await api.get('/auth/csrf', { params: { t: Date.now() }, skipSnakifyParams: true })
+  } catch (error) {
+    console.warn('CSRF 토큰을 갱신하지 못했습니다.', error?.response?.status)
+  }
+}
+
 async function onLogin () {
   if (!login_id.value || !password.value) {
     messageType.value = 'error'
@@ -124,41 +134,21 @@ async function onLogin () {
       loginId:  login_id.value.trim(),
       password: password.value,
     }
+    await fetchCsrfToken()
     const { data } = await api.post('/auth/login', payload)
 
-    // 응답: { user, token } 또는 UserSummary 단독
     const userRaw = data.user ?? data
-    const token   = data.token ?? ''
-
-    // === 역할(role) 보정 ===
-    let role = userRaw.roleName ?? userRaw.rolename ?? userRaw.role ?? null
-
-    // 2) 토큰이 JWT라면 payload에서 role 추출 시도
-    if (!role && token && token.includes('.')) {
-      try {
-        const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-        const json = JSON.parse(atob(b64))
-        role = json.roleName ?? json.rolename ?? json.role ?? null
-      } catch {}
-    }
-    // 3) 최후: loginId가 'admin'이면 ROLE_ADMIN 처리
-    const loginIdFromUser = userRaw.loginId ?? userRaw.login_id
-    if (!role && loginIdFromUser === 'admin') role = 'ROLE_ADMIN'
-
-    // 프론트 공통 키로 강제 세팅 (roleName)
+    const role = userRaw.roleName ?? userRaw.rolename ?? userRaw.role ?? (userRaw.loginId === 'admin' ? 'ROLE_ADMIN' : null)
     const user = { ...userRaw, roleName: role ?? userRaw.roleName }
 
-    // 세션 저장: setSession 우선, 없으면 login(payload), 둘 다 없으면 수동 저장
     if (typeof store.setSession === 'function') {
-      await store.setSession(token, user)
+      await store.setSession(user)
     } else if (typeof store.login === 'function') {
-      await store.login({ token, user })
-    } else {
-      // fallback
-      store.token = token
-      store.user  = user
-      localStorage.setItem('token', token)
-      localStorage.setItem('user', JSON.stringify(user))
+      await store.login({ user })
+    }
+
+    if (typeof store.hydrateMeIfNeeded === 'function') {
+      await store.hydrateMeIfNeeded()
     }
 
     // 리다이렉트: redirect 쿼리 > 관리자면 /admin > /

@@ -117,7 +117,15 @@
                   <div class="message-bubble bg-grey-lighten-4 text-body-2">{{ m.text }}</div>
                   <div v-if="m.translation" class="text-caption text-grey mt-1">
                     {{ m.translation }}
-                    <v-icon size="16" class="ms-1 cursor-pointer" @click="saveWord(m)">mdi-content-save</v-icon>
+                    <v-icon
+                      size="16"
+                      class="ms-1 cursor-pointer"
+                      :class="{ 'text-success': m.saved }"
+                      @click="saveWord(m)"
+                    >mdi-content-save</v-icon>
+                  </div>
+                  <div v-else-if="m.translationError" class="text-caption text-error mt-1">
+                    {{ m.translationError }}
                   </div>
                   <div class="message-tools">
                     <v-btn
@@ -138,7 +146,15 @@
                   <div class="message-bubble bg-primary text-white text-body-2">{{ m.text }}</div>
                   <div v-if="m.translation" class="text-caption text-grey-lighten-2 mt-1">
                     {{ m.translation }}
-                    <v-icon size="16" class="ms-1 cursor-pointer" @click="saveWord(m)">mdi-content-save</v-icon>
+                    <v-icon
+                      size="16"
+                      class="ms-1 cursor-pointer"
+                      :class="{ 'text-success': m.saved }"
+                      @click="saveWord(m)"
+                    >mdi-content-save</v-icon>
+                  </div>
+                  <div v-else-if="m.translationError" class="text-caption text-red-lighten-2 mt-1">
+                    {{ m.translationError }}
                   </div>
                   <div class="message-tools justify-end">
                     <v-btn
@@ -151,6 +167,7 @@
                     >
                       <v-icon size="18">mdi-translate</v-icon>
                     </v-btn>
+                    <span v-if="m.pending" class="text-caption text-warning">전송 중...</span>
                     <span class="text-caption text-grey-lighten-1">{{ m.time }}</span>
                   </div>
                 </div>
@@ -177,11 +194,18 @@
         </div>
       </v-col>
     </v-row>
+    <v-snackbar
+      v-model="snackbar.open"
+      :color="snackbar.color"
+      :timeout="2500"
+    >
+      {{ snackbar.message }}
+    </v-snackbar>
   </v-container>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createRealtimeClient } from '../services/ws'
@@ -199,10 +223,26 @@ const current = ref({})
 const chatMessagesContainer = ref(null)
 const isLoadingRooms = ref(false)
 
+const snackbar = reactive({
+  open: false,
+  message: '',
+  color: 'info',
+})
+
 const auth = useAuthStore()
 const vocabularyStore = useVocabularyStore()
 const route = useRoute()
 const router = useRouter()
+const myNickname = computed(() => auth.user?.nickName || auth.user?.nickname || '나')
+const isAuthenticated = computed(() => auth.isAuthenticated)
+
+const pendingMessages = new Map()
+
+function showSnackbar(message, color = 'info') {
+  snackbar.message = message
+  snackbar.color = color
+  snackbar.open = true
+}
 
 let realtimeClient = null
 let reconnectTimer = null
@@ -213,13 +253,28 @@ const maxReconnectAttempts = 3
 const teardownHandlers = []
 
 onMounted(async () => {
-  await loadRooms()
-  ensureActiveRoomFromRoute()
-  connectRealtime()
+  try {
+    await auth.hydrateMeIfNeeded?.()
+  } catch (error) {
+    console.warn('세션 정보를 불러오지 못했습니다.', error?.response?.status)
+  }
+
+  if (isAuthenticated.value) {
+    await initializeChat()
+  }
 })
 
 watch(() => route.query.roomId, () => {
   ensureActiveRoomFromRoute()
+})
+
+watch(isAuthenticated, async (authed) => {
+  if (authed) {
+    await initializeChat()
+  } else {
+    cleanupRealtime()
+    resetState()
+  }
 })
 
 watch(
@@ -240,6 +295,17 @@ watch(
 )
 
 onUnmounted(() => {
+  cleanupRealtime()
+})
+
+async function initializeChat () {
+  await loadRooms()
+  ensureActiveRoomFromRoute()
+  manualDisconnect = false
+  await connectRealtime()
+}
+
+function cleanupRealtime () {
   manualDisconnect = true
 
   if (reconnectTimer) {
@@ -247,20 +313,38 @@ onUnmounted(() => {
     reconnectTimer = null
   }
 
+  pendingMessages.clear()
+
   teardownHandlers.forEach((fn) => {
-    try { fn?.() } catch (error) { console.warn('Failed to remove handler', error) }
+    try { fn?.() } catch (error) { console.warn('Realtime handler 제거 실패', error) }
   })
   teardownHandlers.length = 0
 
   if (realtimeClient) {
-    try { realtimeClient.disconnect() } catch (error) {
-      console.warn('Failed to disconnect WebSocket cleanly', error)
+    try {
+      realtimeClient.disconnect()
+    } catch (error) {
+      console.warn('웹소켓 연결 종료에 실패했습니다.', error)
     }
     realtimeClient = null
   }
-})
+}
+
+function resetState () {
+  chats.value = []
+  groups.value = []
+  conversations.value = {}
+  current.value = {}
+  pendingMessages.clear()
+  isLoadingRooms.value = false
+}
 
 async function loadRooms() {
+  if (!isAuthenticated.value) {
+    chats.value = []
+    groups.value = []
+    return
+  }
   try {
     isLoadingRooms.value = true
     const { data } = await api.get('/rooms/my')
@@ -285,7 +369,15 @@ async function loadRooms() {
       selectRoomById(current.value.id, { skipRouteUpdate: true })
     }
   } catch (error) {
-    console.error('[chat] Failed to load rooms', error)
+    const status = error?.response?.status
+    if (status === 401) {
+      showSnackbar('로그인이 만료되었습니다. 다시 로그인해주세요.', 'warning')
+      auth.logout?.()
+      cleanupRealtime()
+      resetState()
+    } else {
+      console.error('[chat] Failed to load rooms', error)
+    }
   } finally {
     isLoadingRooms.value = false
   }
@@ -463,21 +555,39 @@ async function handleIncomingMessage(payload) {
 
   const content = payload.content ?? ''
   const senderNickname = payload.senderNickName || payload.senderNickname || '상대방'
+  const clientMsgId = payload.clientMsgId ?? payload.client_msg_id ?? null
+  const senderLang = payload.senderLanguageCode ?? payload.sender_language_code ?? null
   const messagesForRoom = ensureConversation(roomKey)
-  const myNickname = auth.user?.nickName || auth.user?.nickname
 
-  const message = {
-    id: `${roomKey}-${Date.now()}-${messagesForRoom.length}`,
+  const existing = clientMsgId
+    ? messagesForRoom.find((item) => item.clientMsgId === clientMsgId)
+    : undefined
+
+  const baseId = existing?.id ?? `${roomKey}-${Date.now()}-${messagesForRoom.length}`
+
+  const messageData = {
+    id: baseId,
+    clientMsgId,
     text: content,
     time: formatTime(payload.sentAt),
     sender: senderNickname,
-    me: myNickname ? senderNickname === myNickname : false,
-    translation: null,
+    me: myNickname.value ? senderNickname === myNickname.value : false,
+    translation: existing?.translation ?? null,
     translating: false,
+    pending: false,
+    senderLanguageCode: senderLang,
     sentAt: payload.sentAt ?? null
   }
 
-  messagesForRoom.push(message)
+  if (existing) {
+    Object.assign(existing, messageData)
+  } else {
+    messagesForRoom.push(messageData)
+  }
+
+  if (clientMsgId && pendingMessages.has(clientMsgId)) {
+    pendingMessages.delete(clientMsgId)
+  }
 
   const roomEntry = await ensureRoomExists(roomKey, senderNickname)
   roomEntry.last = content
@@ -487,17 +597,12 @@ async function handleIncomingMessage(payload) {
   }
 }
 
-async function connectRealtime() {
+async function connectRealtime () {
   if (isConnecting || manualDisconnect) return
-
-  const token = auth.token || localStorage.getItem('token')
-  if (!token) {
-    console.error('JWT token not found. Cannot establish WebSocket connection.')
-    return
-  }
+  if (!isAuthenticated.value) return
 
   if (!realtimeClient) {
-    realtimeClient = createRealtimeClient({ token })
+    realtimeClient = createRealtimeClient()
     teardownHandlers.push(
       realtimeClient.onOpen(() => {
         isConnecting = false
@@ -527,8 +632,6 @@ async function connectRealtime() {
         }
       })
     )
-  } else {
-    realtimeClient.setToken(token)
   }
 
   isConnecting = true
@@ -536,11 +639,16 @@ async function connectRealtime() {
     await realtimeClient.connect()
   } catch (error) {
     console.error('[chat] Failed to connect WebSocket', error)
+    showSnackbar('실시간 서버에 연결하지 못했습니다.', 'error')
     isConnecting = false
+    if (!manualDisconnect) {
+      scheduleReconnect()
+    }
   }
 }
 
 function scheduleReconnect() {
+  if (!isAuthenticated.value) return
   if (manualDisconnect) return
   if (reconnectAttempts >= maxReconnectAttempts) {
     console.error('[chat] Max reconnect attempts reached')
@@ -566,23 +674,49 @@ function formatTime(isoString) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+function createClientMsgId () {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 async function translateMessage(message) {
   if (!message || message.translating || message.translation) return
 
   message.translating = true
   try {
     const targetLang = auth.user?.languageCode || 'en'
-    message.translation = await translate(message.text, targetLang)
+    const sourceLang = message.senderLanguageCode || 'auto'
+    const { translatedText } = await translate(message.text, targetLang, { sourceLang })
+    message.translation = translatedText
   } catch (error) {
+    const msg = error?.message || '문장을 번역하지 못했습니다. 잠시 후 다시 시도해주세요.'
+    message.translationError = msg
     console.error('문장을 번역하지 못했습니다.', error)
+    showSnackbar(msg, 'error')
   } finally {
     message.translating = false
   }
 }
 
-function saveWord(message) {
-  if (!message?.translation) return
-  vocabularyStore.addWord(message.text, message.translation)
+async function saveWord(message) {
+  if (!message) return
+  try {
+    const targetLang = auth.user?.languageCode || 'en'
+    const sourceLang = message.senderLanguageCode || 'auto'
+    const { translatedText } = await translate(message.text, targetLang, { sourceLang, save: true })
+    if (!message.translation && translatedText) {
+      message.translation = translatedText
+    }
+    message.saved = true
+    await vocabularyStore.fetchWords()
+    showSnackbar('단어를 저장했습니다.', 'success')
+  } catch (error) {
+    console.error('단어 저장에 실패했습니다.', error)
+    const messageText = error?.message || '단어 저장에 실패했습니다. 잠시 후 다시 시도해주세요.'
+    showSnackbar(messageText, 'error')
+  }
 }
 
 async function send() {
@@ -599,23 +733,58 @@ async function send() {
     await connectRealtime()
     if (!realtimeClient?.isConnected()) {
       console.warn('WebSocket not connected. Message was not sent.')
+      showSnackbar('실시간 서버와 연결되지 않아 메시지를 전송하지 못했습니다.', 'warning')
       return
     }
   }
 
+  const clientMsgId = createClientMsgId()
+  const messagesForRoom = ensureConversation(roomKey)
+  const pending = {
+    id: `${roomKey}-${clientMsgId}`,
+    clientMsgId,
+    text: message,
+    time: formatTime(new Date().toISOString()),
+    sender: myNickname.value,
+    me: true,
+    translation: null,
+    translating: false,
+    pending: true,
+    senderLanguageCode: auth.user?.languageCode ?? null,
+    sentAt: new Date().toISOString()
+  }
+  messagesForRoom.push(pending)
+  pendingMessages.set(clientMsgId, pending)
+
+  const roomEntry = findRoomById(roomKey)
+  if (roomEntry) {
+    roomEntry.last = message
+  }
+
   try {
-    realtimeClient.send({
-      type: 'CHAT',
+    const payload = {
       roomId: Number(roomKey),
-      content: message
+      content: message,
+      clientMsgId,
+    }
+    const lang = auth.user?.languageCode
+    if (lang) {
+      payload.senderLanguageCode = lang
+    }
+
+    realtimeClient.publish({
+      destination: '/app/chat/send',
+      body: payload,
     })
     draft.value = ''
-    const roomEntry = findRoomById(roomKey)
-    if (roomEntry) {
-      roomEntry.last = message
-    }
   } catch (error) {
     console.error('Failed to send chat message', error)
+    const index = messagesForRoom.indexOf(pending)
+    if (index >= 0) {
+      messagesForRoom.splice(index, 1)
+    }
+    pendingMessages.delete(clientMsgId)
+    showSnackbar('메시지를 전송하지 못했습니다.', 'error')
   }
 }
 

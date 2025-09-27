@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createRealtimeClient } from '../services/ws'
@@ -73,6 +73,7 @@ import { camelizeKeys } from '../utils/case'
 
 const router = useRouter()
 const auth = useAuthStore()
+const isAuthenticated = computed(() => auth.isAuthenticated)
 
 const matchFound = ref(false)
 const partnerName = ref('')
@@ -90,22 +91,39 @@ let reconnectTimer = null
 let manualDisconnect = false
 const teardownHandlers = []
 
-onMounted(() => {
-  connectWebSocket()
+onMounted(async () => {
+  try {
+    await auth.hydrateMeIfNeeded?.()
+  } catch (error) {
+    console.warn('세션 정보를 가져오지 못했습니다.', error?.response?.status)
+  }
+
+  if (isAuthenticated.value) {
+    manualDisconnect = false
+    connectWebSocket()
+  } else {
+    sessionStatus.value = '로그인이 필요합니다.'
+    router.push('/login')
+  }
+})
+
+watch(isAuthenticated, (authed) => {
+  if (authed) {
+    manualDisconnect = false
+    connectWebSocket()
+  } else {
+    cleanup()
+    sessionStatus.value = '로그인이 필요합니다.'
+  }
 })
 
 async function connectWebSocket () {
-  if (isConnecting.value || manualDisconnect) return
+  if (isConnecting.value || manualDisconnect || !isAuthenticated.value) return
 
-  const token = auth.token || localStorage.getItem('token')
-  if (!token) {
-    console.error('JWT token not found')
-    router.push('/login')
-    return
-  }
+  sessionStatus.value = '매칭 서버에 연결 중입니다...'
 
   if (!websocketClient) {
-    websocketClient = createRealtimeClient({ token })
+    websocketClient = createRealtimeClient()
     teardownHandlers.push(
       websocketClient.onOpen(() => {
         console.log('✅ WebSocket connected for matching results')
@@ -125,13 +143,8 @@ async function connectWebSocket () {
         console.error('❌ WebSocket error:', event)
       }),
       websocketClient.onEvent('match-result', handleMatchResult),
-      websocketClient.onEvent('match-status', handleMatchStatus),
-      websocketClient.onEvent('connected', () => {
-        sessionStatus.value = '매칭 대기 중입니다...'
-      })
+      websocketClient.onEvent('match-status', handleMatchStatus)
     )
-  } else {
-    websocketClient.setToken(token)
   }
 
   isConnecting.value = true
@@ -141,10 +154,12 @@ async function connectWebSocket () {
   } catch (error) {
     console.error('❌ Failed to establish WebSocket connection:', error)
     isConnecting.value = false
+    sessionStatus.value = '실시간 서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.'
   }
 }
 
 function scheduleReconnect () {
+  if (!isAuthenticated.value) return
   if (manualDisconnect) return
   if (connectionAttempts.value >= maxConnectionAttempts) {
     console.error('❌ Max connection attempts reached')
@@ -210,8 +225,12 @@ function declineMatch () {
   }
 }
 
-onBeforeUnmount(() => {
+function cleanup () {
   manualDisconnect = true
+
+  matchFound.value = false
+  partnerName.value = ''
+  roomId.value = null
 
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
@@ -228,9 +247,17 @@ onBeforeUnmount(() => {
   teardownHandlers.length = 0
 
   if (websocketClient) {
-    websocketClient.disconnect()
+    try {
+      websocketClient.disconnect()
+    } catch (error) {
+      console.warn('웹소켓 연결 해제 실패', error)
+    }
     websocketClient = null
   }
+}
+
+onBeforeUnmount(() => {
+  cleanup()
 })
 </script>
 

@@ -1,5 +1,27 @@
-export async function translate(text, targetLang = 'en') {
-  // 간단한 예시 번역기: 실제 서비스 연동 전까지는 문자열을 뒤집어 반환합니다.
-  // TODO: 외부 번역 API와 연동하여 실제 번역 결과를 제공하세요.
-  return text.split('').reverse().join('');
+import api from './api'
+
+export async function translate(text, targetLang = 'en', { sourceLang = 'auto', save = false, context = null } = {}) {
+  try {
+    const payload = {
+      text,
+      sourceLang,
+      targetLang,
+      save,
+      context,
+    }
+
+    const { data } = await api.post('/translate', payload)
+    return {
+      translatedText: data.translatedText ?? data.translated_text ?? '',
+      saved: Boolean(data.saved),
+    }
+  } catch (error) {
+    const responseMessage = error?.response?.data?.message
+    const message = typeof responseMessage === 'string'
+      ? responseMessage
+      : '번역 요청 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+    const wrapped = new Error(message)
+    wrapped.cause = error
+    throw wrapped
+  }
 }

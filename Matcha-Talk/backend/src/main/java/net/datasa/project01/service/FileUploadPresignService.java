@@ -1,6 +1,5 @@
 package net.datasa.project01.service;
 
-import lombok.RequiredArgsConstructor;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.repository.RoomMemberRepository;
@@ -19,7 +18,6 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class FileUploadPresignService {
 
     private static final Duration DEFAULT_EXPIRATION = Duration.ofMinutes(5);
