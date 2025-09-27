@@ -13,6 +13,7 @@ import net.datasa.project01.repository.UserRepository;
 import net.datasa.project01.domain.dto.ChatMessageRequestDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.RoomMessage;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
@@ -75,6 +76,10 @@ public class ChatService {
                         .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
                 Room room = roomRepository.findById(requestDto.getRoomId())
                         .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+                roomMemberRepository.findByRoomAndUser(room, sender)
+                        .filter(member -> member.getLeftAt() == null)
+                        .orElseThrow(() -> new AccessDeniedException("채팅방에 참여 중인 사용자만 메시지를 전송할 수 있습니다."));
 
                 // 1. 원본 메시지를 DB에 저장
                 RoomMessage message = RoomMessage.builder()
@@ -164,6 +169,7 @@ public class ChatService {
                         .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
 
                 return roomMemberRepository.findByRoom(room).stream()
+                        .filter(member -> member.getLeftAt() == null)
                         .map(RoomMember::getUser)
                         .map(User::getLoginId)
                         .toList();
