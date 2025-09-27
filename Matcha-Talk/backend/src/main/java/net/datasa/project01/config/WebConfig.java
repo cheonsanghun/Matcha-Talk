@@ -16,11 +16,15 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final String[] allowedOrigins;
 
-    public WebConfig(@Value("${app.cors.allowed-origins}") String allowedOriginsProperty) {
+    public WebConfig(@Value("${app.cors.allowed-origins:*}") String allowedOriginsProperty) {
         this.allowedOrigins = Arrays.stream(allowedOriginsProperty.split(","))
                 .map(String::trim)
                 .filter(StringUtils::hasText)
                 .toArray(String[]::new);
+
+        if (this.allowedOrigins.length == 0) {
+            this.allowedOrigins = new String[] {"*"};
+        }
     }
 
     @Override

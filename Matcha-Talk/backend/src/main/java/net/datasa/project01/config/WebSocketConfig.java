@@ -31,13 +31,17 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     public WebSocketConfig(SessionHandshakeInterceptor sessionHandshakeInterceptor,
                            StompSecurityChannelInterceptor stompSecurityChannelInterceptor,
-                           @Value("${app.cors.allowed-origins}") String allowedOriginsProperty) {
+                           @Value("${app.cors.allowed-origins:*}") String allowedOriginsProperty) {
         this.sessionHandshakeInterceptor = sessionHandshakeInterceptor;
         this.stompSecurityChannelInterceptor = stompSecurityChannelInterceptor;
         this.allowedOrigins = Arrays.stream(allowedOriginsProperty.split(","))
                 .map(String::trim)
                 .filter(StringUtils::hasText)
                 .toArray(String[]::new);
+
+        if (this.allowedOrigins.length == 0) {
+            this.allowedOrigins = new String[] {"*"};
+        }
     }
 
     @Override

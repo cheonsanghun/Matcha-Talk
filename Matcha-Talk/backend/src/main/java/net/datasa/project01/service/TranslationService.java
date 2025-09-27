@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 @Slf4j
@@ -17,17 +18,19 @@ import org.springframework.web.client.RestTemplate;
 public class TranslationService {
 
     // application.properties에 설정한 Papago API 인증 정보를 주입받습니다.
-    @Value("${papago.api.client-id}")
+    @Value("${papago.api.client-id:}")
     private String clientId;
 
-    @Value("${papago.api.client-secret}")
+    @Value("${papago.api.client-secret:}")
     private String clientSecret;
 
-    @Value("${papago.api.url}")
+    @Value("${papago.api.url:}")
     private String apiUrl;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Object configLock = new Object();
+    private volatile boolean configurationWarned;
 
     /**
      * Papago API를 호출하여 텍스트를 번역합니다.
@@ -37,6 +40,11 @@ public class TranslationService {
      * @return 번역된 텍스트
      */
     public String translate(String text, String sourceLang, String targetLang) {
+        if (!isConfigured()) {
+            logConfigurationWarning();
+            return text;
+        }
+
         try {
             // 1. HTTP 요청 헤더 설정
             HttpHeaders headers = new HttpHeaders();
@@ -63,6 +71,23 @@ public class TranslationService {
         } catch (Exception e) {
             log.error("Papago API translation failed", e);
             return text; // 번역 실패 시 원본 텍스트를 그대로 반환
+        }
+    }
+
+    private boolean isConfigured() {
+        return StringUtils.hasText(clientId)
+                && StringUtils.hasText(clientSecret)
+                && StringUtils.hasText(apiUrl);
+    }
+
+    private void logConfigurationWarning() {
+        if (!configurationWarned) {
+            synchronized (configLock) {
+                if (!configurationWarned) {
+                    log.warn("Papago API 자격 증명이 설정되지 않아 번역 기능이 비활성화되었습니다.");
+                    configurationWarned = true;
+                }
+            }
         }
     }
 }
