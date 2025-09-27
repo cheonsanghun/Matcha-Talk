@@ -23,6 +23,8 @@ public interface RoomMemberRepository extends JpaRepository<RoomMember, RoomMemb
     /** 특정 채팅방에 특정 사용자가 멤버로 있는지 확인 (권한 검사용) */
     Optional<RoomMember> findByRoomAndUser(Room room, User user);
 
+    Optional<RoomMember> findFirstByUserAndRoom_RoomTypeOrderByJoinedAtDesc(User user, Room.RoomType roomType);
+
     /**
      * 특정 사용자가 속한 모든 채팅방과 그 방의 모든 멤버 정보를 한 번의 쿼리로 조회 (N+1 문제 해결)
      */

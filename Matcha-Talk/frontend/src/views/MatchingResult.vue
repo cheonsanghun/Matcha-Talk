@@ -66,14 +66,18 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createRealtimeClient } from '../services/ws'
 import { camelizeKeys } from '../utils/case'
 import { resolveClientIdentity } from '../utils/identity'
+import api from '../services/api'
+import { useMatchStore } from '../stores/match'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+const matchStore = useMatchStore()
 
 const matchFound = ref(false)
 const partnerName = ref('')
@@ -91,7 +95,22 @@ let reconnectTimer = null
 let manualDisconnect = false
 const teardownHandlers = []
 
-onMounted(() => {
+onMounted(async () => {
+  const routeBootstrap = extractBootstrapFromRoute()
+  const queuedFromRoute = isQueuedFromRoute()
+  if (routeBootstrap) {
+    applyMatchBootstrap(routeBootstrap, { persist: true })
+  } else if (queuedFromRoute) {
+    matchStore.clearBootstrap()
+    sessionStatus.value = '매칭 대기열에 등록되었습니다.'
+  } else if (matchStore.bootstrap) {
+    applyMatchBootstrap(matchStore.bootstrap)
+  }
+
+  if (!matchFound.value) {
+    await fetchLatestMatchFromRest()
+  }
+
   connectWebSocket()
 })
 
@@ -171,6 +190,11 @@ function handleMatchResult (payload) {
   partnerName.value = normalized.partnerNickName || normalized.partnerNickname || '상대방'
   roomId.value = normalized.roomId ?? normalized.room_id ?? null
   sessionStatus.value = '매칭 성공!'
+  matchStore.setBootstrap({
+    matchFound: matchFound.value,
+    partnerName: partnerName.value,
+    roomId: roomId.value,
+  })
 }
 
 function handleMatchStatus (payload) {
@@ -191,6 +215,7 @@ function acceptMatch () {
   }
 
   manualDisconnect = true
+  matchStore.clearBootstrap()
   router.push({
     name: 'chat',
     query: {
@@ -202,6 +227,7 @@ function acceptMatch () {
 
 function declineMatch () {
   if (confirm('매칭을 거절하시겠습니까?')) {
+    matchStore.clearBootstrap()
     router.push({ name: 'match' })
   }
 }
@@ -228,6 +254,77 @@ onBeforeUnmount(() => {
     websocketClient = null
   }
 })
+
+function extractBootstrapFromRoute () {
+  const { matched, roomId: routeRoomId, partner } = route.query
+  if (matched === '1' || matched === 'true') {
+    const parsedRoomId = typeof routeRoomId !== 'undefined' ? Number(routeRoomId) : null
+    return {
+      matchFound: true,
+      roomId: Number.isFinite(parsedRoomId) ? parsedRoomId : null,
+      partnerName: typeof partner === 'string' ? partner : '',
+    }
+  }
+  return null
+}
+
+function isQueuedFromRoute () {
+  const { queued } = route.query
+  return queued === '1' || queued === 'true'
+}
+
+function applyMatchBootstrap (payload, options = {}) {
+  if (!payload) return
+
+  const { persist = false, statusMessage } = options
+  const normalizedName = payload.partnerName || payload.partnerNickName || payload.partnerNickname || ''
+  const normalizedRoomId = typeof payload.roomId === 'number' ? payload.roomId : payload.roomId != null ? Number(payload.roomId) : null
+
+  matchFound.value = !!payload.matchFound
+  partnerName.value = normalizedName
+  roomId.value = Number.isFinite(normalizedRoomId) ? normalizedRoomId : null
+  sessionStatus.value = statusMessage || (matchFound.value ? '매칭 성공!' : '매칭 대기 중입니다...')
+
+  if (persist) {
+    if (matchFound.value) {
+      matchStore.setBootstrap({
+        matchFound: true,
+        partnerName: partnerName.value,
+        roomId: roomId.value,
+      })
+    } else {
+      matchStore.clearBootstrap()
+    }
+  }
+}
+
+async function fetchLatestMatchFromRest () {
+  try {
+    const loginId = resolveClientIdentity(auth)
+    if (!loginId) return
+
+    const response = await api.get('/match/results/latest', {
+      headers: {
+        'X-Login-Id': loginId,
+      },
+      skipSnakifyParams: true,
+    })
+
+    if (response.status === 204 || !response.data) {
+      return
+    }
+
+    const payload = {
+      matchFound: true,
+      roomId: response.data.roomId ?? null,
+      partnerName: response.data.partnerNickName ?? response.data.partnerNickname ?? '',
+    }
+
+    applyMatchBootstrap(payload, { persist: true, statusMessage: '최근 매칭 정보를 불러왔습니다.' })
+  } catch (error) {
+    console.warn('Failed to fetch latest match result', error?.response?.data || error?.message)
+  }
+}
 </script>
 
 <style scoped>

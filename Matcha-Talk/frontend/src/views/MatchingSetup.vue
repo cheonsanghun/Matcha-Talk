@@ -107,10 +107,12 @@ import { ref, computed } from 'vue'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useMatchStore } from '../stores/match'
 import { resolveClientIdentity } from '../utils/identity'
 
 const router = useRouter()
 const auth = useAuthStore()
+const matchStore = useMatchStore()
 const ageRange = ref([20, 30])
 const gender = ref('A')
 const regions = [
@@ -148,12 +150,30 @@ async function startMatch(){
   }
   
   try{
-    await api.post('/match/requests', payload, {
+    const { data } = await api.post('/match/requests', payload, {
       headers: {
         'X-Login-Id': loginId
       }
     })
-    router.push('/match/result')
+    if (data?.matchedNow && data?.match) {
+      const bootstrapPayload = {
+        matchFound: true,
+        roomId: data.match.roomId ?? null,
+        partnerName: data.match.partnerNickName ?? data.match.partnerNickname ?? '',
+      }
+      matchStore.setBootstrap(bootstrapPayload)
+      router.push({
+        name: 'match-result',
+        query: {
+          matched: '1',
+          roomId: bootstrapPayload.roomId != null ? String(bootstrapPayload.roomId) : undefined,
+          partner: bootstrapPayload.partnerName || undefined,
+        },
+      })
+    } else {
+      matchStore.clearBootstrap()
+      router.push({ name: 'match-result', query: { queued: '1' } })
+    }
   }catch(e){
     alert('매칭 실패: ' + (e?.response?.data?.message || e.message))
   }finally{
