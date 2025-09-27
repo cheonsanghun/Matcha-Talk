@@ -35,9 +35,6 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        .ignoringRequestMatchers(
-                                "/api/**"
-                        )
                 )
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
@@ -45,6 +42,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login", "/api/auth/csrf", "/api/auth/find-id", "/api/auth/password-reset/**", "/api/users/signup", "/api/users/exists", "/api/users/email/**").permitAll()
                         .requestMatchers("/error", "/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .formLogin(AbstractHttpConfigurer::disable)

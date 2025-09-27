@@ -2,9 +2,9 @@
 package net.datasa.project01.controller;
 
 import lombok.RequiredArgsConstructor;
+import net.datasa.project01.domain.dto.AdminUserResponse;
 import net.datasa.project01.domain.dto.InquiryResponse;
 import net.datasa.project01.domain.dto.ReportResponse;
-import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.domain.entity.UserPenalty;
 import net.datasa.project01.service.AdminService;          // 사용자 관리(계정/잠금/권한/제재 조회)는 계속 AdminService 사용
 import net.datasa.project01.service.AdminSupportService;  // 문의/신고 전용 서비스
@@ -26,23 +26,23 @@ public class AdminController {
     // ============================================================
 
     @GetMapping("/users")
-    public List<User> searchUsers(@RequestParam(value = "q", required = false) String q) {
+    public List<AdminUserResponse> searchUsers(@RequestParam(value = "q", required = false) String q) {
         return adminService.searchUsers(q);
     }
 
     @PatchMapping("/users/{id}")
-    public User updateBasic(@PathVariable("id") Long userPid, @RequestBody UpdateReq req) {
+    public AdminUserResponse updateBasic(@PathVariable("id") Long userPid, @RequestBody UpdateReq req) {
         return adminService.updateUser(userPid, req.getNickName(), req.getEmail(), req.getRoleName());
     }
 
     @PostMapping("/users/{id}/lock")
-    public User lockUser(@PathVariable("id") Long userPid, @RequestBody LockReq req) {
+    public AdminUserResponse lockUser(@PathVariable("id") Long userPid, @RequestBody LockReq req) {
         long minutes = (req.getMinutes() <= 0 ? 10 : req.getMinutes());
         return adminService.lockUser(userPid, minutes);
     }
 
     @PatchMapping("/users/{id}/enable")
-    public User enableUser(@PathVariable("id") Long userPid, @RequestBody EnableReq req) {
+    public AdminUserResponse enableUser(@PathVariable("id") Long userPid, @RequestBody EnableReq req) {
         return adminService.setEnabled(userPid, req.isEnabled());
     }
 

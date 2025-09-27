@@ -82,7 +82,7 @@ function pretty(dt){ return dt?.replace('T',' ').slice(0,19) ?? '-' }
 /** 내 문의 목록 로드 */
 async function loadMy(){
   if(!mePid.value) return
-  const { data } = await supportApi.myInquiries(mePid.value)
+  const { data } = await supportApi.myInquiries()
   myList.value = data
 }
 watch(mePid, loadMy, { immediate: true })
@@ -102,8 +102,11 @@ async function submit(){
   loading.value = true; message.value=''; error.value=''
   try{
     // 🔥 userPid는 UI 없이 내부에서 주입
-    const payload = { userPid: mePid.value, category: category.value, title: title.value, content: content.value }
-    await supportApi.createInquiry(payload)
+    await supportApi.createInquiry({
+      category: category.value,
+      title: title.value,
+      content: content.value,
+    })
     message.value = '문의가 접수되었습니다.'
     reset()
     await loadMy()

@@ -1,10 +1,13 @@
 import api from './api'
 
 export const supportApi = {
-  createInquiry: (payload) => api.post('/support/inquiries', payload),
-  myInquiries:   (userPid)  => api.get('/support/inquiries', { params: { userPid } }),
+  createInquiry: ({ category, title, content }) =>
+    api.post('/support/inquiries', { category, title, content }),
+  myInquiries:   () => api.get('/support/inquiries'),
 
-  createReport:        (payload) => api.post('/support/reports', payload),              // 기존 PID 방식
-  createReportByLogin: (payload) => api.post('/support/reports/by-login', payload),    // ✅ 아이디 방식
-  myReports:     (reporterPid) => api.get('/support/reports', { params: { reporterPid } }),
+  createReport: ({ reportedPid, reason, detail }) =>
+    api.post('/support/reports', { reportedPid, reason, detail }),
+  createReportByLogin: ({ reportedLoginId, reason, detail }) =>
+    api.post('/support/reports/by-login', { reportedLoginId, reason, detail }),
+  myReports: () => api.get('/support/reports'),
 }

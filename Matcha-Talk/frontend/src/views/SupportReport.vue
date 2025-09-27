@@ -101,7 +101,7 @@ async function loadMy() {
   if (!mePid.value) return
   loadMyError.value = false
   try {
-    const { data } = await supportApi.myReports(mePid.value)
+    const { data } = await supportApi.myReports()
     myReportsList.value = Array.isArray(data) ? data : []
   } catch { loadMyError.value = true }
 }
@@ -114,10 +114,9 @@ async function submit() {
   loading.value = true; error.value = ''; message.value = ''
   try {
     await supportApi.createReportByLogin({
-      reporterPid: mePid.value,
       reportedLoginId: reportedLoginId.value.trim(),
       reason: reason.value.trim(),
-      detail: (detail.value || '').trim() || null
+      detail: (detail.value || '').trim() || null,
     })
     message.value = '신고가 접수되었습니다.'
     reset()

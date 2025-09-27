@@ -1,6 +1,7 @@
 package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
+import net.datasa.project01.domain.dto.AdminUserResponse;
 import net.datasa.project01.domain.dto.InquiryResponse;
 import net.datasa.project01.domain.dto.ReportResponse;
 import net.datasa.project01.domain.entity.User;
@@ -31,22 +32,25 @@ public class AdminService {
      * 사용자 관리
      * ============================== */
     @Transactional(readOnly = true)
-    public List<User> searchUsers(String keyword) {
+    public List<AdminUserResponse> searchUsers(String keyword) {
         final String term = keyword == null ? "" : keyword.trim();
         return userRepository
-                .findTop100ByLoginIdContainingIgnoreCaseOrEmailContainingIgnoreCaseOrderByCreatedAtDesc(term, term);
+                .findTop100ByLoginIdContainingIgnoreCaseOrEmailContainingIgnoreCaseOrderByCreatedAtDesc(term, term)
+                .stream()
+                .map(AdminUserResponse::of)
+                .toList();
     }
 
-    public User lockUser(Long userPid, long minutes) {
+    public AdminUserResponse lockUser(Long userPid, long minutes) {
         User user = userRepository.findById(userPid)
                 .orElseThrow(() -> new IllegalArgumentException("user not found"));
         long min = Math.max(1, minutes);
         user.setLockedUntil(LocalDateTime.now().plusMinutes(min));
         user.setFailedLoginCount(0);
-        return userRepository.save(user);
+        return AdminUserResponse.of(userRepository.save(user));
     }
 
-    public User setEnabled(Long userPid, boolean enabled) {
+    public AdminUserResponse setEnabled(Long userPid, boolean enabled) {
         User user = userRepository.findById(userPid)
                 .orElseThrow(() -> new IllegalArgumentException("user not found"));
         user.setEnabled(enabled);
@@ -54,10 +58,10 @@ public class AdminService {
             user.setLockedUntil(null);
             user.setFailedLoginCount(0);
         }
-        return userRepository.save(user);
+        return AdminUserResponse.of(userRepository.save(user));
     }
 
-    public User updateUser(Long userPid, String nickName, String email, String roleName) {
+    public AdminUserResponse updateUser(Long userPid, String nickName, String email, String roleName) {
         User user = userRepository.findById(userPid)
                 .orElseThrow(() -> new IllegalArgumentException("user not found"));
         if (nickName != null && !nickName.isBlank()) {
@@ -69,7 +73,7 @@ public class AdminService {
         if (roleName != null && !roleName.isBlank()) {
             user.setRoleName(roleName.trim());
         }
-        return userRepository.save(user);
+        return AdminUserResponse.of(userRepository.save(user));
     }
 
     @Transactional(readOnly = true)

@@ -48,11 +48,37 @@ export TRANSLATE_API_PROVIDER="generic"  # generic | deepl | google 등 중 택 
 - 키/비밀번호는 절대로 로그에 남기지 마세요.
 - 프로바이더 문자열은 백엔드 `TranslateService`에서 응답 파싱 로직을 선택하는 데 사용됩니다.
 
+### 이메일 발송
+```bash
+export SPRING_MAIL_HOST="smtp.gmail.com"
+export SPRING_MAIL_PORT="587"
+export SPRING_MAIL_USERNAME="your-account@example.com"
+export SPRING_MAIL_PASSWORD="app-password-or-token"
+```
+- Gmail 등 외부 SMTP 사용 시 2단계 인증 + 앱 비밀번호 사용을 권장합니다.
+- 개발 환경에서는 MailHog, Mailpit 등의 로컬 SMTP를 지정해도 됩니다.
+
+### Papago 번역
+```bash
+export PAPAGO_CLIENT_ID="your-naver-client-id"
+export PAPAGO_CLIENT_SECRET="your-naver-client-secret"
+export PAPAGO_API_URL="https://papago.apigw.ntruss.com/nmt/v1/translation"
+```
+- Papago를 사용하지 않는다면 `PAPAGO_CLIENT_ID`와 `PAPAGO_CLIENT_SECRET`를 비워두고 `TRANSLATE_API_PROVIDER`를 `generic` 등 다른 제공자로 설정하세요.
+
 ### 파일 업로드 사전 서명
 ```bash
 export FILE_PRESIGN_BASE_URL="https://uploader.example.com"
 ```
 - 브라우저는 `/api/rooms/{id}/files/presign` 응답으로 받은 URL에 직접 업로드합니다.
+
+### 세션 쿠키 플래그
+```bash
+export SERVER_SESSION_COOKIE_SECURE="true"     # HTTPS 배포 환경에서만 true
+export SERVER_SESSION_COOKIE_SAMESITE="None"   # 크로스 도메인에서 쿠키 전송이 필요할 때 조정
+```
+- 로컬 HTTP 개발 환경에서는 `SERVER_SESSION_COOKIE_SECURE`를 지정하지 않으면 기본값(`false`)이 적용되어 세션 쿠키가 전송됩니다.
+- 서로 다른 도메인에서 쿠키를 공유해야 한다면 `SameSite=None`과 함께 HTTPS(secure=true)를 반드시 사용하세요.
 
 환경 변수는 OS나 배포 플랫폼의 시크릿 매니저를 활용해 관리하고, `.env` 파일은 버전 관리 대상에서 제외하세요.
 

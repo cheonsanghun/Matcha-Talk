@@ -26,9 +26,8 @@ public class SupportService {
     /* ==============================
      * 문의 등록/조회
      * ============================== */
-    public InquiryResponse createInquiry(Long userPid, String category, String title, String content) {
-        User user = userRepository.findById(userPid)
-                .orElseThrow(() -> new IllegalArgumentException("user not found"));
+    public InquiryResponse createInquiry(String loginId, String category, String title, String content) {
+        User user = requireUser(loginId);
 
         String normCategory = category == null ? "" : category.trim().toUpperCase();
         if (normCategory.isEmpty()) {
@@ -48,8 +47,9 @@ public class SupportService {
     }
 
     @Transactional(readOnly = true)
-    public List<InquiryResponse> myInquiries(Long userPid) {
-        return inquiryRepository.findTop200ByUser_UserPidOrderByInquiryIdDesc(userPid)
+    public List<InquiryResponse> myInquiries(String loginId) {
+        User user = requireUser(loginId);
+        return inquiryRepository.findTop200ByUser_UserPidOrderByInquiryIdDesc(user.getUserPid())
                 .stream()
                 .map(InquiryResponse::of)
                 .toList();
@@ -58,16 +58,15 @@ public class SupportService {
     /* ==============================
      * 신고 등록/조회
      * ============================== */
-    public ReportResponse createReport(Long reporterPid, Long reportedPid, String reason, String detail) {
-        if (reporterPid == null || reportedPid == null) {
-            throw new IllegalArgumentException("reporter/reported is required");
+    public ReportResponse createReport(String reporterLoginId, Long reportedPid, String reason, String detail) {
+        if (reportedPid == null) {
+            throw new IllegalArgumentException("reportedPid is required");
         }
-        if (reporterPid.equals(reportedPid)) {
+        User reporter = requireUser(reporterLoginId);
+        if (reporter.getUserPid().equals(reportedPid)) {
             throw new IllegalArgumentException("cannot report yourself");
         }
 
-        User reporter = userRepository.findById(reporterPid)
-                .orElseThrow(() -> new IllegalArgumentException("reporter not found"));
         User reported = userRepository.findById(reportedPid)
                 .orElseThrow(() -> new IllegalArgumentException("reported user not found"));
 
@@ -88,17 +87,13 @@ public class SupportService {
         return ReportResponse.of(saved);
     }
 
-    public ReportResponse createReportByLogin(Long reporterPid, String reportedLoginId, String reason, String detail) {
-        if (reporterPid == null) {
-            throw new IllegalArgumentException("reporterPid is required");
-        }
+    public ReportResponse createReportByLogin(String reporterLoginId, String reportedLoginId, String reason, String detail) {
         String loginId = reportedLoginId == null ? "" : reportedLoginId.trim();
         if (loginId.isEmpty()) {
             throw new IllegalArgumentException("reportedLoginId is required");
         }
 
-        User reporter = userRepository.findById(reporterPid)
-                .orElseThrow(() -> new IllegalArgumentException("reporter not found"));
+        User reporter = requireUser(reporterLoginId);
         User reported = userRepository.findByLoginId(loginId.toLowerCase())
                 .orElseThrow(() -> new IllegalArgumentException("reported user not found"));
 
@@ -124,10 +119,19 @@ public class SupportService {
     }
 
     @Transactional(readOnly = true)
-    public List<ReportResponse> myReports(Long reporterPid) {
-        return reportRepository.findTop200ByReporter_UserPidOrderByReportIdDesc(reporterPid)
+    public List<ReportResponse> myReports(String reporterLoginId) {
+        User reporter = requireUser(reporterLoginId);
+        return reportRepository.findTop200ByReporter_UserPidOrderByReportIdDesc(reporter.getUserPid())
                 .stream()
                 .map(ReportResponse::of)
                 .toList();
+    }
+
+    private User requireUser(String loginId) {
+        if (loginId == null || loginId.isBlank()) {
+            throw new IllegalStateException("login is required");
+        }
+        return userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("user not found"));
     }
 }
