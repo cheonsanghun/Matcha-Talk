@@ -18,9 +18,11 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
     @Query("SELECT mr FROM MatchRequest mr JOIN FETCH mr.user u " +
            "WHERE mr.status = :status " +
            "AND u.userPid <> :myPid " +
+           "AND (:regionCode IS NULL OR mr.regionCode = :regionCode) " +
            "ORDER BY mr.requestedAt ASC")
     List<MatchRequest> findPotentialMatches(
             @Param("myPid") Long myPid,
-            @Param("status") MatchRequest.MatchStatus status
+            @Param("status") MatchRequest.MatchStatus status,
+            @Param("regionCode") String regionCode
     );
 }

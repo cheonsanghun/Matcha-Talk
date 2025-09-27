@@ -5,13 +5,19 @@ import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.RoomDetailResponseDto;
 import net.datasa.project01.domain.dto.RoomCreateResponseDto;
 import net.datasa.project01.domain.dto.RoomListResponseDto;
+import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.service.ChatService;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
 import java.util.List;
 
 @RestController
@@ -78,6 +84,52 @@ public class ChatController {
         } catch (IllegalArgumentException e) {
             log.warn("Access denied or not found for room ID: {} by user '{}'", roomId, userDetails.getUsername());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build(); // 혹은 403 Forbidden
+        }
+    }
+
+    @PostMapping("/{roomId}/attachments")
+    public ResponseEntity<ChatMessageResponseDto> uploadAttachment(
+            @PathVariable Long roomId,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            String loginId = userDetails.getUsername();
+            ChatMessageResponseDto responseDto = chatService.saveAttachment(roomId, file, loginId);
+            return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
+        } catch (IllegalArgumentException exception) {
+            log.warn("Attachment upload rejected: {}", exception.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        } catch (IOException exception) {
+            log.error("Failed to store attachment for room {}", roomId, exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/{roomId}/attachments/{messageId}")
+    public ResponseEntity<Resource> downloadAttachment(
+            @PathVariable Long roomId,
+            @PathVariable Long messageId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            String loginId = userDetails.getUsername();
+            ChatService.AttachmentResource attachment = chatService.loadAttachment(roomId, messageId, loginId);
+
+            String fileName = attachment.fileName() != null ? attachment.fileName() : "attachment";
+            String contentDisposition = "attachment; filename=\"" + fileName + "\"";
+            MediaType mediaType = attachment.mimeType() != null
+                    ? MediaType.parseMediaType(attachment.mimeType())
+                    : MediaType.APPLICATION_OCTET_STREAM;
+
+            return ResponseEntity.ok()
+                    .contentType(mediaType)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                    .body(attachment.resource());
+        } catch (IllegalArgumentException exception) {
+            log.warn("Attachment download rejected: {}", exception.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        } catch (IOException exception) {
+            log.error("Failed to read attachment {} in room {}", messageId, roomId, exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 }

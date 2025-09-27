@@ -13,11 +13,23 @@ import net.datasa.project01.repository.UserRepository;
 import net.datasa.project01.domain.dto.ChatMessageRequestDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.RoomMessage;
+import net.datasa.project01.websocket.RealTimeMessagingService;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 
 import net.datasa.project01.domain.entity.Room.RoomType;
 
@@ -33,6 +45,9 @@ public class ChatService {
         private final UserRepository userRepository;
         private final RoomMessageRepository roomMessageRepository;
         private final TranslationService translationService;
+        private final RealTimeMessagingService messagingService;
+
+        private final Path attachmentBasePath = Paths.get("uploads", "attachments");
 
         // TODO: 알림 서비스 추가 (Push Notification)
         // private final NotificationService notificationService;
@@ -76,24 +91,15 @@ public class ChatService {
                 Room room = roomRepository.findById(requestDto.getRoomId())
                         .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
 
-                // 1. 원본 메시지를 DB에 저장
-                RoomMessage message = RoomMessage.builder()
-                        .room(room)
-                        .sender(sender)
-                        .contentType(RoomMessage.ContentType.TEXT)
-                        .textContent(requestDto.getContent())
-                        .build();
-                roomMessageRepository.save(message);
-
-        // 2. [수정] 번역은 클라이언트에게 위임. 서버는 원본 메시지와 발신자 언어 코드만 전달
-        return ChatMessageResponseDto.builder()
-                .roomId(room.getRoomId())
-                .senderNickName(sender.getNickName())
-                .senderLanguageCode(sender.getLanguageCode()) // 발신자 언어 코드 추가
-                .content(message.getTextContent())
-                // .translatedContent(null) // 이 필드는 이제 존재하지 않으므로 제거합니다.
-                .sentAt(message.getCreatedAt())
+        RoomMessage message = RoomMessage.builder()
+                .room(room)
+                .sender(sender)
+                .contentType(RoomMessage.ContentType.TEXT)
+                .textContent(requestDto.getContent())
                 .build();
+        roomMessageRepository.save(message);
+
+        return toResponseDto(message);
         }
         @Transactional
         public Room createPrivateRoom(User user1, User user2) {
@@ -168,6 +174,130 @@ public class ChatService {
                         .map(User::getLoginId)
                         .toList();
         }
+
+        @Transactional
+        public ChatMessageResponseDto saveAttachment(Long roomId, MultipartFile file, String loginId) throws IOException {
+                if (file == null || file.isEmpty()) {
+                        throw new IllegalArgumentException("업로드할 파일이 존재하지 않습니다.");
+                }
+
+                User sender = userRepository.findByLoginId(loginId)
+                        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+                Room room = roomRepository.findById(roomId)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+                roomMemberRepository.findByRoomAndUser(room, sender)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방에 속한 사용자만 파일을 전송할 수 있습니다."));
+
+                Path uploadDir = ensureUploadDirectory(roomId);
+
+                String originalName = StringUtils.hasText(file.getOriginalFilename())
+                        ? file.getOriginalFilename()
+                        : "attachment";
+                String extension = "";
+                int dotIndex = originalName.lastIndexOf('.');
+                if (dotIndex > -1 && dotIndex < originalName.length() - 1) {
+                        extension = originalName.substring(dotIndex);
+                }
+
+                String storedName = UUID.randomUUID() + extension;
+                Path storedPath = uploadDir.resolve(storedName);
+                Files.copy(file.getInputStream(), storedPath, StandardCopyOption.REPLACE_EXISTING);
+
+                RoomMessage.ContentType contentType = determineContentType(file.getContentType());
+                String placeholderText = contentType == RoomMessage.ContentType.IMAGE ? "이미지 첨부" : originalName;
+
+                RoomMessage message = RoomMessage.builder()
+                        .room(room)
+                        .sender(sender)
+                        .contentType(contentType)
+                        .textContent(placeholderText)
+                        .fileName(originalName)
+                        .filePath(storedPath.toString())
+                        .mimeType(file.getContentType())
+                        .sizeBytes(file.getSize())
+                        .build();
+                roomMessageRepository.save(message);
+
+                ChatMessageResponseDto response = toResponseDto(message);
+
+                messagingService.broadcastToUsers(
+                        findParticipantLoginIds(roomId),
+                        "chat",
+                        response
+                );
+
+                return response;
+        }
+
+        @Transactional(readOnly = true)
+        public AttachmentResource loadAttachment(Long roomId, Long messageId, String loginId) throws IOException {
+                User requester = userRepository.findByLoginId(loginId)
+                        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+                RoomMessage message = roomMessageRepository.findById(messageId)
+                        .orElseThrow(() -> new IllegalArgumentException("메시지를 찾을 수 없습니다."));
+
+                if (!message.getRoom().getRoomId().equals(roomId)) {
+                        throw new IllegalArgumentException("요청한 파일이 해당 채팅방에 존재하지 않습니다.");
+                }
+
+                roomMemberRepository.findByRoomAndUser(message.getRoom(), requester)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방에 속한 사용자만 파일을 다운로드할 수 있습니다."));
+
+                Path filePath = Paths.get(message.getFilePath());
+                if (!Files.exists(filePath)) {
+                        throw new IllegalArgumentException("파일이 삭제되었거나 존재하지 않습니다.");
+                }
+
+                Resource resource = new UrlResource(filePath.toUri());
+                if (!resource.exists()) {
+                        throw new IllegalArgumentException("파일을 찾을 수 없습니다.");
+                }
+                return new AttachmentResource(resource, message.getFileName(), message.getMimeType());
+        }
+
+        private ChatMessageResponseDto toResponseDto(RoomMessage message) {
+                String downloadUrl = null;
+                if (message.getContentType() != RoomMessage.ContentType.TEXT && StringUtils.hasText(message.getFilePath())) {
+                        downloadUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
+                                .path("/api/rooms/")
+                                .path(String.valueOf(message.getRoom().getRoomId()))
+                                .path("/attachments/")
+                                .path(String.valueOf(message.getMessageId()))
+                                .toUriString();
+                }
+
+                return ChatMessageResponseDto.builder()
+                        .roomId(message.getRoom().getRoomId())
+                        .senderNickName(message.getSender() != null ? message.getSender().getNickName() : "시스템")
+                        .senderLanguageCode(message.getSender() != null ? message.getSender().getLanguageCode() : null)
+                        .content(message.getTextContent())
+                        .contentType(message.getContentType().name())
+                        .fileName(message.getFileName())
+                        .fileUrl(downloadUrl)
+                        .mimeType(message.getMimeType())
+                        .sizeBytes(message.getSizeBytes())
+                        .sentAt(message.getCreatedAt())
+                        .build();
+        }
+
+        private RoomMessage.ContentType determineContentType(String mimeType) {
+                if (mimeType != null && mimeType.startsWith("image")) {
+                        return RoomMessage.ContentType.IMAGE;
+                }
+                return RoomMessage.ContentType.FILE;
+        }
+
+        private Path ensureUploadDirectory(Long roomId) throws IOException {
+                Path roomDir = attachmentBasePath.resolve(String.valueOf(roomId));
+                if (!Files.exists(roomDir)) {
+                        Files.createDirectories(roomDir);
+                }
+                return roomDir;
+        }
+
+        public record AttachmentResource(Resource resource, String fileName, String mimeType) {}
 
     // TODO: 추가 필요한 메서드들
     // public void joinRoom(Long roomId, String loginId) { }

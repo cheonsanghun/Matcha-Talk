@@ -84,82 +84,119 @@
           </div>
           <v-spacer />
           <v-btn icon variant="text"><v-icon>mdi-magnify</v-icon></v-btn>
-          <v-btn v-if="!isGroup" icon variant="text"><v-icon>mdi-phone</v-icon></v-btn>
           <v-btn v-if="isGroup" icon variant="text" @click="inviteParticipant"><v-icon>mdi-account-plus</v-icon></v-btn>
-          <v-btn v-if="isGroup" icon variant="text" @click="startVideoCall"><v-icon>mdi-video</v-icon></v-btn>
-          <v-btn v-else icon variant="text"><v-icon>mdi-video</v-icon></v-btn>
+          <v-btn icon variant="text" :disabled="!current.id" @click="startVideoCall"><v-icon>mdi-video</v-icon></v-btn>
+          <v-btn icon variant="text" :disabled="!callActive" @click="hangUpCall"><v-icon>mdi-phone-hangup</v-icon></v-btn>
         </div>
         <v-divider />
-        <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto" ref="chatMessagesContainer">
-          <div
-            v-if="isLoadingRooms && !current.id"
-            class="d-flex align-center justify-center h-100 text-caption text-grey"
-          >
-            채팅방 정보를 불러오는 중입니다...
+        <div class="chat-body d-flex flex-grow-1">
+          <div class="video-pane" v-if="current.id">
+            <VideoChat ref="videoChatRef" />
           </div>
-          <div
-            v-else-if="!current.id"
-            class="d-flex align-center justify-center h-100 text-caption text-grey"
-          >
-            좌측 목록에서 채팅방을 선택하세요.
-          </div>
-          <template v-else>
+          <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto" ref="chatMessagesContainer">
             <div
-              v-for="(m, i) in messages"
-              :key="m.id || i"
-              class="d-flex mb-4"
-              :class="{ 'justify-end': m.me }"
+              v-if="isLoadingRooms && !current.id"
+              class="d-flex align-center justify-center h-100 text-caption text-grey"
             >
-              <template v-if="!m.me">
-                <v-avatar size="32" class="mr-2"><v-icon color="primary">mdi-account</v-icon></v-avatar>
-                <div class="message-wrapper">
-                  <div v-if="isGroup" class="text-caption font-weight-medium mb-1">{{ m.sender }}</div>
-                  <div class="message-bubble bg-grey-lighten-4 text-body-2">{{ m.text }}</div>
-                  <div v-if="m.translation" class="text-caption text-grey mt-1">
-                    {{ m.translation }}
-                    <v-icon size="16" class="ms-1 cursor-pointer" @click="saveWord(m)">mdi-content-save</v-icon>
-                  </div>
-                  <div class="message-tools">
-                    <v-btn
-                      icon
-                      variant="text"
-                      density="compact"
-                      @click="translateMessage(m)"
-                      :loading="m.translating"
-                    >
-                      <v-icon size="18">mdi-translate</v-icon>
-                    </v-btn>
-                    <span class="text-caption text-grey">{{ m.time }}</span>
-                  </div>
-                </div>
-              </template>
-              <template v-else>
-                <div class="message-wrapper text-right ml-auto">
-                  <div class="message-bubble bg-primary text-white text-body-2">{{ m.text }}</div>
-                  <div v-if="m.translation" class="text-caption text-grey-lighten-2 mt-1">
-                    {{ m.translation }}
-                    <v-icon size="16" class="ms-1 cursor-pointer" @click="saveWord(m)">mdi-content-save</v-icon>
-                  </div>
-                  <div class="message-tools justify-end">
-                    <v-btn
-                      icon
-                      variant="text"
-                      density="compact"
-                      color="white"
-                      @click="translateMessage(m)"
-                      :loading="m.translating"
-                    >
-                      <v-icon size="18">mdi-translate</v-icon>
-                    </v-btn>
-                    <span class="text-caption text-grey-lighten-1">{{ m.time }}</span>
-                  </div>
-                </div>
-              </template>
+              채팅방 정보를 불러오는 중입니다...
             </div>
-          </template>
+            <div
+              v-else-if="!current.id"
+              class="d-flex align-center justify-center h-100 text-caption text-grey"
+            >
+              좌측 목록에서 채팅방을 선택하세요.
+            </div>
+            <template v-else>
+              <div
+                v-for="(m, i) in messages"
+                :key="m.id || i"
+                class="d-flex mb-4"
+                :class="{ 'justify-end': m.me }"
+              >
+                <template v-if="!m.me">
+                  <v-avatar size="32" class="mr-2"><v-icon color="primary">mdi-account</v-icon></v-avatar>
+                  <div class="message-wrapper">
+                    <div v-if="isGroup" class="text-caption font-weight-medium mb-1">{{ m.sender }}</div>
+                    <div class="message-bubble" :class="bubbleClass(m)">
+                      <template v-if="m.contentType === 'IMAGE' && m.fileUrl">
+                        <img :src="m.fileUrl" :alt="m.fileName || '이미지'" class="message-image" />
+                        <div v-if="m.fileName" class="text-caption mt-1">{{ m.fileName }}</div>
+                      </template>
+                      <template v-else-if="m.contentType === 'FILE' && m.fileUrl">
+                        <a :href="m.fileUrl" target="_blank" rel="noopener" class="file-link">
+                          <v-icon size="18" class="mr-1">mdi-paperclip</v-icon>
+                          {{ m.fileName || m.text || '파일 다운로드' }}
+                        </a>
+                      </template>
+                      <template v-else>
+                        {{ m.text }}
+                      </template>
+                    </div>
+                    <div v-if="m.translation" class="text-caption text-grey mt-1">
+                      {{ m.translation }}
+                      <v-icon size="16" class="ms-1 cursor-pointer" @click="saveWord(m)">mdi-content-save</v-icon>
+                    </div>
+                    <div class="message-tools">
+                      <v-btn
+                        v-if="m.contentType === 'TEXT'"
+                        icon
+                        variant="text"
+                        density="compact"
+                        @click="translateMessage(m)"
+                        :loading="m.translating"
+                      >
+                        <v-icon size="18">mdi-translate</v-icon>
+                      </v-btn>
+                      <span class="text-caption text-grey">{{ m.time }}</span>
+                    </div>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="message-wrapper text-right ml-auto">
+                    <div class="message-bubble" :class="bubbleClass(m)">
+                      <template v-if="m.contentType === 'IMAGE' && m.fileUrl">
+                        <img :src="m.fileUrl" :alt="m.fileName || '이미지'" class="message-image" />
+                        <div v-if="m.fileName" class="text-caption mt-1">{{ m.fileName }}</div>
+                      </template>
+                      <template v-else-if="m.contentType === 'FILE' && m.fileUrl">
+                        <a :href="m.fileUrl" target="_blank" rel="noopener" class="file-link text-white">
+                          <v-icon size="18" class="mr-1">mdi-paperclip</v-icon>
+                          {{ m.fileName || m.text || '파일 다운로드' }}
+                        </a>
+                      </template>
+                      <template v-else>
+                        {{ m.text }}
+                      </template>
+                    </div>
+                    <div v-if="m.translation" class="text-caption text-grey-lighten-2 mt-1">
+                      {{ m.translation }}
+                      <v-icon size="16" class="ms-1 cursor-pointer" @click="saveWord(m)">mdi-content-save</v-icon>
+                    </div>
+                    <div class="message-tools justify-end">
+                      <v-btn
+                        v-if="m.contentType === 'TEXT'"
+                        icon
+                        variant="text"
+                        density="compact"
+                        color="white"
+                        @click="translateMessage(m)"
+                        :loading="m.translating"
+                      >
+                        <v-icon size="18">mdi-translate</v-icon>
+                      </v-btn>
+                      <span class="text-caption text-grey-lighten-1">{{ m.time }}</span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
         </div>
         <div class="chat-input d-flex align-center pa-4 ga-2">
-          <v-btn icon variant="outlined" color="success"><v-icon>mdi-plus</v-icon></v-btn>
+          <input type="file" ref="fileInput" class="d-none" @change="handleFileSelect" />
+          <v-btn icon variant="outlined" color="success" :disabled="!current.id" @click="triggerFilePicker">
+            <v-icon>mdi-plus</v-icon>
+          </v-btn>
           <v-text-field
             v-model="draft"
             variant="outlined"
@@ -189,6 +226,7 @@ import api from '../services/api'
 import { translate } from '../services/translator'
 import { useVocabularyStore } from '../stores/vocabulary'
 import { resolveClientIdentity } from '../utils/identity'
+import VideoChat from '../components/VideoChat.vue'
 
 const query = ref('')
 const tab = ref('direct')
@@ -198,6 +236,9 @@ const conversations = ref({})
 const current = ref({})
 
 const chatMessagesContainer = ref(null)
+const fileInput = ref(null)
+const videoChatRef = ref(null)
+const callActive = ref(false)
 const isLoadingRooms = ref(false)
 
 const auth = useAuthStore()
@@ -215,12 +256,12 @@ const teardownHandlers = []
 
 onMounted(async () => {
   await loadRooms()
-  ensureActiveRoomFromRoute()
+  await ensureActiveRoomFromRoute()
   connectRealtime()
 })
 
 watch(() => route.query.roomId, () => {
-  ensureActiveRoomFromRoute()
+  void ensureActiveRoomFromRoute()
 })
 
 watch(
@@ -228,7 +269,7 @@ watch(
   async (userPid, prev) => {
     if (userPid && userPid !== prev) {
       await loadRooms()
-      ensureActiveRoomFromRoute()
+      await ensureActiveRoomFromRoute()
     }
   }
 )
@@ -236,6 +277,14 @@ watch(
 watch(
   () => current.value?.id,
   () => {
+    if (videoChatRef.value?.hangUp) {
+      try {
+        videoChatRef.value.hangUp()
+      } catch (error) {
+        console.warn('Failed to terminate active call when switching rooms', error)
+      }
+    }
+    callActive.value = false
     scrollToBottom()
   }
 )
@@ -283,7 +332,7 @@ async function loadRooms() {
     groups.value = groupRooms
 
     if (current.value?.id) {
-      selectRoomById(current.value.id, { skipRouteUpdate: true })
+      await selectRoomById(current.value.id, { skipRouteUpdate: true })
     }
   } catch (error) {
     console.error('[chat] Failed to load rooms', error)
@@ -309,6 +358,8 @@ function normalizeRoomListEntry(room, meNickname) {
     name: displayName,
     last: '',
     participants,
+    participantLogins: room.memberLoginIds || [],
+    participantsDetail: [],
     type
   }
 }
@@ -331,6 +382,8 @@ function normalizeRoomDetail(detail) {
     name: displayName,
     last: '',
     participants,
+    participantLogins: (detail.participants || []).map((participant) => participant.loginId).filter(Boolean),
+    participantsDetail: detail.participants || [],
     type
   }
 }
@@ -350,21 +403,21 @@ function findRoomById(roomId) {
   return chats.value.find((room) => room.id === roomId) || groups.value.find((room) => room.id === roomId)
 }
 
-function selectRoomById(roomId, options = {}) {
+async function selectRoomById(roomId, options = {}) {
   const room = findRoomById(roomId)
   if (room) {
-    openChat(room, options)
+    await openChat(room, options)
     return true
   }
   return false
 }
 
-function ensureActiveRoomFromRoute() {
+async function ensureActiveRoomFromRoute() {
   const rawId = route.query.roomId
   const parsedId = rawId ? Number(rawId) : NaN
 
   if (!Number.isNaN(parsedId) && parsedId) {
-    if (selectRoomById(parsedId, { skipRouteUpdate: true })) {
+    if (await selectRoomById(parsedId, { skipRouteUpdate: true })) {
       return
     }
   }
@@ -372,7 +425,7 @@ function ensureActiveRoomFromRoute() {
   if (!current.value?.id) {
     const fallback = chats.value[0] || groups.value[0]
     if (fallback) {
-      openChat(fallback, { skipRouteUpdate: true })
+      await openChat(fallback, { skipRouteUpdate: true })
     }
   }
 }
@@ -401,10 +454,11 @@ const isGroup = computed(() => current.value?.type === 'GROUP')
 const groupParticipants = computed(() => (current.value?.participants || []).join(', '))
 const messages = computed(() => conversations.value[current.value?.id] ?? [])
 
-function openChat(item, options = {}) {
+async function openChat(item, options = {}) {
   if (!item) return
 
-  current.value = item
+  const room = await ensureRoomExists(item.id, item.name)
+  current.value = room
   tab.value = item.type === 'GROUP' ? 'group' : 'direct'
   ensureConversation(item.id)
 
@@ -434,20 +488,36 @@ function scrollToBottom() {
 
 async function ensureRoomExists(roomId, fallbackName) {
   let room = findRoomById(roomId)
-  if (room) {
-    return room
+  const requiresHydration = !room || !(room.participantLogins && room.participantLogins.length)
+
+  if (requiresHydration) {
+    try {
+      const { data } = await api.get(`/rooms/${roomId}`)
+      room = addOrUpdateRoom(normalizeRoomDetail(data))
+    } catch (error) {
+      console.warn(`[chat] Failed to fetch room ${roomId}, using fallback`, error)
+      if (!room) {
+        room = addOrUpdateRoom({
+          id: roomId,
+          name: fallbackName || `대화방 #${roomId}`,
+          last: '',
+          participants: fallbackName ? [fallbackName] : [],
+          participantLogins: [],
+          participantsDetail: [],
+          type: 'PRIVATE'
+        })
+      }
+    }
   }
 
-  try {
-    const { data } = await api.get(`/rooms/${roomId}`)
-    room = addOrUpdateRoom(normalizeRoomDetail(data))
-  } catch (error) {
-    console.warn(`[chat] Failed to fetch room ${roomId}, using fallback`, error)
+  if (!room) {
     room = addOrUpdateRoom({
       id: roomId,
       name: fallbackName || `대화방 #${roomId}`,
       last: '',
       participants: fallbackName ? [fallbackName] : [],
+      participantLogins: [],
+      participantsDetail: [],
       type: 'PRIVATE'
     })
   }
@@ -473,6 +543,11 @@ async function handleIncomingMessage(payload) {
     time: formatTime(payload.sentAt),
     sender: senderNickname,
     me: myNickname ? senderNickname === myNickname : false,
+    contentType: (payload.contentType || 'TEXT').toUpperCase(),
+    fileName: payload.fileName || null,
+    fileUrl: payload.fileUrl || null,
+    mimeType: payload.mimeType || null,
+    sizeBytes: payload.sizeBytes || null,
     translation: null,
     translating: false,
     sentAt: payload.sentAt ?? null
@@ -481,11 +556,27 @@ async function handleIncomingMessage(payload) {
   messagesForRoom.push(message)
 
   const roomEntry = await ensureRoomExists(roomKey, senderNickname)
-  roomEntry.last = content
+  if (message.contentType === 'TEXT') {
+    roomEntry.last = content
+  } else {
+    roomEntry.last = message.fileName || content || '[첨부파일]'
+  }
 
   if (current.value?.id === roomKey) {
     scrollToBottom()
   }
+}
+
+function bubbleClass(message) {
+  const classes = []
+  if (message.contentType && message.contentType !== 'TEXT') {
+    classes.push('attachment-bubble')
+  } else if (message.me) {
+    classes.push('bg-primary', 'text-white', 'text-body-2')
+  } else {
+    classes.push('bg-grey-lighten-4', 'text-body-2')
+  }
+  return classes
 }
 
 async function connectRealtime() {
@@ -564,7 +655,7 @@ function formatTime(isoString) {
 }
 
 async function translateMessage(message) {
-  if (!message || message.translating || message.translation) return
+  if (!message || message.translating || message.translation || message.contentType !== 'TEXT') return
 
   message.translating = true
   try {
@@ -578,7 +669,7 @@ async function translateMessage(message) {
 }
 
 function saveWord(message) {
-  if (!message?.translation) return
+  if (!message?.translation || message.contentType !== 'TEXT') return
   vocabularyStore.addWord(message.text, message.translation)
 }
 
@@ -616,6 +707,33 @@ async function send() {
   }
 }
 
+function triggerFilePicker() {
+  if (!current.value?.id) return
+  fileInput.value?.click()
+}
+
+async function handleFileSelect(event) {
+  const [file] = event.target?.files || []
+  event.target.value = ''
+
+  if (!file) return
+  if (!current.value?.id) {
+    alert('채팅방이 선택되지 않았습니다.')
+    return
+  }
+
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    await api.post(`/rooms/${current.value.id}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  } catch (error) {
+    console.error('[chat] 파일 업로드 실패', error)
+    alert('파일을 업로드하지 못했습니다. 잠시 후 다시 시도하세요.')
+  }
+}
+
 function inviteParticipant() {
   if (!isGroup.value || !current.value?.id) return
 
@@ -632,8 +750,51 @@ function inviteParticipant() {
   }
 }
 
-function startVideoCall() {
-  alert('영상 통화 기능은 준비 중입니다.')
+async function resolveParticipantLogins(roomId) {
+  const room = await ensureRoomExists(roomId)
+  return room.participantLogins?.filter(Boolean) ?? []
+}
+
+async function startVideoCall() {
+  if (!current.value?.id) {
+    alert('채팅방이 선택되지 않았습니다.')
+    return
+  }
+
+  const participantLogins = await resolveParticipantLogins(current.value.id)
+  const myLoginId = resolveClientIdentity(auth)
+  const targets = participantLogins.filter((loginId) => loginId !== myLoginId)
+
+  if (!targets.length) {
+    alert('통화할 상대가 없습니다.')
+    return
+  }
+
+  if (!videoChatRef.value?.startCall) {
+    console.warn('VideoChat component is not ready')
+    return
+  }
+
+  try {
+    for (const loginId of targets) {
+      await videoChatRef.value.startCall(loginId)
+    }
+    callActive.value = true
+  } catch (error) {
+    console.error('[chat] Failed to start video call', error)
+    alert('영상 통화를 시작하지 못했습니다.')
+  }
+}
+
+function hangUpCall() {
+  if (videoChatRef.value?.hangUp) {
+    try {
+      videoChatRef.value.hangUp()
+    } catch (error) {
+      console.warn('Failed to hang up call', error)
+    }
+  }
+  callActive.value = false
 }
 
 watch(messages, () => scrollToBottom())
@@ -656,8 +817,27 @@ watch(messages, () => scrollToBottom())
   height: 100%;
 }
 
+.chat-body {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+}
+
+.video-pane {
+  flex: 1 1 55%;
+  max-width: 55%;
+  display: flex;
+}
+
+.video-pane :deep(.video-chat) {
+  width: 100%;
+}
+
 .chat-messages {
   background: #fff;
+  flex: 1 1 45%;
+  max-width: 45%;
 }
 
 .chat-input {
@@ -675,6 +855,25 @@ watch(messages, () => scrollToBottom())
   padding: 12px;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+.attachment-bubble {
+  background: transparent;
+  padding: 0;
+}
+
+.message-image {
+  max-width: 100%;
+  border-radius: 12px;
+  display: block;
+}
+
+.file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  color: inherit;
 }
 
 .message-tools {
