@@ -27,7 +27,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final SessionHandshakeInterceptor sessionHandshakeInterceptor;
     private final StompSecurityChannelInterceptor stompSecurityChannelInterceptor;
-    private final String[] allowedOrigins;
+    private String[] allowedOrigins;
 
     public WebSocketConfig(SessionHandshakeInterceptor sessionHandshakeInterceptor,
                            StompSecurityChannelInterceptor stompSecurityChannelInterceptor,

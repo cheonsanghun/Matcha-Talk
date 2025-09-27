@@ -14,7 +14,7 @@ import java.util.Arrays;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    private final String[] allowedOrigins;
+    private String[] allowedOrigins;
 
     public WebConfig(@Value("${app.cors.allowed-origins:*}") String allowedOriginsProperty) {
         this.allowedOrigins = Arrays.stream(allowedOriginsProperty.split(","))

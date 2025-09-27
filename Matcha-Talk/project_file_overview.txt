@@ -1,0 +1,209 @@
+Matcha-Talk 프로젝트 파일별 개요
+================================
+
+[백엔드 루트]
+Matcha-Talk/backend/First_sql.sql - 전체 사용자/매칭/채팅/지원 테이블을 정의한 초기 MySQL 스키마 스크립트.
+Matcha-Talk/backend/LICENSE - 프로젝트에 적용된 MIT 라이선스 전문.
+Matcha-Talk/backend/build.gradle - Spring Boot 3 기반 백엔드의 의존성, 플러그인, JDK 버전을 정의.
+Matcha-Talk/backend/gradle/wrapper/gradle-wrapper.jar - Gradle Wrapper 실행용 바이너리.
+Matcha-Talk/backend/gradle/wrapper/gradle-wrapper.properties - Gradle 8.14.3 배포 URL 등을 지정한 Wrapper 설정.
+Matcha-Talk/backend/gradlew - *nix 환경에서 Gradle Wrapper를 실행하는 스크립트.
+Matcha-Talk/backend/gradlew.bat - Windows 환경에서 Gradle Wrapper를 실행하는 배치 파일.
+Matcha-Talk/backend/settings.gradle - 루트 프로젝트명을 'project01'로 지정.
+
+[백엔드 애플리케이션 엔트리]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/Project01Application.java - Spring Boot 시작점이며 스케줄링을 활성화.
+
+[백엔드 설정]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/config/JpaConfig.java - 엔티티/리포지토리 패키지 스캔과 트랜잭션 관리를 활성화.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/config/JwtAuthenticationFilter.java - 요청 헤더의 JWT를 검증해 SecurityContext에 인증 정보를 세팅하는 필터.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/config/SecurityConfig.java - JWT 기반 인증 설정, 예외 핸들러 등록, 무상태 세션, 허용 URL을 정의.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/config/WebConfig.java - 개발용 CORS 허용 도메인과 인증 공유 설정을 전역으로 지정.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/config/WebSocketConfig.java - /ws/chat 엔드포인트에 WebSocket 핸들러를 등록하고 핸드셰이크 인증/로그를 래핑.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/config/handler/RestAccessDeniedHandler.java - 인가 실패 시 403 JSON 응답을 반환하는 커스텀 핸들러.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/config/handler/RestAuthenticationEntryPoint.java - 인증 누락 시 401 JSON 응답을 반환하는 엔트리 포인트.
+
+[백엔드 컨트롤러]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/AdminController.java - 관리자용 사용자 관리, 문의/신고 처리, 제재 적용 REST API.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/AuthController.java - 로그인, 아이디 찾기, 비밀번호 재설정과 AuthException 응답 포맷터.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/ChatController.java - 채팅방 생성, 나의 방 목록 조회, 방 상세 조회 엔드포인트.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/FollowController.java - 팔로우 요청 생성, 승인/거절, 관계 삭제 API.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/HomeController.java - 루트 경로 접근 시 index 템플릿을 반환.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/MatchController.java - 매칭 조건을 받아 랜덤 매칭을 시작하는 REST 엔드포인트.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/SignalController.java - WebRTC 시그널 메시지를 인증 후 상대에게 브로드캐스트.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/SupportController.java - 1:1 문의/신고 등록과 내 문의·신고 목록 조회 API.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/controller/UserController.java - 회원가입, 아이디/이메일 중복검사, 프로필 조회/수정, 팔로우 목록, 이메일 인증 관리.
+
+[백엔드 DTO]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/ChatMessageRequestDto.java - WebSocket 채팅 메시지 전송 시 사용하는 roomId·content DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/ChatMessageResponseDto.java - 채팅 메시지를 수신자에게 전달할 때 사용하는 응답 구조.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/EmailRequestDto.java - Gmail 주소 기반 이메일 인증 요청 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/EmailTokenRequestDto.java - 이메일과 6자리 토큰 조합을 검증하기 위한 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/FindIdRequest.java - 이메일로 아이디 찾기를 요청하는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/FindIdResponse.java - 아이디 찾기 성공 메시지를 담은 응답 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/FollowRequestDto.java - 특정 사용자를 팔로우하기 위한 followeeId 전달 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/FollowResponseDto.java - 팔로우 관계와 대상 사용자 정보를 묶어 반환하는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/FollowUpdateDto.java - 팔로우 요청의 상태(ACCEPTED/REJECTED) 변경 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/InquiryCreateRequest.java - 문의 등록 시 사용자, 카테고리, 제목, 내용을 받는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/InquiryResponse.java - UserInquiry 엔티티를 클라이언트 응답 형태로 변환.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/LoginRequest.java - 로그인 아이디/비밀번호와 검증 규칙을 가진 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/LoginResponse.java - 로그인 성공 시 사용자 요약과 JWT 토큰을 묶어 전달.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/MatchFoundResponseDto.java - 매칭 성공 시 방 ID와 상대 닉네임 정보를 반환.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/MatchRequestDto.java - 매칭 조건(성별, 나이, 지역, 관심사)을 담는 요청 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/PasswordResetConfirmRequest.java - 이메일·토큰·새 비밀번호를 검증하며 재설정하는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/PasswordResetRequest.java - 비밀번호 재설정 인증번호 발송용 이메일 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/ReportCreateByLoginRequest.java - 신고자가 대상 로그인 아이디로 신고를 등록할 때 사용하는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/ReportCreateRequest.java - 신고자/피신고자 PID 기반 신고 등록 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/ReportResponse.java - UserReport 엔티티를 응답용 구조로 매핑.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/RoomCreateRequestDto.java - 그룹방 생성 시 제목 입력을 위한 요청 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/RoomCreateResponseDto.java - 생성된 채팅방의 ID를 반환하는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/RoomDetailResponseDto.java - 방 타입/정원/멤버 역할 정보를 포함한 상세 응답 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/RoomListResponseDto.java - 사용자가 속한 방 목록을 출력하기 위한 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/SavedWordCreateDto.java - 사용자 단어장 항목을 엔티티로 변환하는 생성 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/SavedWordResponseDto.java - 저장된 단어장 항목과 생성시각을 문자열로 반환.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/SignalMessage.java - WebRTC 시그널 전송을 위한 타입/송수신자/데이터 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserInquiryCreateDto.java - 문의 등록 시 UserInquiry 엔티티 생성에 사용하는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserInquiryResponseDto.java - 문의 정보를 뷰모델 형태로 포맷팅.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserInquiryUpdateDto.java - 문의 상태 변경 요청 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserPenaltyCreateDto.java - 제재 기록 생성 시 타입/기간을 지정하는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserPenaltyResponseDto.java - 제재 정보를 사용자 요약과 함께 반환하는 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserProfileUpdateRequest.java - 프로필 수정 가능 필드를 담은 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserReportCreateDto.java - 신고 엔티티 생성에 필요한 정보 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserReportResponseDto.java - 신고 정보와 신고자/피신고자 요약을 반환.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserReportUpdateDto.java - 신고 상태 변경 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserResponse.java - 사용자 엔티티+프로필을 묶어 응답용으로 가공.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserSignUpRequestDto.java - 회원가입 시 모든 검증 규칙을 포함한 요청 DTO.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/dto/UserSummary.java - 사용자 PID/아이디/닉네임/이메일만 담은 요약 DTO.
+
+[백엔드 엔티티]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/EmailVerification.java - 이메일 인증 토큰 엔티티와 인덱스/제약조건 매핑.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/Follow.java - 팔로우 관계 엔티티와 상태 ENUM 정의.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/FollowList.java - 팔로워/팔로잉 리스트 캐시 테이블 매핑 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/GroupCreationProposal.java - 1:1 방을 그룹으로 승격 제안하는 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/GroupRoomInvite.java - 그룹 방 초대 내역과 상태를 저장하는 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/GroupRoomInviteApproval.java - 초대 승인 여부를 기록하는 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/GroupRoomInviteApprovalId.java - GroupRoomInviteApproval의 복합 키 클래스.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/MatchRequest.java - 랜덤 매칭 대기열 요청 정보를 저장하는 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/OauthAccount.java - 외부 OAuth 계정과 내부 사용자를 연결하는 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/Profile.java - 사용자 프로필(아바타, 자기소개, 언어, 공개 범위) 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/Room.java - 채팅방 메타 정보와 타입/정원/승격 정보 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/RoomMember.java - 방-사용자 복합키로 구성된 멤버십 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/RoomMemberId.java - RoomMember 복합 기본 키.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/RoomMessage.java - 채팅 메시지 본문/파일/타입 정보를 저장.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/SavedWord.java - 사용자 단어장(원문·번역·언어) 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/User.java - 계정 기본 정보, 잠금, 권한, 프로필 연관관계를 가진 핵심 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/UserInquiry.java - 1:1 문의 내역과 상태를 저장하는 엔티티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/UserPenalty.java - 제재 기록과 기간/사유/타입을 저장.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/entity/UserReport.java - 사용자 신고 내역과 상태 ENUM을 가진 엔티티.
+
+[백엔드 값 객체]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/domain/vo/VerificationPurpose.java - 이메일 인증 토큰의 목적(VERIFY_EMAIL/FIND_ID/RESET_PW) ENUM.
+
+[백엔드 예외]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/exception/AuthException.java - 상태 코드를 포함해 인증 관련 오류를 표현하는 런타임 예외.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/exception/GlobalExceptionHandler.java - IllegalArgumentException과 유효성 오류를 400 응답으로 처리.
+
+[백엔드 리포지토리]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/EmailVerificationRepository.java - 이메일 인증 토큰 조회/삭제용 JPA 리포지토리와 커스텀 쿼리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/FollowRepository.java - 팔로우 관계 존재 여부와 목록을 조회하는 리포지토리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/MatchRequestRepository.java - 매칭 대기열과 후보 조회를 위한 리포지토리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/ProfileRepository.java - 사용자 PID로 프로필을 조회하는 리포지토리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/RoomMemberRepository.java - 방 멤버 조회 및 fetch join 제공 리포지토리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/RoomMessageRepository.java - 방별 메시지를 페이지 단위로 읽어오는 리포지토리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/RoomRepository.java - 채팅방 CRUD를 담당하는 JPA 리포지토리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/UserRepository.java - 로그인 아이디/이메일 검색과 키워드 검색을 지원하는 리포지토리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/jpa/UserInquiryRepository.java - 문의 엔티티를 사용자 정보까지 즉시 로딩하며 조회하는 리포지토리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/jpa/UserPenaltyRepository.java - 사용자별 제재 이력을 최신순으로 조회.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/repository/jpa/UserReportRepository.java - 신고 엔티티를 신고자/피신고자 정보와 함께 조회하는 리포지토리.
+
+[백엔드 서비스]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/AdminService.java - 관리자용 사용자 관리, 문의 답변, 신고 제재 로직을 담당.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/AdminSupportService.java - 문의/신고 목록, 답변, 제재/반려 처리를 담당하는 관리자 서포트 서비스.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/AuthService.java - 인증 서비스 인터페이스 정의.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/AuthServiceImpl.java - 로그인 검증, 실패 카운트/잠금 처리, JWT 발급 구현.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/ChatService.java - 채팅방 생성·멤버 등록·메시지 저장·참여자 조회를 수행.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/EmailVerificationService.java - 이메일 인증/비밀번호 재설정 토큰 발급과 검증, 만료 토큰 청소를 담당.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/MatchService.java - 랜덤 매칭 큐 관리, 상대 탐색, 방 생성 및 WebSocket 알림 발송.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/SignalService.java - 수신자에게 WebRTC 신호 이벤트를 전달하는 서비스.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/SupportService.java - 사용자 문의 등록/조회, 신고 등록/조회 로직을 처리.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/TranslationService.java - Papago API를 호출해 텍스트 번역을 시도하고 실패 시 원문 반환.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/UserDetailsServiceImpl.java - Spring Security용 사용자 조회와 Disabled 체크를 수행.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/UserService.java - 회원가입, 이메일 검증, 프로필 수정, 팔로우 CRUD, 아이디 찾기 메일 발송을 담당.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/email/EmailSender.java - 이메일 발송 기능을 추상화한 인터페이스.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/email/MockEmailSender.java - mock 프로필에서 이메일 내용을 로그로 남기는 구현체.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/service/email/SmtpEmailSender.java - 실제 SMTP를 통해 메일을 발송하는 구현체.
+
+[백엔드 유틸·웹소켓]
+Matcha-Talk/backend/src/main/java/net/datasa/project01/util/JwtUtil.java - JWT 비밀키 초기화, 토큰 생성/검증, 만료 처리 유틸리티.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/websocket/JwtHandshakeInterceptor.java - WebSocket 핸드셰이크에서 JWT를 검증하고 loginId를 세션에 저장.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/websocket/ReactiveChatWebSocketHandler.java - 채팅 WebSocket 세션 등록, 메시지 분기, 브로드캐스트 로직 담당.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/websocket/RealTimeMessagingService.java - 특정 사용자 혹은 다수에게 WebSocket 이벤트를 JSON으로 전송.
+Matcha-Talk/backend/src/main/java/net/datasa/project01/websocket/WebSocketSessionRegistry.java - loginId별 WebSocket 세션 집합을 관리하고 종료 지원.
+
+[백엔드 리소스 및 테스트]
+Matcha-Talk/backend/src/main/resources/application-db.properties - db 프로필에서 사용할 MySQL, 메일, 토큰 만료 설정.
+Matcha-Talk/backend/src/main/resources/application.properties - 기본 프로필, 로깅, JWT, Papago API 설정 및 CORS 패턴 정의.
+Matcha-Talk/backend/src/main/resources/templates/index.html - 루트 접근 시 보여줄 간단한 안내 페이지 템플릿.
+Matcha-Talk/backend/src/test/java/net/datasa/project01/Project01ApplicationTests.java - 애플리케이션 컨텍스트 로딩 여부를 검증하는 기본 테스트.
+
+[프런트엔드 루트]
+Matcha-Talk/frontend/.env.development - 개발 시 백엔드 REST/WS 엔드포인트를 지정한 Vite 환경 변수.
+Matcha-Talk/frontend/.env.example - ngrok 등 외부 접근용 API/WS 경로 예시.
+Matcha-Talk/frontend/README.md - Vue 3 + Vite + Vuetify 프런트의 개요와 실행 방법 안내.
+Matcha-Talk/frontend/db/sql.sql - 프런트 기준으로 참고하는 DB 스키마 정의 스크립트.
+Matcha-Talk/frontend/index.html - Vite 앱의 루트 HTML과 #app 마운트 지점 정의.
+Matcha-Talk/frontend/package-lock.json - npm 의존성 버전 고정 파일.
+Matcha-Talk/frontend/package.json - 프런트엔드 의존성, 스크립트, 모듈 타입 설정.
+Matcha-Talk/frontend/vite.config.js - Vite 플러그인, 개발 서버 포트/프록시/허용 호스트 설정.
+
+[프런트엔드 공통]
+Matcha-Talk/frontend/src/main.js - Vue 앱 생성, Pinia/Vuetify/라우터 등록 및 마운트.
+Matcha-Talk/frontend/src/polyfills.js - 브라우저 환경에서 window.global과 process.env를 폴리필.
+Matcha-Talk/frontend/src/App.vue - 공통 App 레이아웃, 헤더·푸터 구성 및 채팅 페이지 예외 처리.
+Matcha-Talk/frontend/src/router/index.js - 화면별 라우트 테이블과 인증/관리자 전용 가드.
+Matcha-Talk/frontend/src/utils/case.js - camelCase ↔ snake_case 키 변환 유틸리티와 테스트 로그.
+Matcha-Talk/frontend/src/stores/auth.js - 토큰/사용자 보관, 로컬스토리지 동기화, me hydrate 기능을 가진 Pinia 스토어.
+Matcha-Talk/frontend/src/stores/friends.js - 간단한 친구 목록을 로컬스토리지에 유지하는 Pinia 스토어.
+Matcha-Talk/frontend/src/stores/vocabulary.js - 저장된 단어장을 로컬스토리지로 관리하는 Pinia 스토어.
+
+[프런트엔드 서비스]
+Matcha-Talk/frontend/src/services/api.js - axios 인스턴스 생성, 토큰 헤더 주입, snake/camel 변환 인터셉터 처리.
+Matcha-Talk/frontend/src/services/ws.js - JWT 쿼리 파라미터를 포함한 WebSocket 클라이언트 생성/이벤트 바인딩 유틸리티.
+Matcha-Talk/frontend/src/services/admin.js - 관리자 REST 엔드포인트 호출을 묶은 헬퍼 함수 모음.
+Matcha-Talk/frontend/src/services/chat.js - STOMP 기반 채팅 구독/전송을 돕는 헬퍼(레거시 샘플 코드).
+Matcha-Talk/frontend/src/services/follow.js - 팔로우/팔로잉 목록, 요청 생성/수락/거절/삭제 API 래퍼.
+Matcha-Talk/frontend/src/services/signaling.js - WebRTC 시그널 REST API 호출 및 WebSocket 이벤트 구독을 캡슐화.
+Matcha-Talk/frontend/src/services/support.js - 문의/신고 등록 및 내 신고/문의 조회 API 래퍼.
+Matcha-Talk/frontend/src/services/translator.js - 현재는 문자열을 뒤집어 반환하는 임시 번역 함수.
+Matcha-Talk/frontend/src/services/user.js - 사용자 단건 조회 및 수정 API 래퍼.
+
+[프런트엔드 컴포넌트]
+Matcha-Talk/frontend/src/components/AppHeader.vue - 로그인 상태에 따라 메뉴를 전환하는 상단 바.
+Matcha-Talk/frontend/src/components/ChatPanel.vue - 채팅 패널 UI, 번역 토글, 파일 전송, 팔로우 요청 버튼을 포함.
+
+[프런트엔드 뷰]
+Matcha-Talk/frontend/src/views/Home.vue - 벚꽃 애니메이션과 서비스 소개가 포함된 랜딩 페이지.
+Matcha-Talk/frontend/src/views/Login.vue - JWT 로그인 폼, 계정 잠금 카운트다운과 경고 메시지 처리.
+Matcha-Talk/frontend/src/views/Register.vue - 이메일 인증, 아이디 중복 체크, 기본 정보 입력을 포함한 회원가입 화면.
+Matcha-Talk/frontend/src/views/FindId.vue - 이메일로 아이디를 발송하도록 요청하는 화면.
+Matcha-Talk/frontend/src/views/ResetPassword.vue - 인증번호 발송부터 새 비밀번호 저장까지 단계별 UI.
+Matcha-Talk/frontend/src/views/Profile.vue - 로그인한 사용자의 기본 정보와 팔로잉/팔로워 리스트.
+Matcha-Talk/frontend/src/views/MatchingSetup.vue - 매칭 옵션(나이대/성별/지역/관심사) 선택 후 매칭 요청.
+Matcha-Talk/frontend/src/views/MatchingResult.vue - WebSocket으로 매칭 결과를 수신하고 채팅방 이동을 안내.
+Matcha-Talk/frontend/src/views/Chat.vue - 좌측 목록+우측 대화창으로 구성된 메인 채팅 화면과 WebSocket 연동.
+Matcha-Talk/frontend/src/views/RtcTest.vue - WebRTC 연결 및 시그널 테스트, 영상 스트림/채팅 확인 UI.
+Matcha-Talk/frontend/src/views/SupportInquiry.vue - 로그인 사용자의 문의 작성과 최근 문의 목록 조회.
+Matcha-Talk/frontend/src/views/SupportReport.vue - 피신고자 아이디 기반 신고 등록과 내 신고 목록 표시.
+Matcha-Talk/frontend/src/views/Vocabulary.vue - 저장된 단어장 항목을 열람하는 단순 뷰.
+Matcha-Talk/frontend/src/views/admin/AdminHome.vue - 관리자 포털 홈, 주요 관리 메뉴로 이동하는 카드.
+Matcha-Talk/frontend/src/views/admin/AdminUsers.vue - 사용자 검색/잠금/권한 변경/제재 남은 시간 표시 기능이 있는 관리 화면.
+Matcha-Talk/frontend/src/views/admin/AdminInquiries.vue - 문의 목록 조회, 답변 등록, 종결 처리를 지원하는 관리 화면.
+Matcha-Talk/frontend/src/views/admin/AdminReports.vue - 신고 내역 제재/반려 처리와 제재 옵션 입력 UI.
+
+[프런트엔드 에셋]
+Matcha-Talk/frontend/src/assets/sakura-hero.png - 홈 화면에 사용되는 메인 히어로 이미지.
+Matcha-Talk/frontend/src/assets/sakura-petal.svg - 벚꽃 애니메이션에 사용되는 꽃잎 SVG.
+
+[기타]
+Matcha-Talk/frontend/.DS_Store - macOS에서 생성된 디렉터리 메타데이터 파일.
+
