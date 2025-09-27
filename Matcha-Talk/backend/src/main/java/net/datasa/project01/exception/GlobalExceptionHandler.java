@@ -2,7 +2,8 @@ package net.datasa.project01.exception;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.Map;
 
@@ -26,5 +27,10 @@ public class GlobalExceptionHandler {
                 ? fe.getField() + ": " + fe.getDefaultMessage()
                 : "요청이 올바르지 않습니다.";
         return ResponseEntity.badRequest().body(Map.of("message", msg));
+    }
+
+    @ExceptionHandler(FeatureUnavailableException.class)
+    public ResponseEntity<?> serviceUnavailable(FeatureUnavailableException e) {
+        return ResponseEntity.status(503).body(Map.of("message", e.getMessage()));
     }
 }

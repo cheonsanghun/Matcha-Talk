@@ -2,13 +2,14 @@ package net.datasa.project01.service.translation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
+import net.datasa.project01.exception.FeatureUnavailableException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import jakarta.annotation.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
@@ -38,7 +39,7 @@ public class ExternalTranslateService implements TranslateService {
     @Override
     public TranslationResult translate(String text, String sourceLang, String targetLang, @Nullable String context) {
         if (!StringUtils.hasText(baseUrl)) {
-            throw new IllegalStateException("번역 API 기본 URL이 설정되어 있지 않습니다.");
+            throw new FeatureUnavailableException("외부 번역 서비스가 비활성화되어 있습니다.");
         }
 
         try {

@@ -2,6 +2,7 @@ package net.datasa.project01.service;
 
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
+import net.datasa.project01.exception.FeatureUnavailableException;
 import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.RoomRepository;
 import net.datasa.project01.repository.UserRepository;
@@ -44,7 +45,7 @@ public class FileUploadPresignService {
                                                    String contentType,
                                                    long contentLength) {
         if (!StringUtils.hasText(baseUrl)) {
-            throw new IllegalStateException("파일 업로드 사전 서명을 위한 base-url이 설정되어 있지 않습니다.");
+            throw new FeatureUnavailableException("파일 업로드 사전 서명 기능이 비활성화되어 있습니다.");
         }
 
         if (contentLength <= 0) {
