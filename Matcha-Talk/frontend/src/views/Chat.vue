@@ -234,6 +234,7 @@ const chats = ref([])
 const groups = ref([])
 const conversations = ref({})
 const current = ref({})
+const draft = ref('')
 
 const chatMessagesContainer = ref(null)
 const fileInput = ref(null)

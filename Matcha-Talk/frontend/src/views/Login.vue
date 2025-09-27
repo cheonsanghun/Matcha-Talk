@@ -126,22 +126,13 @@ async function onLogin () {
     }
     const { data } = await api.post('/auth/login', payload)
 
-    // 응답: { user, token } 또는 UserSummary 단독
+    // 응답: { user } 또는 UserSummary 단독
     const userRaw = data.user ?? data
-    const token   = data.token ?? ''
 
     // === 역할(role) 보정 ===
     let role = userRaw.roleName ?? userRaw.rolename ?? userRaw.role ?? null
 
-    // 2) 토큰이 JWT라면 payload에서 role 추출 시도
-    if (!role && token && token.includes('.')) {
-      try {
-        const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-        const json = JSON.parse(atob(b64))
-        role = json.roleName ?? json.rolename ?? json.role ?? null
-      } catch {}
-    }
-    // 3) 최후: loginId가 'admin'이면 ROLE_ADMIN 처리
+    // 최후: loginId가 'admin'이면 ROLE_ADMIN 처리
     const loginIdFromUser = userRaw.loginId ?? userRaw.login_id
     if (!role && loginIdFromUser === 'admin') role = 'ROLE_ADMIN'
 
@@ -150,14 +141,12 @@ async function onLogin () {
 
     // 세션 저장: setSession 우선, 없으면 login(payload), 둘 다 없으면 수동 저장
     if (typeof store.setSession === 'function') {
-      await store.setSession(token, user)
+      await store.setSession(user)
     } else if (typeof store.login === 'function') {
-      await store.login({ token, user })
+      await store.login({ user })
     } else {
       // fallback
-      store.token = token
       store.user  = user
-      localStorage.setItem('token', token)
       localStorage.setItem('user', JSON.stringify(user))
     }
 

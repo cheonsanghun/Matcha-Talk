@@ -30,7 +30,8 @@ public class FollowController {
     @PostMapping
     public ResponseEntity<Void> createFollow(@Valid @RequestBody FollowRequestDto req,
                                              @AuthenticationPrincipal UserDetails userDetails) {
-        userService.createFollow(req, userDetails.getUsername());
+        String loginId = requireLoginId(userDetails);
+        userService.createFollow(req, loginId);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
@@ -45,7 +46,8 @@ public class FollowController {
     public ResponseEntity<Void> updateFollowStatus(@PathVariable Long followId,
                                                    @Valid @RequestBody FollowUpdateDto dto,
                                                    @AuthenticationPrincipal UserDetails userDetails) {
-        userService.updateFollowStatus(followId, dto, userDetails.getUsername());
+        String loginId = requireLoginId(userDetails);
+        userService.updateFollowStatus(followId, dto, loginId);
         return ResponseEntity.ok().build();
     }
 
@@ -58,7 +60,15 @@ public class FollowController {
     @DeleteMapping("/{followId}")
     public ResponseEntity<Void> deleteFollow(@PathVariable Long followId,
                                             @AuthenticationPrincipal UserDetails userDetails) {
-        userService.deleteFollow(followId, userDetails.getUsername());
+        String loginId = requireLoginId(userDetails);
+        userService.deleteFollow(followId, loginId);
         return ResponseEntity.noContent().build();
+    }
+
+    private String requireLoginId(UserDetails userDetails) {
+        if (userDetails == null) {
+            throw new net.datasa.project01.exception.AuthException(401, "AUTH_REQUIRED: 로그인 후 이용 가능합니다.");
+        }
+        return userDetails.getUsername();
     }
 }

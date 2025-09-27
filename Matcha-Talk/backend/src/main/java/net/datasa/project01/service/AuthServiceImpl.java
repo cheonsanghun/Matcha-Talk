@@ -7,7 +7,6 @@ import net.datasa.project01.domain.dto.UserSummary;
 import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.exception.AuthException;
 import net.datasa.project01.repository.UserRepository;
-import net.datasa.project01.util.JwtUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,8 +27,6 @@ public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtUtil jwtUtil;
-
     private static final int  LOCK_THRESHOLD = 5;   // 연속 실패 허용 횟수
     private static final long LOCK_MINUTES   = 10;  // 잠금 유지 시간(분)
 
@@ -84,9 +81,8 @@ public class AuthServiceImpl implements AuthService {
             userRepository.save(user);
         }
 
-        String token = jwtUtil.createToken(user.getLoginId());
         UserSummary summary = UserSummary.fromEntity(user);
-        return new LoginResponse(summary, token);
+        return new LoginResponse(summary);
     }
 
     private int safeInt(Integer value) {

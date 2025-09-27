@@ -65,7 +65,8 @@ public class UserController {
 
     @GetMapping("/profile")
     public ResponseEntity<UserResponse> getMyProfile(@AuthenticationPrincipal UserDetails userDetails) {
-        UserResponse profile = userService.getUserByLoginId(userDetails.getUsername());
+        String loginId = requireLoginId(userDetails);
+        UserResponse profile = userService.getUserByLoginId(loginId);
         return ResponseEntity.ok(profile);
     }
 
@@ -93,5 +94,12 @@ public class UserController {
     @PostMapping("/email/verify/confirm")
     public ResponseEntity<Map<String, Object>> confirmEmailVerify(@Valid @RequestBody EmailTokenRequestDto dto) {
         return ResponseEntity.ok(emailVerificationService.confirmVerifyEmail(dto.getEmail(), dto.getToken()));
+    }
+
+    private String requireLoginId(UserDetails userDetails) {
+        if (userDetails == null) {
+            throw new net.datasa.project01.exception.AuthException(401, "AUTH_REQUIRED: 로그인 후 이용 가능합니다.");
+        }
+        return userDetails.getUsername();
     }
 }

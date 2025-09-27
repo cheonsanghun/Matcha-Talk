@@ -35,8 +35,8 @@ public class ChatController {
      */
     @PostMapping
     public ResponseEntity<RoomCreateResponseDto> createGroupRoom(@AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
         try {
-            String loginId = userDetails.getUsername();
             Room createdRoom = chatService.createGroupRoom(loginId); // 생성자 정보를 서비스에 전달
             RoomCreateResponseDto responseDto = RoomCreateResponseDto.fromEntity(createdRoom);
             log.info("Group room created by user '{}' with ID: {}", loginId, createdRoom.getRoomId());
@@ -54,13 +54,13 @@ public class ChatController {
      */
     @GetMapping("/my")
     public ResponseEntity<List<RoomListResponseDto>> getMyRooms(@AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
         try {
-            String loginId = userDetails.getUsername();
             List<RoomListResponseDto> myRooms = chatService.findRoomsByUser(loginId);
             log.info("User '{}' fetched their room list, found {} rooms.", loginId, myRooms.size());
             return ResponseEntity.ok(myRooms);
         } catch (Exception e) {
-            log.error("Error fetching rooms for user '{}'", userDetails.getUsername(), e);
+            log.error("Error fetching rooms for user '{}'", loginId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -75,14 +75,14 @@ public class ChatController {
     public ResponseEntity<RoomDetailResponseDto> getRoomDetails(
             @PathVariable Long roomId,
             @AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
         try {
-            String loginId = userDetails.getUsername();
             // 서비스에서 사용자가 이 방에 참여할 권한이 있는지 확인하는 로직이 필요합니다.
             RoomDetailResponseDto roomDetails = chatService.findRoomDetailsById(roomId, loginId);
             log.info("User '{}' fetched details for room ID: {}", loginId, roomId);
             return ResponseEntity.ok(roomDetails);
         } catch (IllegalArgumentException e) {
-            log.warn("Access denied or not found for room ID: {} by user '{}'", roomId, userDetails.getUsername());
+            log.warn("Access denied or not found for room ID: {} by user '{}'", roomId, loginId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build(); // 혹은 403 Forbidden
         }
     }
@@ -92,8 +92,8 @@ public class ChatController {
             @PathVariable Long roomId,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
         try {
-            String loginId = userDetails.getUsername();
             ChatMessageResponseDto responseDto = chatService.saveAttachment(roomId, file, loginId);
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
         } catch (IllegalArgumentException exception) {
@@ -110,8 +110,8 @@ public class ChatController {
             @PathVariable Long roomId,
             @PathVariable Long messageId,
             @AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
         try {
-            String loginId = userDetails.getUsername();
             ChatService.AttachmentResource attachment = chatService.loadAttachment(roomId, messageId, loginId);
 
             String fileName = attachment.fileName() != null ? attachment.fileName() : "attachment";
@@ -131,5 +131,12 @@ public class ChatController {
             log.error("Failed to read attachment {} in room {}", messageId, roomId, exception);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    private String requireLoginId(UserDetails userDetails) {
+        if (userDetails == null) {
+            throw new net.datasa.project01.exception.AuthException(401, "AUTH_REQUIRED: 로그인 후 이용 가능합니다.");
+        }
+        return userDetails.getUsername();
     }
 }
