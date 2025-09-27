@@ -16,13 +16,14 @@ import net.datasa.project01.domain.entity.RoomMessage;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import net.datasa.project01.domain.entity.Room.RoomType;
 
-import net.datasa.project01.service.TranslationService;
 
 
 @Service
@@ -33,7 +34,6 @@ public class ChatService {
         private final RoomMemberRepository roomMemberRepository;
         private final UserRepository userRepository;
         private final RoomMessageRepository roomMessageRepository;
-        private final TranslationService translationService;
 
         // TODO: 알림 서비스 추가 (Push Notification)
         // private final NotificationService notificationService;
@@ -81,24 +81,37 @@ public class ChatService {
                         .filter(member -> member.getLeftAt() == null)
                         .orElseThrow(() -> new AccessDeniedException("채팅방에 참여 중인 사용자만 메시지를 전송할 수 있습니다."));
 
-                // 1. 원본 메시지를 DB에 저장
+                String clientMsgId = requestDto.getClientMsgId();
+                if (StringUtils.hasText(clientMsgId)) {
+                        return roomMessageRepository.findByRoom_RoomIdAndClientMsgId(room.getRoomId(), clientMsgId)
+                                .map(this::toResponse)
+                                .orElseGet(() -> saveNewMessage(room, sender, requestDto));
+                }
+                return saveNewMessage(room, sender, requestDto);
+        }
+
+        private ChatMessageResponseDto saveNewMessage(Room room, User sender, ChatMessageRequestDto requestDto) {
                 RoomMessage message = RoomMessage.builder()
                         .room(room)
                         .sender(sender)
                         .contentType(RoomMessage.ContentType.TEXT)
                         .textContent(requestDto.getContent())
+                        .clientMsgId(StringUtils.hasText(requestDto.getClientMsgId()) ? requestDto.getClientMsgId() : null)
                         .build();
                 roomMessageRepository.save(message);
+                return toResponse(message);
+        }
 
-        // 2. [수정] 번역은 클라이언트에게 위임. 서버는 원본 메시지와 발신자 언어 코드만 전달
-        return ChatMessageResponseDto.builder()
-                .roomId(room.getRoomId())
-                .senderNickName(sender.getNickName())
-                .senderLanguageCode(sender.getLanguageCode()) // 발신자 언어 코드 추가
-                .content(message.getTextContent())
-                // .translatedContent(null) // 이 필드는 이제 존재하지 않으므로 제거합니다.
-                .sentAt(message.getCreatedAt())
-                .build();
+        private ChatMessageResponseDto toResponse(RoomMessage message) {
+                User sender = message.getSender();
+                return ChatMessageResponseDto.builder()
+                        .roomId(message.getRoom().getRoomId())
+                        .senderNickName(sender != null ? sender.getNickName() : "SYSTEM")
+                        .senderLanguageCode(sender != null ? sender.getLanguageCode() : null)
+                        .content(message.getTextContent())
+                        .clientMsgId(message.getClientMsgId())
+                        .sentAt(message.getCreatedAt())
+                        .build();
         }
         @Transactional
         public Room createPrivateRoom(User user1, User user2) {
@@ -110,17 +123,19 @@ public class ChatService {
                 roomRepository.save(newRoom);
 
                 // 2. 두 명의 사용자를 멤버로 추가
-                RoomMember member1 = RoomMember.builder()
-                        .room(newRoom)
-                        .user(user1)
-                        .role("MEMBER")
-                        .build();
-                
-                RoomMember member2 = RoomMember.builder()
-                        .room(newRoom)
-                        .user(user2)
-                        .role("MEMBER")
-                        .build();
+        boolean user1IsHost = user1.getUserPid() <= user2.getUserPid();
+
+        RoomMember member1 = RoomMember.builder()
+                .room(newRoom)
+                .user(user1)
+                .role(user1IsHost ? "HOST" : "MEMBER")
+                .build();
+
+        RoomMember member2 = RoomMember.builder()
+                .room(newRoom)
+                .user(user2)
+                .role(user1IsHost ? "MEMBER" : "HOST")
+                .build();
                 
                 roomMemberRepository.saveAll(java.util.List.of(member1, member2)); // 두 멤버를 한 번에 저장
 

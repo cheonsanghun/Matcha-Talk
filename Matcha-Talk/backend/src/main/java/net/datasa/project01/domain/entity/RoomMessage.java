@@ -33,6 +33,9 @@ public class RoomMessage {
     @Column(name = "text_content", columnDefinition = "TEXT")
     private String textContent;
 
+    @Column(name = "client_msg_id", length = 64)
+    private String clientMsgId;
+
     @Column(name = "file_name", length = 300)
     private String fileName;
 

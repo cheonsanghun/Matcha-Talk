@@ -12,5 +12,6 @@ public class ChatMessageResponseDto {
     private final String senderNickName;
     private final String senderLanguageCode; // 발신자의 언어 코드
     private final String content;
+    private final String clientMsgId;
     private final LocalDateTime sentAt;
 }

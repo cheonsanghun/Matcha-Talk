@@ -38,6 +38,7 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation 'org.springframework.security:spring-security-messaging' // WebSocketSecurityConfig 쓸 때
+    implementation 'org.flywaydb:flyway-core'
 
     runtimeOnly 'com.h2database:h2'
 }

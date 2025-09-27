@@ -11,4 +11,5 @@ public class ChatMessageRequestDto {
      */
     private Long roomId;        // 메시지를 보낼 방
     private String content;     // 메시지 내용
+    private String clientMsgId; // 멱등 처리를 위한 클라이언트 메시지 ID
 }

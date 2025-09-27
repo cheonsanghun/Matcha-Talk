@@ -12,11 +12,13 @@ import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
 import net.datasa.project01.repository.UserRepository;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +33,10 @@ public class MatchService {
     private final ChatService chatService;
     private final RealTimeMessagingService messagingService;
     private final ObjectMapper objectMapper;
+    private final StringRedisTemplate stringRedisTemplate;
+
+    private static final String MATCH_LOCK_PREFIX = "match:lock:";
+    private static final Duration MATCH_LOCK_TTL = Duration.ofSeconds(15);
 
     /**
      * 랜덤 매칭을 시작하거나 대기열에서 상대를 찾기
@@ -41,50 +47,76 @@ public class MatchService {
         User me = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-        // 1. 이미 대기열에 있는지 확인
-        Optional<MatchRequest> existingRequest = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
-        if (existingRequest.isPresent()) {
-            log.info("User {} is already in the matching queue.", loginId);
-            
-            // ✅ 테스트용: 이미 대기열에 있는 사용자에게 대기 상태 알림
-            sendWaitingNotification(loginId);
-            return;
+        if (!acquireLock(loginId)) {
+            log.warn("매칭 락 획득 실패 loginId={}", loginId);
+            throw new IllegalStateException("현재 매칭 요청을 처리할 수 없습니다. 잠시 후 다시 시도하세요.");
         }
 
-        // 2. 나의 조건에 맞는 잠재적 매칭 상대 목록 조회
-        List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
-                me.getUserPid(),
-                MatchRequest.MatchStatus.WAITING
-        );
-
-        // 3. Java 코드로 최종 매칭 상대 결정 (역방향 검증)
-        MatchRequest matchedOpponentRequest = null;
-        for (MatchRequest opponentRequest : potentialMatches) {
-            User opponent = opponentRequest.getUser();
-            long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
-
-            // 상대방의 희망 성별이 '모두(A)'이거나 '나의 성별'과 일치하는지 확인
-            boolean isGenderMatch = opponentRequest.getChoiceGender() == MatchRequest.Gender.A ||
-                                    opponentRequest.getChoiceGender().name().equals(me.getGender().toString());
-            
-            // 나의 나이가 상대방의 희망 나이 범위에 속하는지 확인
-            boolean isAgeMatch = myAge >= opponentRequest.getMinAge() && myAge <= opponentRequest.getMaxAge();
-
-            if (isGenderMatch && isAgeMatch) {
-                matchedOpponentRequest = opponentRequest;
-                break; // 첫 번째로 찾은 짝과 매칭
+        try {
+            Optional<MatchRequest> existingRequest = matchRequestRepository.findByUserAndStatus(me, MatchRequest.MatchStatus.WAITING);
+            if (existingRequest.isPresent()) {
+                log.info("User {} is already in the matching queue.", loginId);
+                sendWaitingNotification(loginId);
+                return;
             }
+
+            List<MatchRequest> potentialMatches = matchRequestRepository.findPotentialMatches(
+                    me.getUserPid(),
+                    MatchRequest.MatchStatus.WAITING
+            );
+
+            MatchRequest matchedOpponentRequest = null;
+            for (MatchRequest opponentRequest : potentialMatches) {
+                User opponent = opponentRequest.getUser();
+                long myAge = ChronoUnit.YEARS.between(me.getBirthDate(), LocalDate.now());
+
+                boolean isGenderMatch = opponentRequest.getChoiceGender() == MatchRequest.Gender.A ||
+                        opponentRequest.getChoiceGender().name().equals(me.getGender().toString());
+                boolean isAgeMatch = myAge >= opponentRequest.getMinAge() && myAge <= opponentRequest.getMaxAge();
+
+                if (!isGenderMatch || !isAgeMatch) {
+                    continue;
+                }
+
+                String opponentLoginId = opponent.getLoginId();
+                if (!acquireLock(opponentLoginId)) {
+                    log.debug("상대방 락 획득 실패 - loginId={}", opponentLoginId);
+                    continue;
+                }
+                try {
+                    MatchRequest freshOpponent = matchRequestRepository.findById(opponentRequest.getRequestId())
+                            .orElse(null);
+                    if (freshOpponent == null || freshOpponent.getStatus() != MatchRequest.MatchStatus.WAITING) {
+                        continue;
+                    }
+                    matchedOpponentRequest = freshOpponent;
+                    break;
+                } finally {
+                    if (matchedOpponentRequest == null) {
+                        releaseLock(opponentLoginId);
+                    }
+                }
+            }
+
+            if (matchedOpponentRequest != null) {
+                handleMatchedUsers(me, requestDto, matchedOpponentRequest);
+            } else {
+                enqueueWaitingUser(me, requestDto);
+            }
+        } finally {
+            releaseLock(loginId);
         }
+    }
 
-        if (matchedOpponentRequest != null) {
-            // 4. 매칭 성공 처리
-            User opponent = matchedOpponentRequest.getUser();
-            log.info("✅ Match found for user {}: {}", loginId, opponent.getLoginId());
+    private void handleMatchedUsers(User me,
+                                    MatchRequestDto requestDto,
+                                    MatchRequest opponentRequest) throws JsonProcessingException {
+        User opponent = opponentRequest.getUser();
+        String opponentLoginId = opponent.getLoginId();
 
-            // 두 요청의 상태를 MATCHED로 변경
-            matchedOpponentRequest.setStatus(MatchRequest.MatchStatus.MATCHED);
+        try {
+            opponentRequest.setStatus(MatchRequest.MatchStatus.MATCHED);
 
-            // 나의 매칭 요청도 'MATCHED' 상태로 생성하여 기록을 남김
             MatchRequest myMatchedRequest = MatchRequest.builder()
                     .user(me)
                     .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
@@ -96,33 +128,42 @@ public class MatchService {
                     .build();
             matchRequestRepository.save(myMatchedRequest);
 
-            // 1:1 채팅방 생성
             Room privateRoom = chatService.createPrivateRoom(me, opponent);
 
-            // 양쪽 사용자에게 매칭 성공 알림 전송 (웹소켓)
             MatchFoundResponseDto myResponse = new MatchFoundResponseDto(privateRoom.getRoomId(), opponent.getNickName());
             MatchFoundResponseDto opponentResponse = new MatchFoundResponseDto(privateRoom.getRoomId(), me.getNickName());
 
             sendMatchResult(me.getLoginId(), myResponse);
-            sendMatchResult(opponent.getLoginId(), opponentResponse);
-
-        } else {
-            // 5. 매칭 실패 -> 대기열에 등록
-            log.info("❌ No match found for user {}. Adding to queue.", loginId);
-            MatchRequest newRequest = MatchRequest.builder()
-                    .user(me)
-                    .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
-                    .minAge(requestDto.getMinAge())
-                    .maxAge(requestDto.getMaxAge())
-                    .regionCode(requestDto.getRegionCode())
-                    .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
-                    .status(MatchRequest.MatchStatus.WAITING)
-                    .build();
-            matchRequestRepository.save(newRequest);
-            
-            // ✅ 테스트용: 대기열에 등록된 사용자에게 대기 상태 알림
-            sendWaitingNotification(loginId);
+            sendMatchResult(opponentLoginId, opponentResponse);
+        } finally {
+            releaseLock(opponentLoginId);
         }
+    }
+
+    private void enqueueWaitingUser(User me, MatchRequestDto requestDto) throws JsonProcessingException {
+        log.info("❌ No match found for user {}. Adding to queue.", me.getLoginId());
+        MatchRequest newRequest = MatchRequest.builder()
+                .user(me)
+                .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
+                .minAge(requestDto.getMinAge())
+                .maxAge(requestDto.getMaxAge())
+                .regionCode(requestDto.getRegionCode())
+                .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
+                .status(MatchRequest.MatchStatus.WAITING)
+                .build();
+        matchRequestRepository.save(newRequest);
+
+        sendWaitingNotification(me.getLoginId());
+    }
+
+    private boolean acquireLock(String loginId) {
+        String key = MATCH_LOCK_PREFIX + loginId;
+        Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", MATCH_LOCK_TTL);
+        return Boolean.TRUE.equals(locked);
+    }
+
+    private void releaseLock(String loginId) {
+        stringRedisTemplate.delete(MATCH_LOCK_PREFIX + loginId);
     }
     
     /**
