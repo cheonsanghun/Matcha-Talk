@@ -53,6 +53,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createRealtimeClient } from '../services/ws'
 import { setupSignalHandlers } from '../services/signaling'
+import { resolveClientIdentity } from '../utils/identity'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -80,13 +81,10 @@ async function start () {
   try {
     if (connected.value) return
 
-    const token = auth.token || localStorage.getItem('token')
-    if (!token) {
-      console.error('JWT token not found. Cannot start WebRTC test.')
-      return
-    }
+    const loginId = resolveClientIdentity(auth)
+    me.value = loginId
 
-    ensureRealtimeClient(token)
+    ensureRealtimeClient(loginId)
 
     await realtimeClient.connect()
     connected.value = true
@@ -107,9 +105,10 @@ async function start () {
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
       await sendSignal({
-        type: 'offer',
+        event: 'offer',
         receiverLoginId: partner.value,
-        data: offer
+        data: offer,
+        senderLoginId: me.value
       })
     }
   } catch (error) {
@@ -117,9 +116,9 @@ async function start () {
   }
 }
 
-function ensureRealtimeClient (token) {
+function ensureRealtimeClient (loginId) {
   if (!realtimeClient) {
-    realtimeClient = createRealtimeClient({ token })
+    realtimeClient = createRealtimeClient({ queryParams: { loginId } })
     teardownHandlers.push(
       realtimeClient.onClose(() => {
         connected.value = false
@@ -130,7 +129,7 @@ function ensureRealtimeClient (token) {
       realtimeClient.onEvent('chat', handleIncomingChat)
     )
   } else {
-    realtimeClient.setToken(token)
+    realtimeClient.setQueryParams({ loginId })
   }
 }
 
@@ -152,9 +151,10 @@ function setupPeerCallbacks () {
   pc.onicecandidate = (event) => {
     if (event.candidate) {
       sendSignal({
-        type: 'ice-candidate',
+        event: 'iceCandidate',
         receiverLoginId: partner.value,
-        data: event.candidate
+        data: event.candidate,
+        senderLoginId: me.value
       })
     }
   }
@@ -162,14 +162,16 @@ function setupPeerCallbacks () {
 
 async function handleIncomingSignal (msg) {
   try {
-    if (msg.type === 'offer') {
+    const eventType = msg.event || msg.type
+
+    if (eventType === 'offer') {
       await pc.setRemoteDescription(msg.data)
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
-      await sendSignal({ type: 'answer', receiverLoginId: msg.senderLoginId, data: answer })
-    } else if (msg.type === 'answer') {
+      await sendSignal({ event: 'answer', receiverLoginId: msg.senderLoginId, data: answer, senderLoginId: me.value })
+    } else if (eventType === 'answer') {
       await pc.setRemoteDescription(msg.data)
-    } else if (msg.type === 'ice-candidate') {
+    } else if (eventType === 'ice-candidate' || eventType === 'iceCandidate') {
       try {
         await pc.addIceCandidate(msg.data)
       } catch (error) {

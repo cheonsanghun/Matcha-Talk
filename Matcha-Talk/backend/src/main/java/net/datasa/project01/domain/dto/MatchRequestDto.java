@@ -32,4 +32,6 @@ public class MatchRequestDto {
 
     @NotEmpty(message = "관심사는 최소 1개 이상 선택해야 합니다.")
     private List<String> interests; // 'interestsJson' -> 'interests'로 필드명 변경
+
+    private String loginId;
 }

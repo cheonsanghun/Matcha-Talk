@@ -9,8 +9,10 @@ import net.datasa.project01.service.MatchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,10 +33,15 @@ public class MatchController {
     @PostMapping("/requests")
     public ResponseEntity<String> startRandomMatch(
             @AuthenticationPrincipal UserDetails userDetails,
+            @RequestHeader(value = "X-Login-Id", required = false) String headerLoginId,
             @Valid @RequestBody MatchRequestDto dto) {
-        
+
         try {
-            String loginId = userDetails.getUsername();
+            String loginId = resolveLoginId(userDetails, dto.getLoginId(), headerLoginId);
+            if (!StringUtils.hasText(loginId)) {
+                return ResponseEntity.badRequest().body("loginId is required to request matching.");
+            }
+
             log.info("Match request received from user: {}", loginId);
             log.info("Match request data: {}", dto);
             
@@ -44,11 +51,24 @@ public class MatchController {
             return ResponseEntity.ok("매칭 요청이 성공적으로 접수되었습니다.");
             
         } catch (JsonProcessingException e) {
-            log.error("JSON processing error during match request for user: {}", userDetails.getUsername(), e);
+            log.error("JSON processing error during match request.", e);
             return ResponseEntity.internalServerError().body("매칭 요청 처리 중 오류가 발생했습니다.");
         } catch (IllegalArgumentException e) {
-            log.warn("Invalid match request from user: {}. Reason: {}", userDetails.getUsername(), e.getMessage());
+            log.warn("Invalid match request. Reason: {}", e.getMessage());
             return ResponseEntity.badRequest().body(e.getMessage());
         }
+    }
+
+    private String resolveLoginId(UserDetails principal, String dtoLoginId, String headerLoginId) {
+        if (principal != null && StringUtils.hasText(principal.getUsername())) {
+            return principal.getUsername();
+        }
+        if (StringUtils.hasText(dtoLoginId)) {
+            return dtoLoginId.trim();
+        }
+        if (StringUtils.hasText(headerLoginId)) {
+            return headerLoginId.trim();
+        }
+        return null;
     }
 }

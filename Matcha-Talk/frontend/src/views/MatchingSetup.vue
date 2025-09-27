@@ -106,8 +106,11 @@
 import { ref, computed } from 'vue'
 import api from '../services/api'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import { resolveClientIdentity } from '../utils/identity'
 
 const router = useRouter()
+const auth = useAuthStore()
 const ageRange = ref([20, 30])
 const gender = ref('A')
 const regions = [
@@ -134,16 +137,22 @@ async function startMatch(){
   loading.value = true
   
   // 백엔드 MatchRequestDto 필드명에 맞게 camelCase로 수정
+  const loginId = resolveClientIdentity(auth)
   const payload = {
     choiceGender: gender.value,
     minAge: ageRange.value[0],
     maxAge: ageRange.value[1],
     regionCode: region.value,
     interests: interests.value,  // interests_json → interests 로 수정
+    loginId
   }
   
   try{
-    await api.post('/match/requests', payload)
+    await api.post('/match/requests', payload, {
+      headers: {
+        'X-Login-Id': loginId
+      }
+    })
     router.push('/match/result')
   }catch(e){
     alert('매칭 실패: ' + (e?.response?.data?.message || e.message))

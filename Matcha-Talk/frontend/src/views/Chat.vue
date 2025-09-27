@@ -188,6 +188,7 @@ import { createRealtimeClient } from '../services/ws'
 import api from '../services/api'
 import { translate } from '../services/translator'
 import { useVocabularyStore } from '../stores/vocabulary'
+import { resolveClientIdentity } from '../utils/identity'
 
 const query = ref('')
 const tab = ref('direct')
@@ -490,14 +491,10 @@ async function handleIncomingMessage(payload) {
 async function connectRealtime() {
   if (isConnecting || manualDisconnect) return
 
-  const token = auth.token || localStorage.getItem('token')
-  if (!token) {
-    console.error('JWT token not found. Cannot establish WebSocket connection.')
-    return
-  }
+  const loginId = resolveClientIdentity(auth)
 
   if (!realtimeClient) {
-    realtimeClient = createRealtimeClient({ token })
+    realtimeClient = createRealtimeClient({ queryParams: { loginId } })
     teardownHandlers.push(
       realtimeClient.onOpen(() => {
         isConnecting = false
@@ -528,7 +525,7 @@ async function connectRealtime() {
       })
     )
   } else {
-    realtimeClient.setToken(token)
+    realtimeClient.setQueryParams({ loginId })
   }
 
   isConnecting = true

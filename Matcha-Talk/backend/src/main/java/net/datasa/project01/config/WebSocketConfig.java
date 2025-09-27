@@ -2,7 +2,6 @@ package net.datasa.project01.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.datasa.project01.websocket.JwtHandshakeInterceptor;
 import net.datasa.project01.websocket.ReactiveChatWebSocketHandler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.WebSocketHandler;
@@ -13,6 +12,7 @@ import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 
 import java.security.Principal;
 import java.util.Map;
+import java.util.UUID;
 
 @Configuration
 @EnableWebSocket
@@ -21,22 +21,45 @@ import java.util.Map;
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final ReactiveChatWebSocketHandler chatWebSocketHandler;
-    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(wrapLoggingHandler(chatWebSocketHandler), "/ws/chat")
-                .addInterceptors(jwtHandshakeInterceptor)
                 .setHandshakeHandler(new DefaultHandshakeHandler() {
                     @Override
                     protected Principal determineUser(org.springframework.http.server.ServerHttpRequest request,
                                                        WebSocketHandler wsHandler,
                                                        Map<String, Object> attributes) {
-                        String loginId = (String) attributes.get("loginId");
+                        String resolved = extractLoginId(request);
+                        if (resolved == null || resolved.isBlank()) {
+                            resolved = "anon-" + UUID.randomUUID();
+                        }
+                        final String loginId = resolved;
+                        attributes.put("loginId", loginId);
                         return () -> loginId;
                     }
                 })
                 .setAllowedOriginPatterns("*");
+    }
+
+    private String extractLoginId(org.springframework.http.server.ServerHttpRequest request) {
+        try {
+            var params = org.springframework.web.util.UriComponentsBuilder.fromUri(request.getURI())
+                    .build()
+                    .getQueryParams();
+            String loginId = params.getFirst("loginId");
+            if (loginId != null && !loginId.isBlank()) {
+                return loginId.trim();
+            }
+
+            var headerLoginId = request.getHeaders().getFirst("X-Login-Id");
+            if (headerLoginId != null && !headerLoginId.isBlank()) {
+                return headerLoginId.trim();
+            }
+        } catch (Exception exception) {
+            log.debug("Failed to extract loginId from request", exception);
+        }
+        return null;
     }
 
     private WebSocketHandler wrapLoggingHandler(WebSocketHandler delegate) {

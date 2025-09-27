@@ -70,6 +70,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { createRealtimeClient } from '../services/ws'
 import { camelizeKeys } from '../utils/case'
+import { resolveClientIdentity } from '../utils/identity'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -97,15 +98,10 @@ onMounted(() => {
 async function connectWebSocket () {
   if (isConnecting.value || manualDisconnect) return
 
-  const token = auth.token || localStorage.getItem('token')
-  if (!token) {
-    console.error('JWT token not found')
-    router.push('/login')
-    return
-  }
+  const loginId = resolveClientIdentity(auth)
 
   if (!websocketClient) {
-    websocketClient = createRealtimeClient({ token })
+    websocketClient = createRealtimeClient({ queryParams: { loginId } })
     teardownHandlers.push(
       websocketClient.onOpen(() => {
         console.log('✅ WebSocket connected for matching results')
@@ -131,7 +127,7 @@ async function connectWebSocket () {
       })
     )
   } else {
-    websocketClient.setToken(token)
+    websocketClient.setQueryParams({ loginId })
   }
 
   isConnecting.value = true

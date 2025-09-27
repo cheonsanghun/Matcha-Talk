@@ -29,12 +29,27 @@ if (configuredEndpoint && !configuredEndpoint.startsWith('/')) {
 }
 const WS_ENDPOINT_PATH = configuredEndpoint
 
-function buildWebSocketUrl(token) {
+function buildWebSocketUrl(queryParams = {}) {
   const wsOrigin = HTTP_ORIGIN.replace(/^http/, 'ws')
   const url = new URL(WS_ENDPOINT_PATH, wsOrigin.endsWith('/') ? wsOrigin : `${wsOrigin}/`)
-  if (token) {
-    url.searchParams.set('token', token)
+
+  if (queryParams && typeof queryParams === 'object') {
+    Object.entries(queryParams).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') {
+        return
+      }
+
+      if (Array.isArray(value)) {
+        value
+          .filter((entry) => entry !== undefined && entry !== null && entry !== '')
+          .forEach((entry) => url.searchParams.append(key, entry))
+        return
+      }
+
+      url.searchParams.set(key, value)
+    })
   }
+
   return url.toString()
 }
 
@@ -46,8 +61,8 @@ function ensureHandlerSet(map, key) {
 }
 
 class RealtimeWebSocketClient {
-  constructor({ token } = {}) {
-    this.token = token
+  constructor({ queryParams = {} } = {}) {
+    this.queryParams = { ...queryParams }
     this.socket = null
     this.connectPromise = null
     this.manualClose = false
@@ -59,8 +74,12 @@ class RealtimeWebSocketClient {
     this.rawMessageHandlers = new Set()
   }
 
-  setToken(token) {
-    this.token = token
+  setQueryParams(nextParams = {}) {
+    if (!nextParams || typeof nextParams !== 'object') {
+      this.queryParams = {}
+      return
+    }
+    this.queryParams = { ...nextParams }
   }
 
   isConnected() {
@@ -76,11 +95,7 @@ class RealtimeWebSocketClient {
       return this.connectPromise
     }
 
-    if (!this.token) {
-      throw new Error('WebSocket token is required before connecting.')
-    }
-
-    const url = buildWebSocketUrl(this.token)
+    const url = buildWebSocketUrl(this.queryParams)
     this.manualClose = false
 
     this.connectPromise = new Promise((resolve, reject) => {
@@ -209,9 +224,6 @@ class RealtimeWebSocketClient {
 }
 
 export function createRealtimeClient(options = {}) {
-  if (typeof options === 'string') {
-    return new RealtimeWebSocketClient({ token: options })
-  }
   return new RealtimeWebSocketClient(options)
 }
 
