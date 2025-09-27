@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: project01
+  config:
+    import: optional:file:.env[.properties]
+  profiles:
+    active: db
+  session:
+    store-type: redis
+    redis:
+      flush-mode: on-save
+      namespace: app:session
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+  jackson:
+    time-zone: UTC
+    serialization:
+      write-dates-as-timestamps: false
+    property-naming-strategy: SNAKE_CASE
+  websocket:
+    servlet:
+      allowed-origins: "*"   # TODO: 운영 환경에서는 정확한 오리진 목록으로 제한
+      sockjs:
+        heartbeat:
+          time: 25000
+        disconnect:
+          delay: 5000
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+    session:
+      cookie:
+        http-only: true
+        secure: true
+        same-site: None
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.springframework.security: DEBUG
+
+webrtc:
+  ice:
+    urls: ${METERED_TURN_URLS:}
+    username: ${METERED_TURN_USERNAME:}
+    credential: ${METERED_TURN_CREDENTIAL:}
+
+translate:
+  base-url: ${TRANSLATE_API_BASE_URL:}
+  api-key: ${TRANSLATE_API_KEY:}
+  provider: ${TRANSLATE_API_PROVIDER:generic}
+
+# Papago 기본값 등 민감 정보는 환경변수로만 주입한다.
