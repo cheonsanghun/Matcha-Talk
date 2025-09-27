@@ -38,7 +38,7 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(reg -> reg
-                        .requestMatchers("/api/auth/login", "/api/auth/find-id", "/api/auth/password-reset/**", "/api/users/signup", "/api/users/exists", "/api/users/email/**").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/csrf", "/api/auth/find-id", "/api/auth/password-reset/**", "/api/users/signup", "/api/users/exists", "/api/users/email/**").permitAll()
                         .requestMatchers("/error", "/actuator/health", "/actuator/info").permitAll()
                         .anyRequest().authenticated()
                 )
