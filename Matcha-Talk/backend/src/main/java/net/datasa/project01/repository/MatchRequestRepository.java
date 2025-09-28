@@ -18,6 +18,11 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
 
     Optional<MatchRequest> findFirstByUserAndStatusOrderByRequestedAtDesc(User user, MatchRequest.MatchStatus status);
 
+    Optional<MatchRequest> findFirstByUserAndStatusInOrderByRequestedAtDesc(
+            User user,
+            Collection<MatchRequest.MatchStatus> statuses
+    );
+
     @Query("SELECT mr FROM MatchRequest mr JOIN FETCH mr.user WHERE mr.requestId = :id")
     Optional<MatchRequest> findByIdWithUser(@Param("id") Long id);
 

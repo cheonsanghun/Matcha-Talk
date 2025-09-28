@@ -119,10 +119,23 @@ public class MatchService {
         User me = userRepository.findByLoginId(loginId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-        return matchRequestRepository.findFirstByUserAndStatusOrderByRequestedAtDesc(me, MatchRequest.MatchStatus.CONFIRMED)
-                .filter(request -> request.getRoom() != null)
-                .flatMap(request -> findConfirmedPartner(request)
-                        .map(partner -> buildMatchFoundResponse(request, partner)));
+        List<MatchRequest.MatchStatus> candidateStatuses = List.of(
+                MatchRequest.MatchStatus.CONFIRMED,
+                MatchRequest.MatchStatus.MATCHED
+        );
+
+        return matchRequestRepository.findFirstByUserAndStatusInOrderByRequestedAtDesc(me, candidateStatuses)
+                .flatMap(request -> {
+                    if (request.getStatus() == MatchRequest.MatchStatus.MATCHED && isHandshakeExpired(request)) {
+                        return Optional.empty();
+                    }
+
+                    Optional<MatchRequest> partner = request.getStatus() == MatchRequest.MatchStatus.CONFIRMED
+                            ? findConfirmedPartner(request)
+                            : findHandshakePartner(request);
+
+                    return Optional.of(buildMatchFoundResponse(request, partner.orElse(null)));
+                });
     }
 
     /**
