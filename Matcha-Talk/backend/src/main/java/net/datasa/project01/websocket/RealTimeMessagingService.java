@@ -19,6 +19,11 @@ public class RealTimeMessagingService {
     private final WebSocketSessionRegistry sessionRegistry;
     private final ObjectMapper objectMapper;
 
+    public static final String EVENT_MATCH_FOUND = "match-found";
+    public static final String EVENT_MATCH_ROOM_READY = "match-room-ready";
+    public static final String EVENT_MATCH_DECLINED = "match-declined";
+    public static final String EVENT_MATCH_STATUS = "match-status";
+
     public void sendEventToUser(String loginId, String event, Object payload) {
         broadcastToUsers(java.util.List.of(loginId), event, payload);
     }

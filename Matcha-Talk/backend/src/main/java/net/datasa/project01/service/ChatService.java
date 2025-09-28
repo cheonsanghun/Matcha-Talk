@@ -128,6 +128,31 @@ public class ChatService {
                 return newRoom;
         }
 
+        @Transactional
+        public Room createRandomRoom(User user1, User user2) {
+                Room newRoom = Room.builder()
+                        .roomType(Room.RoomType.RANDOM)
+                        .capacity(2)
+                        .build();
+                roomRepository.save(newRoom);
+
+                RoomMember member1 = RoomMember.builder()
+                        .room(newRoom)
+                        .user(user1)
+                        .role("MEMBER")
+                        .build();
+
+                RoomMember member2 = RoomMember.builder()
+                        .room(newRoom)
+                        .user(user2)
+                        .role("MEMBER")
+                        .build();
+
+                roomMemberRepository.saveAll(java.util.List.of(member1, member2));
+
+                return newRoom;
+        }
+
         @Transactional(readOnly = true)
         public List<RoomListResponseDto> findRoomsByUser(String loginId) {
                 User user = userRepository.findByLoginId(loginId)
