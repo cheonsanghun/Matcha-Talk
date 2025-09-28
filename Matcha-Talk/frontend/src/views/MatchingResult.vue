@@ -676,6 +676,7 @@ async function connectWebSocket () {
     return
   }
 
+
   if (isConnecting.value) return
 
   let loginId = await ensureRealtimeIdentity()
