@@ -29,6 +29,13 @@ let remoteStream = null
 let peerConnection = null
 let activeReceiver = null
 let initializing = null
+let acquiringLocalStream = null
+
+function isMediaDeviceSupported () {
+  return typeof navigator !== 'undefined' &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === 'function'
+}
 
 function updateStatus(message) {
   statusMessage.value = message
@@ -74,6 +81,15 @@ function ensurePeerConnection() {
     }
   }
 
+  pc.onconnectionstatechange = () => {
+    const state = pc.connectionState
+    if (state === 'connected') {
+      updateStatus('통화 연결 완료')
+    } else if (state === 'failed' || state === 'disconnected') {
+      updateStatus('통화 연결이 불안정합니다. 다시 시도해주세요.')
+    }
+  }
+
   if (localStream) {
     attachLocalTracks(localStream, pc)
   }
@@ -82,24 +98,60 @@ function ensurePeerConnection() {
   return pc
 }
 
+function bindLocalStreamEvents (stream) {
+  if (!stream) return
+  stream.getTracks().forEach((track) => {
+    track.onended = () => {
+      if (localStream === stream) {
+        updateStatus('카메라 연결이 종료되었습니다. 다시 시도해주세요.')
+        localStream = null
+        if (localVideo.value) {
+          localVideo.value.srcObject = null
+        }
+      }
+    }
+  })
+}
+
 async function ensureLocalStream() {
   if (localStream) {
+    if (localVideo.value && localVideo.value.srcObject !== localStream) {
+      localVideo.value.srcObject = localStream
+    }
     return localStream
   }
 
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-    if (localVideo.value) {
-      localVideo.value.srcObject = localStream
-    }
-    const pc = ensurePeerConnection()
-    attachLocalTracks(localStream, pc)
-    updateStatus('카메라 연결됨')
-    return localStream
-  } catch (error) {
-    updateStatus('미디어 권한을 확인해주세요')
-    throw error
+  if (!isMediaDeviceSupported()) {
+    updateStatus('브라우저에서 카메라를 사용할 수 없습니다.')
+    throw new Error('Media devices are not supported in this environment.')
   }
+
+  if (acquiringLocalStream) {
+    return acquiringLocalStream
+  }
+
+  acquiringLocalStream = (async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: { facingMode: 'user' } })
+      localStream = stream
+      bindLocalStreamEvents(stream)
+      if (localVideo.value) {
+        localVideo.value.srcObject = stream
+      }
+      const pc = ensurePeerConnection()
+      attachLocalTracks(stream, pc)
+      updateStatus('카메라 준비 완료')
+      return stream
+    } catch (error) {
+      console.error('[webrtc] Failed to obtain local media stream', error)
+      updateStatus('미디어 권한을 확인해주세요')
+      throw error
+    } finally {
+      acquiringLocalStream = null
+    }
+  })()
+
+  return acquiringLocalStream
 }
 
 async function initializeRealtime() {
@@ -244,9 +296,19 @@ watch(() => auth.loginId, () => {
   }
 })
 
+watch(localVideo, (element) => {
+  if (element && localStream) {
+    element.srcObject = localStream
+  }
+})
+
 onMounted(() => {
   initializeRealtime().catch((error) => {
     console.warn('[webrtc] 초기화 실패', error)
+  })
+
+  ensureLocalStream().catch((error) => {
+    console.warn('[webrtc] Local media preview failed', error)
   })
 })
 
