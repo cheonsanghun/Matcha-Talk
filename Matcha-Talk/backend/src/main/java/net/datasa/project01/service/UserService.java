@@ -11,17 +11,21 @@ import net.datasa.project01.domain.dto.UserResponse;
 import net.datasa.project01.domain.dto.UserSignUpRequestDto;
 import net.datasa.project01.domain.entity.Follow;
 import net.datasa.project01.domain.entity.Profile;
+import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
 import net.datasa.project01.repository.FollowRepository;
 import net.datasa.project01.repository.ProfileRepository;
+import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.UserRepository;
 import net.datasa.project01.service.email.EmailSender;
+import net.datasa.project01.websocket.RealTimeMessagingService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -37,6 +41,10 @@ public class UserService {
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
     private final ProfileRepository profileRepository;
+    private final RoomMemberRepository roomMemberRepository;
+    private final ChatService chatService;
+    private final MatchService matchService;
+    private final RealTimeMessagingService messagingService;
     private final PasswordEncoder passwordEncoder;
     private final EmailVerificationService emailVerificationService;
     private final EmailSender emailSender;
@@ -246,6 +254,10 @@ public class UserService {
         }
         follow.setStatus(newStatus);
         followRepository.save(follow);
+
+        if (newStatus == Follow.FollowStatus.ACCEPTED) {
+            handleMutualFollowPromotion(follow);
+        }
     }
 
     @Transactional
@@ -280,5 +292,32 @@ public class UserService {
                 .map(Follow::getFollower)
                 .map(UserResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    private void handleMutualFollowPromotion(Follow follow) {
+        followRepository.findByFollowerAndFolloweeAndStatus(
+                        follow.getFollowee(),
+                        follow.getFollower(),
+                        Follow.FollowStatus.ACCEPTED)
+                .ifPresent(ignored -> roomMemberRepository
+                        .findFirstRandomRoomByUsers(
+                                follow.getFollower().getUserPid(),
+                                follow.getFollowee().getUserPid())
+                        .ifPresent(randomRoom -> {
+                            Room promotedRoom = chatService.promoteRandomRoom(randomRoom);
+                            if (promotedRoom != null && promotedRoom.getRoomType() == Room.RoomType.PRIVATE) {
+                                matchService.archiveMatchRequestsForRoom(promotedRoom);
+                                messagingService.broadcastToUsers(
+                                        java.util.List.of(
+                                                follow.getFollower().getLoginId(),
+                                                follow.getFollowee().getLoginId()
+                                        ),
+                                        RealTimeMessagingService.EVENT_MATCH_ROOM_PROMOTED,
+                                        Map.of(
+                                                "roomId", promotedRoom.getRoomId(),
+                                                "temporary", false
+                                        ));
+                            }
+                        }));
     }
 }

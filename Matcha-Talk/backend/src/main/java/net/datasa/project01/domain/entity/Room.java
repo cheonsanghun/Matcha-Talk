@@ -46,6 +46,17 @@ public class Room {
     @Column(name = "closed_at")
     private LocalDateTime closedAt;
 
+    public void markPromoted(RoomType targetType, Room origin, String reason, LocalDateTime promotedAt) {
+        this.roomType = targetType;
+        this.createdFromRoom = origin;
+        this.promotedAt = promotedAt;
+        this.promotedReason = reason;
+    }
+
+    public boolean isTemporary() {
+        return this.roomType == RoomType.RANDOM;
+    }
+
     // --- ENUM 타입 정의 ---
     public enum RoomType {
         RANDOM, PRIVATE, GROUP
