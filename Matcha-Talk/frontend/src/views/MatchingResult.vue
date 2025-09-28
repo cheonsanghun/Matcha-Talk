@@ -288,6 +288,34 @@ watch(chatReady, (ready) => {
   }
 })
 
+let matchStatusPollTimer = null
+
+function startMatchStatusPolling () {
+  if (matchStatusPollTimer || !isPending.value) return
+
+  matchStatusPollTimer = setInterval(() => {
+    if (!isPending.value) {
+      stopMatchStatusPolling()
+      return
+    }
+    void fetchLatestMatchFromRest({ silent: true })
+  }, 3000)
+}
+
+function stopMatchStatusPolling () {
+  if (!matchStatusPollTimer) return
+  clearInterval(matchStatusPollTimer)
+  matchStatusPollTimer = null
+}
+
+watch(isPending, (pending) => {
+  if (pending) {
+    startMatchStatusPolling()
+  } else {
+    stopMatchStatusPolling()
+  }
+}, { immediate: true })
+
 function startCountdown (expiresAt) {
   if (countdownTimer) {
     clearInterval(countdownTimer)
@@ -540,23 +568,37 @@ function restartMatching () {
   router.push({ name: 'match' })
 }
 
-async function fetchLatestMatchFromRest () {
-  try {
-    const loginId = resolveClientIdentity(auth)
-    if (!loginId) return
-    const response = await api.get('/match/results/latest', {
-      headers: {
-        'X-Login-Id': loginId,
-      },
-      skipSnakifyParams: true,
-    })
-    if (response.status === 204 || !response.data) {
-      return
-    }
-    ingestMatchPayload(response.data, { statusMessage: '최근 매칭 정보를 불러왔습니다.' })
-  } catch (error) {
-    console.warn('Failed to fetch latest match result', error?.response?.data || error?.message)
+let latestMatchFetchPromise = null
+
+async function fetchLatestMatchFromRest (options = {}) {
+  const { silent = false } = options
+  if (latestMatchFetchPromise) {
+    return latestMatchFetchPromise
   }
+
+  latestMatchFetchPromise = (async () => {
+    try {
+      const loginId = resolveClientIdentity(auth)
+      if (!loginId) return
+      const response = await api.get('/match/results/latest', {
+        headers: {
+          'X-Login-Id': loginId,
+        },
+        skipSnakifyParams: true,
+      })
+      if (response.status === 204 || !response.data) {
+        return
+      }
+      const statusOptions = silent ? {} : { statusMessage: '최근 매칭 정보를 불러왔습니다.' }
+      ingestMatchPayload(response.data, statusOptions)
+    } catch (error) {
+      console.warn('Failed to fetch latest match result', error?.response?.data || error?.message)
+    } finally {
+      latestMatchFetchPromise = null
+    }
+  })()
+
+  return latestMatchFetchPromise
 }
 
 function extractBootstrapFromRoute () {
@@ -796,6 +838,8 @@ onBeforeUnmount(() => {
     clearInterval(countdownTimer)
     countdownTimer = null
   }
+
+  stopMatchStatusPolling()
 })
 </script>
 
