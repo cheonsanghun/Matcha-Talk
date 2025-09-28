@@ -321,6 +321,9 @@ async function loadRooms() {
 
     data.forEach((room) => {
       const entry = normalizeRoomListEntry(room, meNickname)
+      if (!entry || entry.type === 'RANDOM' || entry.temporary) {
+        return
+      }
       ensureConversation(entry.id)
       if (entry.type === 'GROUP') {
         groupRooms.push(entry)
@@ -345,6 +348,7 @@ async function loadRooms() {
 function normalizeRoomListEntry(room, meNickname) {
   const participants = room.memberNicknames ?? []
   const type = (room.roomType || 'PRIVATE').toString().toUpperCase()
+  const temporary = Boolean(room.temporary ?? room.temp ?? false)
   const others = meNickname ? participants.filter((nick) => nick !== meNickname) : participants
 
   let displayName
@@ -361,7 +365,8 @@ function normalizeRoomListEntry(room, meNickname) {
     participants,
     participantLogins: room.memberLoginIds || [],
     participantsDetail: [],
-    type
+    type,
+    temporary,
   }
 }
 

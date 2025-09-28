@@ -109,6 +109,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useMatchStore } from '../stores/match'
 import { resolveClientIdentity } from '../utils/identity'
+import { camelizeKeys } from '../utils/case'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -156,18 +157,34 @@ async function startMatch(){
       }
     })
     if (data?.matchedNow && data?.match) {
-      const bootstrapPayload = {
+      const normalizedMatch = camelizeKeys(data.match)
+
+      const handshakePayload = {
         matchFound: true,
-        roomId: data.match.roomId ?? null,
-        partnerName: data.match.partnerNickName ?? data.match.partnerNickname ?? '',
+        partnerName: normalizedMatch.partnerNickName || normalizedMatch.partnerNickname || '',
+        partnerLoginId: normalizedMatch.partnerLoginId ?? null,
+        partnerUserPid: normalizedMatch.partnerUserPid ?? null,
+        roomId: normalizedMatch.roomId ?? null,
+        status: normalizedMatch.status ?? null,
+        followStatus: normalizedMatch.followStatus ?? null,
+        followRelationId: normalizedMatch.followRelationId ?? normalizedMatch.followId ?? null,
+        handshake: {
+          myRequestId: normalizedMatch.myRequestId ?? data.requestId ?? null,
+          partnerRequestId: normalizedMatch.partnerRequestId ?? null,
+          handshakeKey: normalizedMatch.handshakeKey ?? null,
+          expiresAt: normalizedMatch.expiresAt ?? null,
+          status: normalizedMatch.status ?? null,
+          roomId: normalizedMatch.roomId ?? null,
+          followStatus: normalizedMatch.followStatus ?? null,
+          followRelationId: normalizedMatch.followRelationId ?? normalizedMatch.followId ?? null,
+        },
       }
-      matchStore.setBootstrap(bootstrapPayload)
+
+      matchStore.setBootstrap(handshakePayload)
       router.push({
         name: 'match-result',
         query: {
           matched: '1',
-          roomId: bootstrapPayload.roomId != null ? String(bootstrapPayload.roomId) : undefined,
-          partner: bootstrapPayload.partnerName || undefined,
         },
       })
     } else {
