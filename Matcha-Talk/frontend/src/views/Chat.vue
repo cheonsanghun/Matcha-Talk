@@ -221,12 +221,16 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { createRealtimeClient } from '../services/ws'
 import api from '../services/api'
 import { translate } from '../services/translator'
 import { useVocabularyStore } from '../stores/vocabulary'
 import { resolveClientIdentity } from '../utils/identity'
 import VideoChat from '../components/VideoChat.vue'
+import {
+  createFileSelectHandler,
+  createIncomingMessageHandler,
+  useRealtimeChatClient,
+} from '../composables/useChatClient'
 
 const query = ref('')
 const tab = ref('direct')
@@ -247,17 +251,41 @@ const vocabularyStore = useVocabularyStore()
 const route = useRoute()
 const router = useRouter()
 
-let realtimeClient = null
-let reconnectTimer = null
-let manualDisconnect = false
-let isConnecting = false
-let reconnectAttempts = 0
-const maxReconnectAttempts = 3
-const teardownHandlers = []
+function resolveCurrentRoomId () {
+  return current.value?.id
+}
+
+const handleIncomingMessage = createIncomingMessageHandler({
+  auth,
+  ensureConversation,
+  ensureRoomExists,
+  scrollToBottom: (roomKey) => {
+    if (current.value?.id === roomKey) {
+      scrollToBottom()
+    }
+  },
+  formatTime,
+})
+
+const handleFileSelect = createFileSelectHandler({
+  getRoomId: resolveCurrentRoomId,
+})
+
+const {
+  realtimeClient,
+  connect: connectRealtime,
+  disconnect: disconnectRealtime,
+  setManualDisconnect,
+} = useRealtimeChatClient(auth, {
+  maxReconnectAttempts: 3,
+  onChat: (payload) => handleIncomingMessage(payload),
+  onMatchResult: (payload) => handleMatchResultEvent(payload),
+})
 
 onMounted(async () => {
   await loadRooms()
   await ensureActiveRoomFromRoute()
+  setManualDisconnect(false)
   connectRealtime()
 })
 
@@ -291,24 +319,8 @@ watch(
 )
 
 onUnmounted(() => {
-  manualDisconnect = true
-
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-
-  teardownHandlers.forEach((fn) => {
-    try { fn?.() } catch (error) { console.warn('Failed to remove handler', error) }
-  })
-  teardownHandlers.length = 0
-
-  if (realtimeClient) {
-    try { realtimeClient.disconnect() } catch (error) {
-      console.warn('Failed to disconnect WebSocket cleanly', error)
-    }
-    realtimeClient = null
-  }
+  setManualDisconnect(true)
+  disconnectRealtime()
 })
 
 async function loadRooms() {
@@ -532,44 +544,15 @@ async function ensureRoomExists(roomId, fallbackName) {
   return room
 }
 
-async function handleIncomingMessage(payload) {
-  if (!payload) return
-
-  const roomKey = payload.roomId ?? payload.room_id
-  if (!roomKey) return
-
-  const content = payload.content ?? ''
-  const senderNickname = payload.senderNickName || payload.senderNickname || '상대방'
-  const messagesForRoom = ensureConversation(roomKey)
-  const myNickname = auth.user?.nickName || auth.user?.nickname
-
-  const message = {
-    id: `${roomKey}-${Date.now()}-${messagesForRoom.length}`,
-    text: content,
-    time: formatTime(payload.sentAt),
-    sender: senderNickname,
-    me: myNickname ? senderNickname === myNickname : false,
-    contentType: (payload.contentType || 'TEXT').toUpperCase(),
-    fileName: payload.fileName || null,
-    fileUrl: payload.fileUrl || null,
-    mimeType: payload.mimeType || null,
-    sizeBytes: payload.sizeBytes || null,
-    translation: null,
-    translating: false,
-    sentAt: payload.sentAt ?? null
+async function handleMatchResultEvent(payload) {
+  const roomId = payload?.roomId ?? payload?.room_id
+  const partner = payload?.partnerNickName || payload?.partnerNickname
+  if (roomId) {
+    await ensureRoomExists(roomId, partner)
   }
-
-  messagesForRoom.push(message)
-
-  const roomEntry = await ensureRoomExists(roomKey, senderNickname)
-  if (message.contentType === 'TEXT') {
-    roomEntry.last = content
-  } else {
-    roomEntry.last = message.fileName || content || '[첨부파일]'
-  }
-
-  if (current.value?.id === roomKey) {
-    scrollToBottom()
+  await loadRooms()
+  if (roomId) {
+    selectRoomById(Number(roomId))
   }
 }
 
@@ -583,70 +566,6 @@ function bubbleClass(message) {
     classes.push('bg-grey-lighten-4', 'text-body-2')
   }
   return classes
-}
-
-async function connectRealtime() {
-  if (isConnecting || manualDisconnect) return
-
-  const loginId = resolveClientIdentity(auth)
-
-  if (!realtimeClient) {
-    realtimeClient = createRealtimeClient({ queryParams: { loginId } })
-    teardownHandlers.push(
-      realtimeClient.onOpen(() => {
-        isConnecting = false
-        reconnectAttempts = 0
-      }),
-      realtimeClient.onClose((event) => {
-        console.log('[chat] WebSocket closed', event)
-        isConnecting = false
-        if (manualDisconnect) return
-        scheduleReconnect()
-      }),
-      realtimeClient.onError((event) => {
-        console.error('[chat] WebSocket error', event)
-      }),
-      realtimeClient.onEvent('chat', (payload) => {
-        handleIncomingMessage(payload)
-      }),
-      realtimeClient.onEvent('match-result', async (payload) => {
-        const roomId = payload?.roomId ?? payload?.room_id
-        const partner = payload?.partnerNickName || payload?.partnerNickname
-        if (roomId) {
-          await ensureRoomExists(roomId, partner)
-        }
-        await loadRooms()
-        if (roomId) {
-          selectRoomById(Number(roomId))
-        }
-      })
-    )
-  } else {
-    realtimeClient.setQueryParams({ loginId })
-  }
-
-  isConnecting = true
-  try {
-    await realtimeClient.connect()
-  } catch (error) {
-    console.error('[chat] Failed to connect WebSocket', error)
-    isConnecting = false
-  }
-}
-
-function scheduleReconnect() {
-  if (manualDisconnect) return
-  if (reconnectAttempts >= maxReconnectAttempts) {
-    console.error('[chat] Max reconnect attempts reached')
-    return
-  }
-  if (reconnectTimer) return
-
-  reconnectAttempts += 1
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null
-    connectRealtime()
-  }, 2000)
 }
 
 function formatTime(isoString) {
@@ -689,16 +608,16 @@ async function send() {
     return
   }
 
-  if (!realtimeClient?.isConnected()) {
+  if (!realtimeClient.value?.isConnected()) {
     await connectRealtime()
-    if (!realtimeClient?.isConnected()) {
+    if (!realtimeClient.value?.isConnected()) {
       console.warn('WebSocket not connected. Message was not sent.')
       return
     }
   }
 
   try {
-    realtimeClient.send({
+    realtimeClient.value.send({
       type: 'CHAT',
       roomId: Number(roomKey),
       content: message
@@ -716,28 +635,6 @@ async function send() {
 function triggerFilePicker() {
   if (!current.value?.id) return
   fileInput.value?.click()
-}
-
-async function handleFileSelect(event) {
-  const [file] = event.target?.files || []
-  event.target.value = ''
-
-  if (!file) return
-  if (!current.value?.id) {
-    alert('채팅방이 선택되지 않았습니다.')
-    return
-  }
-
-  try {
-    const formData = new FormData()
-    formData.append('file', file)
-    await api.post(`/rooms/${current.value.id}/attachments`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-  } catch (error) {
-    console.error('[chat] 파일 업로드 실패', error)
-    alert('파일을 업로드하지 못했습니다. 잠시 후 다시 시도하세요.')
-  }
 }
 
 function inviteParticipant() {

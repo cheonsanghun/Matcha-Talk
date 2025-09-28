@@ -105,17 +105,24 @@
                 </v-card>
               </v-col>
               <v-col cols="12" md="5">
-                <MatchChatPanel
-                  v-if="chatReady && roomId"
-                  :room-id="roomId"
-                  :partner-name="partnerName"
-                />
                 <v-card
-                  v-else
                   variant="outlined"
-                  class="pa-4 h-100 d-flex align-center justify-center text-center text-body-2 text-medium-emphasis"
+                  class="pa-4 h-100 d-flex flex-column align-center justify-center text-center text-body-2 text-medium-emphasis ga-3"
                 >
-                  양측이 수락하면 실시간 채팅을 이용할 수 있습니다.
+                  <div v-if="chatReady && roomId">
+                    실시간 채팅방이 열렸습니다. 아래 버튼을 눌러 대화 세션으로 이동하세요.
+                  </div>
+                  <div v-else>
+                    양측이 수락하면 실시간 채팅을 이용할 수 있습니다.
+                  </div>
+                  <v-btn
+                    v-if="chatReady && roomId"
+                    color="primary"
+                    variant="flat"
+                    @click="goToChatRoom"
+                  >
+                    매칭 세션 열기
+                  </v-btn>
                 </v-card>
               </v-col>
             </v-row>
@@ -186,7 +193,6 @@ import { resolveClientIdentity } from '../utils/identity'
 import api from '../services/api'
 import { useMatchStore } from '../stores/match'
 import followService from '../services/follow'
-import MatchChatPanel from '../components/MatchChatPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -270,11 +276,13 @@ const canAcceptFollow = computed(() => {
     followStatusUpper.value === 'PENDING'
 })
 
-const chatRouteQuery = computed(() => {
+const sessionRouteQuery = computed(() => {
   if (!roomId.value) return {}
   return {
     roomId: String(roomId.value),
-    partner: partnerName.value || undefined,
+    partnerName: partnerName.value || undefined,
+    partnerLoginId: partnerLoginId.value || undefined,
+    partnerUserPid: partnerUserPid.value != null ? String(partnerUserPid.value) : undefined,
   }
 })
 
@@ -431,6 +439,9 @@ function handleMatchFound (payload) {
 function handleMatchRoomReady (payload) {
   promotionNotice.value = false
   ingestMatchPayload(payload, { statusMessage: '채팅방이 준비되었습니다!' })
+  if (roomId.value && partnerLoginId.value) {
+    router.push({ name: 'match-session', query: { ...sessionRouteQuery.value } })
+  }
 }
 
 function handleMatchDeclined (payload) {
@@ -560,7 +571,11 @@ async function acceptFollowRequest () {
 
 function goToChatRoom () {
   if (!roomId.value) return
-  router.push({ name: 'chat', query: { ...chatRouteQuery.value } })
+  if (!partnerLoginId.value) {
+    alert('상대방 입장을 기다리고 있습니다.')
+    return
+  }
+  router.push({ name: 'match-session', query: { ...sessionRouteQuery.value } })
 }
 
 function restartMatching () {
