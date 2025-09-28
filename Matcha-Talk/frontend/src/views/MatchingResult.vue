@@ -606,16 +606,19 @@ function extractBootstrapFromRoute () {
   if (matched === '1' || matched === 'true') {
     const parsedRoomId = typeof routeRoomId !== 'undefined' ? Number(routeRoomId) : null
     const parsedRequestId = typeof requestId !== 'undefined' ? Number(requestId) : null
+    const handshake = {
+      status: typeof status === 'string' ? status : null,
+      roomId: Number.isFinite(parsedRoomId) ? parsedRoomId : null,
+    }
+    if (typeof requestId !== 'undefined') {
+      handshake.myRequestId = Number.isFinite(parsedRequestId) ? parsedRequestId : null
+    }
     return {
       matchFound: true,
       partnerName: typeof partner === 'string' ? partner : '',
       roomId: Number.isFinite(parsedRoomId) ? parsedRoomId : null,
       status: typeof status === 'string' ? status : null,
-      handshake: {
-        myRequestId: Number.isFinite(parsedRequestId) ? parsedRequestId : null,
-        status: typeof status === 'string' ? status : null,
-        roomId: Number.isFinite(parsedRoomId) ? parsedRoomId : null,
-      },
+      handshake,
     }
   }
   return null

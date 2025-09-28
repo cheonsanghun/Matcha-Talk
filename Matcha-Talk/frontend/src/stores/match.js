@@ -102,9 +102,15 @@ function mergeBootstrapPayload (current, patch) {
 
   const nextHandshake = {
     ...(current.handshake || {}),
-    ...(patch?.handshake || {}),
   }
-  if (patch?.myRequestId !== undefined) {
+  const handshakePatch = (patch?.handshake && typeof patch.handshake === 'object') ? patch.handshake : {}
+  for (const [key, value] of Object.entries(handshakePatch)) {
+    if (key === 'myRequestId' && (value === null || value === undefined)) {
+      continue
+    }
+    nextHandshake[key] = value
+  }
+  if (patch?.myRequestId !== undefined && patch.myRequestId !== null) {
     nextHandshake.myRequestId = patch.myRequestId
   }
   if (patch?.partnerRequestId !== undefined) {
