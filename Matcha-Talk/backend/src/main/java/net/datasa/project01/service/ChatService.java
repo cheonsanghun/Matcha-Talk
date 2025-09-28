@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -46,6 +47,8 @@ public class ChatService {
         private final RoomMessageRepository roomMessageRepository;
         private final TranslationService translationService;
         private final RealTimeMessagingService messagingService;
+
+        private static final String PROMOTION_REASON_MUTUAL_FOLLOW = "MUTUAL_FOLLOW";
 
         private final Path attachmentBasePath = Paths.get("uploads", "attachments");
 
@@ -130,9 +133,17 @@ public class ChatService {
 
         @Transactional
         public Room createRandomRoom(User user1, User user2) {
+                return createRandomMatchRoom(user1, user2);
+        }
+
+        @Transactional
+        public Room createRandomMatchRoom(User user1, User user2) {
                 Room newRoom = Room.builder()
                         .roomType(Room.RoomType.RANDOM)
                         .capacity(2)
+                        .createdFromRoom(null)
+                        .promotedAt(null)
+                        .promotedReason(null)
                         .build();
                 roomRepository.save(newRoom);
 
@@ -153,6 +164,18 @@ public class ChatService {
                 return newRoom;
         }
 
+        @Transactional
+        public Room promoteRandomRoom(Room room) {
+                if (room == null || room.getRoomType() != Room.RoomType.RANDOM) {
+                        return room;
+                }
+
+                Room origin = room.getCreatedFromRoom() != null ? room.getCreatedFromRoom() : room;
+                room.markPromoted(Room.RoomType.PRIVATE, origin, PROMOTION_REASON_MUTUAL_FOLLOW, LocalDateTime.now());
+
+                return roomRepository.save(room);
+        }
+
         @Transactional(readOnly = true)
         public List<RoomListResponseDto> findRoomsByUser(String loginId) {
                 User user = userRepository.findByLoginId(loginId)
@@ -167,6 +190,7 @@ public class ChatService {
 
                 // 3. 그룹핑된 데이터를 DTO로 변환
                 return roomsGroupedByRoom.entrySet().stream()
+                        .filter(entry -> !entry.getKey().isTemporary())
                         .map(entry -> RoomListResponseDto.fromEntity(entry.getKey(), entry.getValue()))
                         .collect(Collectors.toList());
         }

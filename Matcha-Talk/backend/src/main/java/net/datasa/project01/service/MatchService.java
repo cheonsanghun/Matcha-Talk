@@ -165,7 +165,7 @@ public class MatchService {
                 .orElseThrow(() -> new IllegalStateException("상대 매칭 정보를 찾을 수 없습니다."));
 
         if (partner.getStatus() == MatchRequest.MatchStatus.CONFIRMED) {
-            Room room = chatService.createRandomRoom(request.getUser(), partner.getUser());
+            Room room = chatService.createRandomMatchRoom(request.getUser(), partner.getUser());
             request.setRoom(room);
             partner.setRoom(room);
             request.setHandshakeExpiresAt(null);
@@ -250,6 +250,23 @@ public class MatchService {
                 .expiresAt(myRequest.getHandshakeExpiresAt())
                 .status(myRequest.getStatus())
                 .build();
+    }
+
+    public void archiveMatchRequestsForRoom(Room room) {
+        List<MatchRequest> requests = matchRequestRepository.findAllByRoomAndStatusIn(
+                room,
+                java.util.List.of(MatchRequest.MatchStatus.CONFIRMED)
+        );
+
+        if (requests.isEmpty()) {
+            return;
+        }
+
+        for (MatchRequest request : requests) {
+            request.setStatus(MatchRequest.MatchStatus.ARCHIVED);
+        }
+
+        matchRequestRepository.saveAll(requests);
     }
 
     private Optional<MatchRequest> findHandshakePartner(MatchRequest request) {

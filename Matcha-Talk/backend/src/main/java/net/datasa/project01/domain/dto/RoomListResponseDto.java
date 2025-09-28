@@ -15,6 +15,7 @@ public class RoomListResponseDto {
     private final Room.RoomType roomType;
     private final int memberCount;
     private final List<String> memberNicknames;
+    private final boolean temporary;
 
     public static RoomListResponseDto fromEntity(Room room, List<RoomMember> members) {
         List<String> nicknames = members.stream()
@@ -26,6 +27,7 @@ public class RoomListResponseDto {
                 .roomType(room.getRoomType())
                 .memberCount(members.size())
                 .memberNicknames(nicknames)
+                .temporary(room.isTemporary())
                 .build();
     }
 }

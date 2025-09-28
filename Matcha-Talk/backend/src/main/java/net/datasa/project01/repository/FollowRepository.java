@@ -5,6 +5,7 @@ import net.datasa.project01.domain.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface FollowRepository extends JpaRepository<Follow, Long> {
     boolean existsByFollowerAndFollowee(User follower, User followee);
@@ -12,4 +13,8 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
     List<Follow> findAllByFollowerAndStatus(User follower, Follow.FollowStatus status);
 
     List<Follow> findAllByFolloweeAndStatus(User followee, Follow.FollowStatus status);
+
+    Optional<Follow> findByFollowerAndFollowee(User follower, User followee);
+
+    Optional<Follow> findByFollowerAndFolloweeAndStatus(User follower, User followee, Follow.FollowStatus status);
 }
