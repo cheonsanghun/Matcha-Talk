@@ -226,6 +226,7 @@ const declineLoading = ref(false)
 let countdownTimer = null
 
 const isPending = computed(() => !matchReady.value && !matchDeclined.value)
+const shouldPollMatchStatus = computed(() => !chatReady.value && !matchDeclined.value)
 const handshakeStatusLabel = computed(() => {
   if (!handshakeStatus.value) return '상태 확인 중'
   switch (handshakeStatus.value) {
@@ -299,10 +300,10 @@ watch(chatReady, (ready) => {
 let matchStatusPollTimer = null
 
 function startMatchStatusPolling () {
-  if (matchStatusPollTimer || !isPending.value) return
+  if (matchStatusPollTimer || !shouldPollMatchStatus.value) return
 
   matchStatusPollTimer = setInterval(() => {
-    if (!isPending.value) {
+    if (!shouldPollMatchStatus.value) {
       stopMatchStatusPolling()
       return
     }
@@ -316,9 +317,10 @@ function stopMatchStatusPolling () {
   matchStatusPollTimer = null
 }
 
-watch(isPending, (pending) => {
-  if (pending) {
+watch(shouldPollMatchStatus, (shouldPoll) => {
+  if (shouldPoll) {
     startMatchStatusPolling()
+    void fetchLatestMatchFromRest({ silent: true })
   } else {
     stopMatchStatusPolling()
   }
