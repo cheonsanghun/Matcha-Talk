@@ -8,12 +8,14 @@ import net.datasa.project01.domain.dto.MatchFoundResponseDto;
 import net.datasa.project01.domain.dto.MatchRequestDto;
 import net.datasa.project01.domain.dto.MatchStartResponseDto;
 import net.datasa.project01.service.MatchService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -55,6 +57,9 @@ public class MatchController {
         } catch (JsonProcessingException e) {
             log.error("JSON processing error during match request.", e);
             return ResponseEntity.internalServerError().build();
+        } catch (IllegalStateException e) {
+            log.warn("Match request could not be processed. Reason: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
         } catch (IllegalArgumentException e) {
             log.warn("Invalid match request. Reason: {}", e.getMessage());
             return ResponseEntity.badRequest().build();
@@ -77,6 +82,48 @@ public class MatchController {
                     .orElseGet(() -> ResponseEntity.noContent().build());
         } catch (IllegalArgumentException e) {
             log.warn("Invalid match lookup request. Reason: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @PostMapping("/requests/{id}/accept")
+    public ResponseEntity<MatchFoundResponseDto> acceptMatchRequest(
+            @PathVariable("id") Long requestId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestHeader(value = "X-Login-Id", required = false) String headerLoginId) {
+
+        try {
+            String loginId = resolveLoginId(userDetails, null, headerLoginId);
+            if (!StringUtils.hasText(loginId)) {
+                return ResponseEntity.badRequest().build();
+            }
+
+            MatchFoundResponseDto response = matchService.acceptMatchRequest(loginId, requestId);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid accept request. Reason: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        } catch (IllegalStateException e) {
+            log.warn("Accept request rejected. Reason: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+    }
+
+    @PostMapping("/requests/{id}/decline")
+    public ResponseEntity<MatchFoundResponseDto> declineMatchRequest(
+            @PathVariable("id") Long requestId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestHeader(value = "X-Login-Id", required = false) String headerLoginId) {
+        try {
+            String loginId = resolveLoginId(userDetails, null, headerLoginId);
+            if (!StringUtils.hasText(loginId)) {
+                return ResponseEntity.badRequest().build();
+            }
+
+            MatchFoundResponseDto response = matchService.declineMatchRequest(loginId, requestId);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid decline request. Reason: {}", e.getMessage());
             return ResponseEntity.badRequest().build();
         }
     }

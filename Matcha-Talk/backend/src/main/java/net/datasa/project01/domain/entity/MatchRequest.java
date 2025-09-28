@@ -46,7 +46,16 @@ public class MatchRequest {
     @Column(name = "interests_json", columnDefinition = "JSON", nullable = false)
     private String interestsJson;
 
-    // [수정됨] String -> Enum
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "room_id")
+    private Room room;
+
+    @Column(name = "handshake_key", length = 64)
+    private String handshakeKey;
+
+    @Column(name = "handshake_expires_at")
+    private LocalDateTime handshakeExpiresAt;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 10, nullable = false)
@@ -62,6 +71,10 @@ public class MatchRequest {
     }
 
     public enum MatchStatus {
-        WAITING, MATCHED, CANCELLED
+        WAITING,
+        MATCHED,
+        CONFIRMED,
+        DECLINED,
+        CANCELLED
     }
 }
