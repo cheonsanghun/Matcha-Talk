@@ -592,6 +592,82 @@ let reconnectTimer = null
 let manualDisconnect = false
 const teardownHandlers = []
 
+function getAuthLoginId () {
+  if (!auth) return null
+  return auth.loginId || auth.user?.loginId || auth.user?.login_id || auth.user?.username || null
+}
+
+function isGuestLoginId (loginId) {
+  return typeof loginId === 'string' && loginId.startsWith('guest-')
+}
+
+let awaitingIdentityPromise = null
+function waitForStableLoginId (timeout = 3000) {
+  if (!auth) return Promise.resolve(null)
+
+  if (awaitingIdentityPromise) {
+    return awaitingIdentityPromise
+  }
+
+  awaitingIdentityPromise = new Promise((resolve) => {
+    let settled = false
+    let timer = null
+    const stop = watch(
+      () => getAuthLoginId(),
+      (value) => {
+        if (!value || isGuestLoginId(value)) return
+        if (settled) return
+        settled = true
+        if (timer != null) {
+          clearTimeout(timer)
+        }
+        stop()
+        resolve(value)
+      },
+      { immediate: true },
+    )
+
+    timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      stop()
+      resolve(null)
+    }, timeout)
+  }).finally(() => {
+    awaitingIdentityPromise = null
+  })
+
+  return awaitingIdentityPromise
+}
+
+async function ensureRealtimeIdentity () {
+  let loginId = getAuthLoginId()
+  if (loginId && !isGuestLoginId(loginId)) {
+    return loginId
+  }
+
+  if (typeof auth?.hydrateMeIfNeeded === 'function') {
+    try {
+      await auth.hydrateMeIfNeeded()
+    } catch (error) {
+      console.warn('⚠️ Failed to hydrate auth store before realtime connection', error)
+    }
+    loginId = getAuthLoginId()
+    if (loginId && !isGuestLoginId(loginId)) {
+      return loginId
+    }
+  }
+
+  if (auth?.isAuthenticated) {
+    const awaited = await waitForStableLoginId()
+    if (awaited && !isGuestLoginId(awaited)) {
+      return awaited
+    }
+  }
+
+  return null
+}
+
 async function connectWebSocket () {
   if (manualDisconnect) return
 
@@ -600,9 +676,14 @@ async function connectWebSocket () {
     return
   }
 
+
   if (isConnecting.value) return
 
-  const loginId = resolveClientIdentity(auth)
+  let loginId = await ensureRealtimeIdentity()
+  if (manualDisconnect) return
+  if (!loginId) {
+    loginId = resolveClientIdentity(auth)
+  }
 
   if (!websocketClient) {
     websocketClient = createRealtimeClient({ queryParams: { loginId } })
