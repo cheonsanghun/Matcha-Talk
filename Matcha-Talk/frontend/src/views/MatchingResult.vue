@@ -593,7 +593,14 @@ let manualDisconnect = false
 const teardownHandlers = []
 
 async function connectWebSocket () {
-  if (isConnecting.value || manualDisconnect) return
+  if (manualDisconnect) return
+
+  if (websocketClient?.isConnected?.()) {
+    isConnecting.value = false
+    return
+  }
+
+  if (isConnecting.value) return
 
   const loginId = resolveClientIdentity(auth)
 
@@ -626,6 +633,10 @@ async function connectWebSocket () {
     )
   } else {
     websocketClient.setQueryParams({ loginId })
+    if (websocketClient.isConnected()) {
+      isConnecting.value = false
+      return
+    }
   }
 
   isConnecting.value = true
@@ -665,11 +676,13 @@ onMounted(async () => {
     applyBootstrap(matchStore.bootstrap)
   }
 
+  const websocketPromise = connectWebSocket()
+
   if (!matchReady.value) {
     await fetchLatestMatchFromRest()
   }
 
-  connectWebSocket()
+  await websocketPromise
 })
 
 onBeforeUnmount(() => {
