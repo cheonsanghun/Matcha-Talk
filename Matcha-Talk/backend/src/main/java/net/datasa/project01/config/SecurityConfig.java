@@ -77,11 +77,8 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration c = new CorsConfiguration();
         c.setAllowedOriginPatterns(List.of(
-                "http://localhost:*",
                 "https://localhost:*",
-                "http://127.0.0.1:*",
                 "https://127.0.0.1:*",
-                "http://192.168.*:*",
                 "https://192.168.*:*",
                 "https://*.ngrok-free.app"
         ));
