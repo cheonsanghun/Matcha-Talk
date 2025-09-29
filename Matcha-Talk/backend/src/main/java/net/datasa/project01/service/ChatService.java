@@ -392,6 +392,7 @@ public class ChatService {
 
                 return ChatMessageResponseDto.builder()
                         .roomId(message.getRoom().getRoomId())
+                        .senderLoginId(message.getSender() != null ? message.getSender().getLoginId() : null)
                         .senderNickName(message.getSender() != null ? message.getSender().getNickName() : "시스템")
                         .senderLanguageCode(message.getSender() != null ? message.getSender().getLanguageCode() : null)
                         .content(message.getTextContent())

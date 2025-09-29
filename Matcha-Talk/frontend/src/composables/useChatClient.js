@@ -24,29 +24,27 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
     if (!roomKey) return
 
     const content = payload.content ?? ''
-    const senderNickname = payload.senderNickName || payload.senderNickname || '상대방'
-    const senderLoginId = payload.senderLoginId ||
-      payload.senderLoginID ||
-      payload.sender_login_id ||
-      payload.senderLogin ||
+    const senderNickname = payload.senderNickName ?? payload.senderNickname ?? null
+    const senderLoginId = payload.senderLoginId ??
+      payload.senderLoginID ??
+      payload.sender_login_id ??
+      payload.senderLogin ??
       null
+    if (!senderLoginId) {
+      console.warn('[chat] Received message without senderLoginId', payload)
+    }
     const messagesForRoom = ensureConversation(roomKey)
-    const myNickname = auth.user?.nickName || auth.user?.nickname
     const myLoginId = resolveClientIdentity(auth)
     const normalizedMyLogin = myLoginId ? String(myLoginId).toLowerCase() : null
     const normalizedSenderLogin = senderLoginId ? String(senderLoginId).toLowerCase() : null
-    let isMine = false
-    if (normalizedMyLogin && normalizedSenderLogin) {
-      isMine = normalizedMyLogin === normalizedSenderLogin
-    } else if (myNickname) {
-      isMine = senderNickname === myNickname
-    }
+    const isMine = Boolean(normalizedMyLogin && normalizedSenderLogin && normalizedMyLogin === normalizedSenderLogin)
+    const displayName = senderNickname || senderLoginId || '상대방'
 
     const message = {
       id: `${roomKey}-${Date.now()}-${messagesForRoom.length}`,
       text: content,
       time: timeFormatter(payload.sentAt),
-      sender: senderNickname,
+      sender: displayName,
       senderLoginId,
       me: isMine,
       contentType: (payload.contentType || 'TEXT').toUpperCase(),
@@ -61,7 +59,7 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
 
     messagesForRoom.push(message)
 
-    const roomEntry = await ensureRoomExists(roomKey, senderNickname)
+    const roomEntry = await ensureRoomExists(roomKey, displayName)
     if (roomEntry && Object.prototype.hasOwnProperty.call(roomEntry, 'last')) {
       if (message.contentType === 'TEXT') {
         roomEntry.last = content
