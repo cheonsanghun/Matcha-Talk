@@ -767,10 +767,13 @@ function goBackToResult() {
 
 .session-card {
   background: #fff;
-  min-height: 75vh;
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: calc(100vh - 220px);
+  max-height: calc(100vh - 220px);
+  overflow: hidden;
+
 }
 
 .session-content {
@@ -780,6 +783,9 @@ function goBackToResult() {
   padding: 24px;
   height: 100%;
   min-height: 0;
+  flex: 1;
+  overflow: hidden;
+
 }
 
 .video-pane {
@@ -788,6 +794,8 @@ function goBackToResult() {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  height: 100%;
+
 }
 
 .session-video {
@@ -807,6 +815,8 @@ function goBackToResult() {
   flex-direction: column;
   border-left: 1px solid #f0f0f0;
   min-height: 0;
+  height: 100%;
+
 }
 
 .chat-messages {
@@ -823,8 +833,9 @@ function goBackToResult() {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  justify-content: flex-end;
-  flex: 1;
+  justify-content: flex-start;
+  flex: 1 0 auto;
+
 }
 
 .message-row {
@@ -879,6 +890,10 @@ function goBackToResult() {
 @media (max-width: 1200px) {
   .session-content {
     flex-direction: column;
+  }
+  .session-card {
+    height: auto;
+    max-height: none;
   }
   .video-pane,
   .chat-pane {

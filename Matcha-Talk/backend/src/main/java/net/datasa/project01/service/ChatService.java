@@ -18,6 +18,7 @@ import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.RoomMessage;
 import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
+import net.datasa.project01.service.support.MatchRequestSanitizer;
 import net.datasa.project01.repository.FollowRepository;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -488,6 +489,7 @@ public class ChatService {
                         request.setRoom(null);
                         request.setHandshakeKey(null);
                         request.setHandshakeExpiresAt(null);
+                        MatchRequestSanitizer.normalizeAgeRange(request);
                 }
 
                 matchRequestRepository.saveAll(relatedRequests);

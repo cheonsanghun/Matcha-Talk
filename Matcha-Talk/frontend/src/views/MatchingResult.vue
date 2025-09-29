@@ -148,25 +148,10 @@
               </v-btn>
             </div>
 
-            <div class="d-flex justify-center gap-4 mt-6 follow-actions">
-              <v-btn
-                v-if="canRequestFollow"
-                color="pink"
-                variant="tonal"
-                :loading="followRequestLoading"
-                @click="requestFollow"
-              >
-                팔로우 요청 보내기
-              </v-btn>
-              <v-btn
-                v-if="canAcceptFollow"
-                color="success"
-                variant="tonal"
-                :loading="followAcceptLoading"
-                @click="acceptFollowRequest"
-              >
-                팔로우 수락
-              </v-btn>
+            <div class="text-center mt-6 follow-actions">
+              <v-alert type="info" variant="tonal" border="start" class="mb-4">
+                팔로우 요청과 수락은 영상 통화 화면에서 진행할 수 있습니다.
+              </v-alert>
               <v-btn
                 v-if="chatReady && roomId"
                 color="primary"
@@ -192,7 +177,6 @@ import { camelizeKeys } from '../utils/case'
 import { resolveClientIdentity } from '../utils/identity'
 import api from '../services/api'
 import { useMatchStore } from '../stores/match'
-import followService from '../services/follow'
 
 const router = useRouter()
 const route = useRoute()
@@ -223,8 +207,6 @@ const followState = reactive({
   outgoingStatus: null,
   mutual: false,
 })
-const followRequestLoading = ref(false)
-const followAcceptLoading = ref(false)
 const acceptLoading = ref(false)
 const declineLoading = ref(false)
 
@@ -321,18 +303,6 @@ const followStatusMessage = computed(() => {
   }
   return followState.status || ''
 })
-const canRequestFollow = computed(() => {
-  if (partnerUserPid.value == null) return false
-  if (hasMutualFollow.value) return false
-  const outgoing = outgoingStatusUpper.value
-  if (outgoing === 'PENDING' || outgoing === 'ACCEPTED') return false
-  return true
-})
-const canAcceptFollow = computed(() => {
-  if (!followState.incomingId) return false
-  return incomingStatusUpper.value === 'PENDING'
-})
-
 const sessionRouteQuery = computed(() => {
   if (!roomId.value) return {}
   return {
@@ -591,65 +561,6 @@ async function declineMatch () {
     alert('매칭 거절에 실패했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
   } finally {
     declineLoading.value = false
-  }
-}
-
-async function requestFollow () {
-  if (!canRequestFollow.value || followRequestLoading.value) return
-  const followeeId = Number(partnerUserPid.value)
-  if (!Number.isFinite(followeeId) || followeeId <= 0) {
-    alert('팔로우 요청 대상 정보를 확인할 수 없습니다.')
-    return
-  }
-  followRequestLoading.value = true
-  try {
-    const { data } = await followService.requestFollow(followeeId)
-    followState.outgoingId = toFiniteNumber(data?.followId) ?? followState.outgoingId
-    followState.outgoingStatus = data?.status ? data.status.toString().toUpperCase() : 'PENDING'
-    followState.status = 'PENDING_OUTGOING'
-    followState.relationId = followState.outgoingId ?? followState.relationId
-    matchStore.mergeBootstrap({
-      followStatus: followState.status,
-      followRelationId: followState.relationId,
-      outgoingFollowId: followState.outgoingId,
-      outgoingFollowStatus: followState.outgoingStatus,
-    })
-    sessionStatus.value = '팔로우 요청을 전송했습니다.'
-  } catch (error) {
-    console.error('Failed to send follow request', error)
-    alert('팔로우 요청에 실패했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
-  } finally {
-    followRequestLoading.value = false
-  }
-}
-
-async function acceptFollowRequest () {
-  if (!canAcceptFollow.value || followAcceptLoading.value) return
-  const followId = followState.incomingId ?? followState.relationId
-  if (!followId) {
-    alert('수락할 팔로우 요청을 찾을 수 없습니다.')
-    return
-  }
-  followAcceptLoading.value = true
-  try {
-    await followService.acceptFollow(followId)
-    followState.incomingStatus = 'ACCEPTED'
-    followState.status = hasMutualFollow.value ? 'ACCEPTED' : 'ACCEPTED_INCOMING'
-    followState.relationId = followState.incomingId ?? followId
-    followState.mutual = hasMutualFollow.value
-    matchStore.mergeBootstrap({
-      followStatus: followState.status,
-      followRelationId: followState.relationId,
-      incomingFollowId: followState.incomingId ?? followId,
-      incomingFollowStatus: followState.incomingStatus,
-      mutualFollow: followState.mutual,
-    })
-    promotionNotice.value = followState.mutual || promotionNotice.value
-  } catch (error) {
-    console.error('Failed to accept follow request', error)
-    alert('팔로우 수락에 실패했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
-  } finally {
-    followAcceptLoading.value = false
   }
 }
 

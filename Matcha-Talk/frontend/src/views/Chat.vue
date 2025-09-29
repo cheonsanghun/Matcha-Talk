@@ -21,6 +21,14 @@
             hide-details
           />
         </div>
+        <div class="px-4 pb-3 d-flex ga-2 flex-wrap follow-stats">
+          <v-chip size="small" variant="tonal" color="primary" class="text-caption">
+            팔로잉 {{ followings.length }}
+          </v-chip>
+          <v-chip size="small" variant="tonal" color="pink" class="text-caption">
+            팔로워 {{ followers.length }}
+          </v-chip>
+        </div>
         <v-tabs v-model="tab" density="comfortable" class="px-4">
           <v-tab value="direct">1:1 채팅</v-tab>
           <v-tab value="group">그룹 채팅</v-tab>
@@ -28,9 +36,15 @@
         <v-divider />
         <div class="flex-grow-1 overflow-y-auto">
           <v-list v-if="tab === 'direct'">
-            <template v-if="filteredChats.length">
+            <template v-if="filteredDirectChats.length">
+              <v-list-subheader
+                v-if="filteredFollowShortcuts.length"
+                class="text-caption text-medium-emphasis"
+              >
+                참여 중인 1:1 채팅
+              </v-list-subheader>
               <v-list-item
-                v-for="item in filteredChats"
+                v-for="item in filteredDirectChats"
                 :key="item.id"
                 :active="current.id === item.id"
                 @click="openChat(item)"
@@ -50,7 +64,34 @@
                 <v-list-item-subtitle>{{ item.last }}</v-list-item-subtitle>
               </v-list-item>
             </template>
-            <v-list-item v-else>
+
+            <template v-if="filteredFollowShortcuts.length">
+              <v-list-subheader class="text-caption text-medium-emphasis">
+                서로 팔로우한 친구
+              </v-list-subheader>
+              <v-list-item
+                v-for="item in filteredFollowShortcuts"
+                :key="item.id"
+                :active="current.id === item.id"
+                @click="openChat(item)"
+                lines="two"
+              >
+                <template #prepend>
+                  <v-avatar size="40">
+                    <template v-if="item.avatarUrl">
+                      <v-img :src="item.avatarUrl" alt="프로필 이미지" cover />
+                    </template>
+                    <template v-else>
+                      <v-icon color="pink">mdi-account-heart</v-icon>
+                    </template>
+                  </v-avatar>
+                </template>
+                <v-list-item-title>{{ item.name }}</v-list-item-title>
+                <v-list-item-subtitle>{{ item.last }}</v-list-item-subtitle>
+              </v-list-item>
+            </template>
+
+            <v-list-item v-if="!filteredDirectChats.length && !filteredFollowShortcuts.length">
               <v-list-item-title class="text-caption text-grey">
                 참여 중인 1:1 채팅이 없습니다.
               </v-list-item-title>
@@ -248,6 +289,8 @@ const conversations = ref({})
 const current = ref({})
 const draft = ref('')
 const followings = ref([])
+const followers = ref([])
+
 
 const chatMessagesContainer = ref(null)
 const fileInput = ref(null)
@@ -340,9 +383,10 @@ async function loadRooms(options = {}) {
   try {
     isLoadingRooms.value = true
     const { preserveCurrent = false } = options
-    const [roomsResponse, followingList] = await Promise.all([
+    const [roomsResponse, followData] = await Promise.all([
       api.get('/rooms/my'),
-      fetchFollowingList(),
+      fetchFollowLists(),
+
     ])
 
     const data = Array.isArray(roomsResponse?.data) ? roomsResponse.data : []
@@ -363,8 +407,9 @@ async function loadRooms(options = {}) {
       }
     })
 
-    followings.value = Array.isArray(followingList) ? followingList : []
-    const followEntries = buildFollowEntries(followings.value, directRooms)
+    followings.value = Array.isArray(followData?.following) ? followData.following : []
+    followers.value = Array.isArray(followData?.followers) ? followData.followers : []
+    const followEntries = buildFollowEntries(followings.value, followers.value, directRooms)
 
     chats.value = [...directRooms, ...followEntries]
     groups.value = groupRooms
@@ -386,23 +431,32 @@ async function loadRooms(options = {}) {
   }
 }
 
-async function fetchFollowingList() {
+async function fetchFollowLists() {
   const userPid = auth.user?.userPid ?? auth.user?.user_pid ?? null
   if (!userPid) {
-    return []
+    return { following: [], followers: [] }
   }
 
   try {
-    const { data } = await followService.getFollowing(userPid)
-    return Array.isArray(data) ? data : []
+    const [following, follower] = await Promise.all([
+      followService.getFollowing(userPid),
+      followService.getFollowers(userPid),
+    ])
+    return {
+      following: Array.isArray(following) ? following : [],
+      followers: Array.isArray(follower) ? follower : [],
+    }
   } catch (error) {
     console.warn('[chat] Failed to load follow list', error)
-    return []
+    return { following: [], followers: [] }
   }
 }
 
-function buildFollowEntries(followList, directRooms) {
-  if (!Array.isArray(followList) || followList.length === 0) {
+function buildFollowEntries(followingList, followerList, directRooms) {
+  const hasFollowing = Array.isArray(followingList) && followingList.length
+  const hasFollowers = Array.isArray(followerList) && followerList.length
+  if (!hasFollowing && !hasFollowers) {
+
     return []
   }
 
@@ -415,31 +469,57 @@ function buildFollowEntries(followList, directRooms) {
     })
   })
 
-  return followList
-    .map((follow) => {
-      const loginId = follow?.loginId || follow?.login_id || null
-      const userPid = follow?.userPid ?? follow?.user_pid ?? null
+  const candidates = new Map()
+
+  const register = (list, role) => {
+    list.forEach((entry) => {
+      const loginId = entry?.loginId || entry?.login_id || null
+      const userPid = entry?.userPid ?? entry?.user_pid ?? null
       if (!loginId || userPid == null) {
-        return null
+        return
       }
-      if (existingLogins.has(String(loginId).toLowerCase())) {
-        return null
+      const key = String(userPid)
+      const record = candidates.get(key) || {
+        userPid,
+        loginId,
+        name: entry?.nickName || entry?.nickname || loginId,
+        avatarUrl: entry?.avatarUrl || null,
+        following: false,
+        follower: false,
       }
-      const displayName = follow?.nickName || follow?.nickname || loginId
-      return {
-        id: `follow-${userPid}`,
-        name: displayName,
-        last: '클릭하여 채팅을 시작하세요.',
-        participants: [displayName],
-        participantLogins: [loginId],
-        participantsDetail: [],
-        type: 'DIRECT',
-        virtual: true,
-        targetUserPid: userPid,
-        avatarUrl: follow?.avatarUrl || null,
-      }
+      record[role] = true
+      candidates.set(key, record)
     })
-    .filter(Boolean)
+  }
+
+  if (hasFollowing) {
+    register(followingList, 'following')
+  }
+  if (hasFollowers) {
+    register(followerList, 'follower')
+  }
+
+  return Array.from(candidates.values())
+    .filter((candidate) => {
+      if (!candidate.following || !candidate.follower) {
+        return false
+      }
+      return !existingLogins.has(String(candidate.loginId).toLowerCase())
+    })
+    .map((candidate) => ({
+      id: `follow-${candidate.userPid}`,
+      name: candidate.name,
+      last: '서로 팔로우했습니다. 클릭하여 채팅을 시작하세요.',
+      participants: [candidate.name],
+      participantLogins: [candidate.loginId],
+      participantsDetail: [],
+      type: 'DIRECT',
+      virtual: true,
+      targetUserPid: candidate.userPid,
+      avatarUrl: candidate.avatarUrl,
+      mutual: true,
+    }))
+
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
@@ -545,6 +625,9 @@ const filteredChats = computed(() => {
   })
 })
 
+const filteredDirectChats = computed(() => filteredChats.value.filter((room) => !room.virtual))
+const filteredFollowShortcuts = computed(() => filteredChats.value.filter((room) => room.virtual))
+
 const filteredGroups = computed(() => {
   const keyword = query.value.trim().toLowerCase()
   if (!keyword) return groups.value
@@ -583,10 +666,7 @@ async function openDirectFollowRoom(item, options = {}) {
   try {
     const { data } = await api.post('/rooms/direct', { targetUserPid: item.targetUserPid })
     const entry = normalizeRoomDetail(data)
-    followings.value = followings.value.filter((follow) => {
-      const pid = follow?.userPid ?? follow?.user_pid ?? null
-      return pid === null || pid !== item.targetUserPid
-    })
+
     chats.value = chats.value.filter((chat) => chat.id !== item.id)
     const persisted = addOrUpdateRoom(entry)
     await openChat(persisted, options)
@@ -820,6 +900,14 @@ watch(messages, () => scrollToBottom())
   background: #fff;
   border-right: 2px solid #000000;
   height: 100%;
+}
+
+.follow-stats {
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.follow-stats .v-chip {
+  font-weight: 500;
 }
 
 .chat-main {

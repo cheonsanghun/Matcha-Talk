@@ -6,9 +6,21 @@ export default {
     return api.get(`/users/${userId}/following`)
   },
 
+  async getFollowing(userId) {
+    const response = await this.getFollowingList(userId)
+    const payload = response?.data ?? response
+    return Array.isArray(payload) ? payload : []
+  },
+
   // 특정 사용자의 팔로워 목록 조회
   getFollowerList(userId) {
     return api.get(`/users/${userId}/followers`)
+  },
+
+  async getFollowers(userId) {
+    const response = await this.getFollowerList(userId)
+    const payload = response?.data ?? response
+    return Array.isArray(payload) ? payload : []
   },
 
   // 팔로우 요청 생성
