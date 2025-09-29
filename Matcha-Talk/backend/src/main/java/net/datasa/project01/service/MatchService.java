@@ -239,11 +239,20 @@ public class MatchService {
     }
 
     private MatchRequest buildMatchRequest(User user, MatchRequestDto requestDto, MatchRequest.MatchStatus status) throws JsonProcessingException {
+        Integer minAge = requestDto.getMinAge();
+        Integer maxAge = requestDto.getMaxAge();
+
+        if (minAge != null && maxAge != null && minAge > maxAge) {
+            int swappedMin = maxAge;
+            maxAge = minAge;
+            minAge = swappedMin;
+        }
+
         return MatchRequest.builder()
                 .user(user)
                 .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
-                .minAge(requestDto.getMinAge())
-                .maxAge(requestDto.getMaxAge())
+                .minAge(minAge)
+                .maxAge(maxAge)
                 .regionCode(requestDto.getRegionCode())
                 .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
                 .status(status)

@@ -15,6 +15,7 @@ public class RoomListResponseDto {
     private final Room.RoomType roomType;
     private final int memberCount;
     private final List<String> memberNicknames;
+    private final List<String> memberLoginIds;
     private final boolean temporary;
 
     public static RoomListResponseDto fromEntity(Room room, List<RoomMember> members) {
@@ -22,11 +23,16 @@ public class RoomListResponseDto {
                 .map(member -> member.getUser().getNickName())
                 .collect(Collectors.toList());
 
+        List<String> loginIds = members.stream()
+                .map(member -> member.getUser().getLoginId())
+                .collect(Collectors.toList());
+
         return RoomListResponseDto.builder()
                 .roomId(room.getRoomId())
                 .roomType(room.getRoomType())
                 .memberCount(members.size())
                 .memberNicknames(nicknames)
+                .memberLoginIds(loginIds)
                 .temporary(room.isTemporary())
                 .build();
     }
