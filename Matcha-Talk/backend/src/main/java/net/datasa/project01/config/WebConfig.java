@@ -16,10 +16,10 @@ public class WebConfig implements WebMvcConfigurer {
                 // ngrok 주소, localhost의 모든 포트, 그리고 Vue 개발 서버 주소를 명시적으로 허용합니다.
                 .allowedOriginPatterns(
                         "https://*.ngrok-free.app",
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        "http://192.168.0.165:*",  // ✅ 추가: 팀원 접속용 IP 허용
-                        "http://192.168.*:*"       // ✅ 추가: 같은 네트워크 대역 모두 허용
+                        "https://localhost:*",
+                        "https://127.0.0.1:*",
+                        "https://192.168.0.165:*",  // ✅ 추가: 팀원 접속용 IP 허용
+                        "https://192.168.*:*"       // ✅ 추가: 같은 네트워크 대역 모두 허용
                         //"http://192.0.0.2:*",      // ✅ 추가: 팀원 접속용 핫스팟 IP 허용
                         //"http://192.0.0.*:*"       // ✅ 추가: 같은 핫스팟 네트워크 대역 허용
                 )
