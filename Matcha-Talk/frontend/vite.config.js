@@ -22,7 +22,7 @@ export default defineConfig({
     proxy: {
       // /api로 시작하는 요청을 백엔드로 프록시
       '/api': {
-        target: 'https://192.168.0.126:8080', // ✅ 수정: 실제 서버 IP로 변경
+        target: 'https://192.168.0.165:8080', // ✅ 수정: 실제 서버 IP로 변경
         //target: 'http://192.0.0.2:8080', // ✅ 수정: 실제 핫스팟 서버 IP로 변경
         changeOrigin: true,
         // 필요하다면 secure: false 추가

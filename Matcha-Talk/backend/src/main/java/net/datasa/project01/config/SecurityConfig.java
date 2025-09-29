@@ -78,8 +78,7 @@ public class SecurityConfig {
         CorsConfiguration c = new CorsConfiguration();
         c.setAllowedOrigins(List.of(
                 "https://192.168.0.165:5173",
-                "https://localhost:5173",
-                "https://app.matchatalk.dev"
+                "https://localhost:5173"
         ));
         c.setAllowedMethods(List.of("GET","POST","PUT","DELETE","PATCH","OPTIONS"));
         c.setAllowedHeaders(List.of("*"));
