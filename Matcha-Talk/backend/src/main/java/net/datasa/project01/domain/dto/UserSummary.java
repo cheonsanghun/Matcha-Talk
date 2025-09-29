@@ -12,6 +12,7 @@ import net.datasa.project01.domain.entity.User;
 @AllArgsConstructor
 public class UserSummary {
     private Long id;
+    private Long userPid;
     private String loginId;
     private String nickname;
     private String email;
@@ -19,6 +20,7 @@ public class UserSummary {
     public static UserSummary fromEntity(User user) {
         return UserSummary.builder()
                 .id(user.getUserPid())
+                .userPid(user.getUserPid())
                 .loginId(user.getLoginId())
                 .nickname(user.getNickName())
                 .email(user.getEmail())
