@@ -24,12 +24,7 @@ public class UserPenaltyResponseDto {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
         String formattedEndsAt = (penalty.getEndsAt() != null) ? penalty.getEndsAt().format(formatter) : null;
 
-        UserSummary userSummary = UserSummary.builder()
-                .id(penalty.getUser().getUserPid())
-                .loginId(penalty.getUser().getLoginId())
-                .nickname(penalty.getUser().getNickName())
-                .email(penalty.getUser().getEmail())
-                .build();
+        UserSummary userSummary = UserSummary.fromEntity(penalty.getUser());
 
         return UserPenaltyResponseDto.builder()
                 .penaltyId(penalty.getPenaltyId())

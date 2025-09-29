@@ -7,6 +7,33 @@ function safeParse(json, fallback = null) {
 }
 function hasWindow() { return typeof window !== 'undefined' }
 
+function ensureUserPid(user) {
+  if (!user) return null
+
+  if (user.userPid != null) return user
+
+  const fallbackPid =
+    user.user_pid ??
+    user.id ??
+    user.pid ??
+    user.user?.userPid ??
+    user.user?.user_pid ??
+    null
+
+  if (fallbackPid != null) {
+    return { ...user, userPid: fallbackPid }
+  }
+
+  if (hasWindow()) {
+    console.info(
+      '[auth] Cached session did not include userPid. Clearing stale cache. ',
+      'If the issue persists after deployment, manually remove the "user" entry in localStorage and log in again.',
+    )
+  }
+
+  return null
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: hasWindow() ? safeParse(localStorage.getItem('user')) : null,
@@ -47,12 +74,12 @@ export const useAuthStore = defineStore('auth', {
     },
 
     setUser(user) {
-      this.user = user ?? null
+      this.user = ensureUserPid(user)
       this._persist()
     },
 
     setSession(user) {
-      this.user = user ?? null
+      this.user = ensureUserPid(user)
       this._persist()
     },
 
@@ -64,7 +91,7 @@ export const useAuthStore = defineStore('auth', {
         payload.data ??
         payload ??
         null
-      this.user = user
+      this.user = ensureUserPid(user)
       this._persist()
     },
 
@@ -76,7 +103,14 @@ export const useAuthStore = defineStore('auth', {
     initializeFromStorage() {
       if (!hasWindow()) return
       localStorage.removeItem('token')
-      this.user = safeParse(localStorage.getItem('user'))
+      const storedUser = safeParse(localStorage.getItem('user'))
+      const normalized = ensureUserPid(storedUser)
+
+      if (!normalized && storedUser) {
+        localStorage.removeItem('user')
+      }
+
+      this.user = normalized
     },
 
     // 사용자 정보가 없으면 세션 기반 API로 조회해 보강
@@ -85,7 +119,8 @@ export const useAuthStore = defineStore('auth', {
         if (this.userPid) return
         if (this.user) return
         const { data } = await api.get('/users/profile') // 프로젝트에 맞게 필요시 경로 변경
-        this.user = data?.user ?? data?.data ?? data
+        const nextUser = data?.user ?? data?.data ?? data
+        this.user = ensureUserPid(nextUser)
         this._persist()
       } catch (e) {
         console.warn('hydrateMeIfNeeded failed:', e?.response?.data || e?.message)

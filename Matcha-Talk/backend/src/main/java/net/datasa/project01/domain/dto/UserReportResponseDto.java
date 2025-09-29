@@ -23,19 +23,8 @@ public class UserReportResponseDto {
     public static UserReportResponseDto fromEntity(UserReport report) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-        UserSummary reporterSummary = UserSummary.builder()
-                .id(report.getReporter().getUserPid())
-                .loginId(report.getReporter().getLoginId())
-                .nickname(report.getReporter().getNickName())
-                .email(report.getReporter().getEmail())
-                .build();
-
-        UserSummary reportedSummary = UserSummary.builder()
-                .id(report.getReported().getUserPid())
-                .loginId(report.getReported().getLoginId())
-                .nickname(report.getReported().getNickName())
-                .email(report.getReported().getEmail())
-                .build();
+        UserSummary reporterSummary = UserSummary.fromEntity(report.getReporter());
+        UserSummary reportedSummary = UserSummary.fromEntity(report.getReported());
 
         return UserReportResponseDto.builder()
                 .reportId(report.getReportId())
