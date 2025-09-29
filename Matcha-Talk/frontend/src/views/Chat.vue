@@ -133,7 +133,17 @@
           <v-spacer />
           <v-btn icon variant="text"><v-icon>mdi-magnify</v-icon></v-btn>
           <v-btn v-if="isGroup" icon variant="text" @click="inviteParticipant"><v-icon>mdi-account-plus</v-icon></v-btn>
-          <v-btn icon variant="text" :disabled="!current.id" @click="startVideoCall"><v-icon>mdi-video</v-icon></v-btn>
+          <v-btn
+            class="messenger-pill toolbar-btn video-call-btn"
+            variant="flat"
+            elevation="2"
+            rounded="pill"
+            :disabled="!current.id"
+            @click="startVideoCall"
+          >
+            <v-icon size="18" class="mr-1">mdi-video</v-icon>
+            <span>영상통화</span>
+          </v-btn>
           <v-btn icon variant="text" :disabled="!callActive" @click="hangUpCall"><v-icon>mdi-phone-hangup</v-icon></v-btn>
         </div>
         <v-divider />
@@ -242,8 +252,15 @@
         </div>
         <div class="chat-input d-flex align-center pa-4 ga-2">
           <input type="file" ref="fileInput" class="d-none" @change="handleFileSelect" />
-          <v-btn icon variant="outlined" color="success" :disabled="!current.id" @click="triggerFilePicker">
-            <v-icon>mdi-plus</v-icon>
+          <v-btn
+            class="messenger-pill chat-action-btn file-upload-btn"
+            variant="flat"
+            elevation="3"
+            rounded="pill"
+            :disabled="!current.id"
+            @click="triggerFilePicker"
+          >
+            <v-icon size="22">mdi-plus</v-icon>
           </v-btn>
           <v-text-field
             v-model="draft"
@@ -256,8 +273,16 @@
             :disabled="!current.id"
           />
           <v-btn icon variant="text"><v-icon>mdi-emoticon-outline</v-icon></v-btn>
-          <v-btn icon color="success" @click="send" :disabled="!current.id || !draft.trim()">
-            <v-icon>mdi-send</v-icon>
+          <v-btn
+            class="messenger-pill chat-action-btn send-btn"
+            variant="flat"
+            elevation="4"
+            rounded="pill"
+            :disabled="!current.id || !draft.trim()"
+            @click="send"
+          >
+            <v-icon size="18" class="mr-1">mdi-send</v-icon>
+            <span>보내기</span>
           </v-btn>
         </div>
       </v-col>
@@ -898,7 +923,7 @@ watch(messages, () => scrollToBottom())
 
 .chat-sidebar {
   background: #fff;
-  border-right: 2px solid #000000;
+  border-right: 1px solid #f1e7c6;
   height: 100%;
 }
 
@@ -911,8 +936,8 @@ watch(messages, () => scrollToBottom())
 }
 
 .chat-main {
-  background: #fff;
-  border-left: 2px solid #ffb6c1;
+  background: linear-gradient(180deg, #fffdf4 0%, #ffffff 55%, #f7fbff 100%);
+  border-left: 1px solid #e3f1e5;
   height: 100%;
 }
 
@@ -953,7 +978,84 @@ watch(messages, () => scrollToBottom())
 }
 
 .chat-input {
-  border-top: 1px solid #eee;
+  border-top: 1px solid #f4efe0;
+  background: #fff8d6;
+}
+
+.messenger-pill {
+  border-radius: 999px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: -0.2px;
+  padding: 0 18px;
+  height: 44px;
+  min-width: 44px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.messenger-pill :deep(.v-btn__content) {
+  gap: 6px;
+}
+
+.messenger-pill:not([disabled]):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+}
+
+.messenger-pill[disabled] {
+  filter: grayscale(0.35);
+  box-shadow: none;
+}
+
+.toolbar-btn {
+  padding-inline: 16px;
+}
+
+.video-call-btn {
+  background: linear-gradient(135deg, #fff3a0, #ffe066);
+  color: #3a2a08;
+  box-shadow: 0 8px 18px rgba(255, 215, 86, 0.35);
+}
+
+.video-call-btn:not([disabled]):hover {
+  box-shadow: 0 14px 24px rgba(255, 215, 86, 0.45);
+}
+
+.video-call-btn[disabled] {
+  background: #f5f5f5;
+  color: #bdbdbd;
+}
+
+.chat-action-btn {
+  padding-inline: 18px;
+}
+
+.file-upload-btn {
+  background: linear-gradient(135deg, #ffeb99, #ffd43b);
+  color: #3b2f10;
+  min-width: 48px;
+  padding-inline: 14px;
+  box-shadow: 0 8px 18px rgba(255, 212, 59, 0.32);
+}
+
+.file-upload-btn:not([disabled]):hover {
+  box-shadow: 0 12px 24px rgba(255, 212, 59, 0.42);
+}
+
+.send-btn {
+  background: linear-gradient(135deg, #06c755, #00a884);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(0, 168, 132, 0.35);
+}
+
+.send-btn:not([disabled]):hover {
+  box-shadow: 0 16px 28px rgba(0, 168, 132, 0.45);
+}
+
+.send-btn[disabled] {
+  background: #c8f5df;
+  color: #5ca98a;
 }
 
 .message-wrapper {
