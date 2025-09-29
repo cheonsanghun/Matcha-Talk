@@ -66,8 +66,46 @@ function normalizeBootstrap (payload) {
   const computedHandshakeReady = status === 'MATCHED' && !roomId
   const computedChatReady = roomId != null && (status === 'CONFIRMED' || status === 'ARCHIVED' || status === 'MATCHED' || payload.chatReady === true)
 
-  const followRelationId = toNumberOrNull(payload.followRelationId ?? payload.followId ?? handshakeSource.followRelationId)
-  const followStatus = payload.followStatus || handshakeSource.followStatus || null
+  const incomingFollowId = toNumberOrNull(payload.incomingFollowId ?? payload.incomingFollow?.id ?? handshakeSource.incomingFollowId)
+  const outgoingFollowId = toNumberOrNull(payload.outgoingFollowId ?? payload.outgoingFollow?.id ?? handshakeSource.outgoingFollowId)
+  const incomingFollowStatusRaw = payload.incomingFollowStatus ?? payload.incomingFollow?.status ?? handshakeSource.incomingFollowStatus
+  const outgoingFollowStatusRaw = payload.outgoingFollowStatus ?? payload.outgoingFollow?.status ?? handshakeSource.outgoingFollowStatus
+  const incomingFollowStatus = incomingFollowStatusRaw ? incomingFollowStatusRaw.toString().toUpperCase() : null
+  const outgoingFollowStatus = outgoingFollowStatusRaw ? outgoingFollowStatusRaw.toString().toUpperCase() : null
+  const mutualFollow = Boolean(payload.mutualFollow ?? handshakeSource.mutualFollow ?? false)
+
+  const roomTemporaryRaw = payload.roomTemporary ?? handshakeSource.roomTemporary ?? null
+  const roomTypeSource = payload.roomType ?? handshakeSource.roomType ?? null
+  const roomTemporary = roomTemporaryRaw === null
+    ? (roomTypeSource ? String(roomTypeSource).toUpperCase() === 'RANDOM' : null)
+    : Boolean(roomTemporaryRaw)
+
+  let followRelationId = toNumberOrNull(payload.followRelationId ?? payload.followId ?? handshakeSource.followRelationId)
+  let followStatus = payload.followStatus || handshakeSource.followStatus || null
+  if (!followStatus) {
+    if (incomingFollowStatus === 'PENDING') {
+      followStatus = 'PENDING_INCOMING'
+      followRelationId = incomingFollowId ?? followRelationId
+    } else if (outgoingFollowStatus === 'PENDING') {
+      followStatus = 'PENDING_OUTGOING'
+      followRelationId = outgoingFollowId ?? followRelationId
+    } else if (mutualFollow || (incomingFollowStatus === 'ACCEPTED' && outgoingFollowStatus === 'ACCEPTED')) {
+      followStatus = 'ACCEPTED'
+      followRelationId = outgoingFollowId ?? incomingFollowId ?? followRelationId
+    } else if (incomingFollowStatus === 'ACCEPTED') {
+      followStatus = 'ACCEPTED_INCOMING'
+      followRelationId = incomingFollowId ?? followRelationId
+    } else if (outgoingFollowStatus === 'ACCEPTED') {
+      followStatus = 'ACCEPTED_OUTGOING'
+      followRelationId = outgoingFollowId ?? followRelationId
+    } else if (incomingFollowStatus === 'REJECTED') {
+      followStatus = 'REJECTED_INCOMING'
+      followRelationId = incomingFollowId ?? followRelationId
+    } else if (outgoingFollowStatus === 'REJECTED') {
+      followStatus = 'REJECTED_OUTGOING'
+      followRelationId = outgoingFollowId ?? followRelationId
+    }
+  }
 
   return {
     matchFound: payload.matchFound ?? (computedHandshakeReady || computedChatReady),
@@ -81,6 +119,12 @@ function normalizeBootstrap (payload) {
     handshake,
     followStatus,
     followRelationId,
+    incomingFollowId,
+    incomingFollowStatus,
+    outgoingFollowId,
+    outgoingFollowStatus,
+    mutualFollow,
+    roomTemporary,
   }
 }
 
@@ -99,6 +143,12 @@ function mergeBootstrapPayload (current, patch) {
   merged.chatReady = patch?.chatReady ?? current.chatReady ?? false
   merged.followStatus = patch?.followStatus ?? current.followStatus ?? null
   merged.followRelationId = patch?.followRelationId ?? current.followRelationId ?? null
+  merged.incomingFollowId = patch?.incomingFollowId ?? current.incomingFollowId ?? null
+  merged.incomingFollowStatus = patch?.incomingFollowStatus ?? current.incomingFollowStatus ?? null
+  merged.outgoingFollowId = patch?.outgoingFollowId ?? current.outgoingFollowId ?? null
+  merged.outgoingFollowStatus = patch?.outgoingFollowStatus ?? current.outgoingFollowStatus ?? null
+  merged.mutualFollow = patch?.mutualFollow ?? current.mutualFollow ?? false
+  merged.roomTemporary = patch?.roomTemporary ?? current.roomTemporary ?? null
 
   const nextHandshake = {
     ...(current.handshake || {}),

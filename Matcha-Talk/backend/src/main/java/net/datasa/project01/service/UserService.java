@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.FollowRequestDto;
+import net.datasa.project01.domain.dto.FollowResponseDto;
 import net.datasa.project01.domain.dto.FollowUpdateDto;
 import net.datasa.project01.domain.dto.UserProfileUpdateRequest;
 import net.datasa.project01.domain.dto.UserResponse;
@@ -216,7 +217,7 @@ public class UserService {
      * 팔로우 관리
      * ============================== */
     @Transactional
-    public void createFollow(FollowRequestDto req, String followerLoginId) {
+    public FollowResponseDto createFollow(FollowRequestDto req, String followerLoginId) {
         User follower = userRepository.findByLoginId(normalizeLoginId(followerLoginId))
                 .orElseThrow(() -> new IllegalArgumentException("요청한 사용자를 찾을 수 없습니다."));
         User followee = userRepository.findById(req.getFolloweeId())
@@ -235,6 +236,10 @@ public class UserService {
                 .status(Follow.FollowStatus.PENDING)
                 .build();
         followRepository.save(follow);
+
+        FollowResponseDto response = FollowResponseDto.fromEntity(follow, followee);
+        broadcastFollowStatus(follower, followee);
+        return response;
     }
 
     @Transactional
@@ -258,6 +263,8 @@ public class UserService {
         if (newStatus == Follow.FollowStatus.ACCEPTED) {
             handleMutualFollowPromotion(follow);
         }
+
+        broadcastFollowStatus(follow.getFollower(), follow.getFollowee());
     }
 
     @Transactional
@@ -271,7 +278,10 @@ public class UserService {
                 && !follow.getFollowee().getUserPid().equals(currentUser.getUserPid())) {
             throw new IllegalStateException("이 관계를 삭제할 권한이 없습니다.");
         }
+        User follower = follow.getFollower();
+        User followee = follow.getFollowee();
         followRepository.delete(follow);
+        broadcastFollowStatus(follower, followee);
     }
 
     public List<UserResponse> getFollowingList(Long userId) {
@@ -292,6 +302,34 @@ public class UserService {
                 .map(Follow::getFollower)
                 .map(UserResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    private void broadcastFollowStatus(User follower, User followee) {
+        if (follower == null || followee == null) {
+            return;
+        }
+
+        try {
+            matchService.findLatestMatch(follower.getLoginId())
+                    .ifPresent(payload -> messagingService.sendEventToUser(
+                            follower.getLoginId(),
+                            RealTimeMessagingService.EVENT_MATCH_FOLLOW_UPDATED,
+                            payload
+                    ));
+        } catch (Exception e) {
+            log.warn("Failed to broadcast follow update to {}", follower.getLoginId(), e);
+        }
+
+        try {
+            matchService.findLatestMatch(followee.getLoginId())
+                    .ifPresent(payload -> messagingService.sendEventToUser(
+                            followee.getLoginId(),
+                            RealTimeMessagingService.EVENT_MATCH_FOLLOW_UPDATED,
+                            payload
+                    ));
+        } catch (Exception e) {
+            log.warn("Failed to broadcast follow update to {}", followee.getLoginId(), e);
+        }
     }
 
     private void handleMutualFollowPromotion(Follow follow) {

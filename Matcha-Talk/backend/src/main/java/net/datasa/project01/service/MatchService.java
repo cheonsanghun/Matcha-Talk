@@ -7,9 +7,11 @@ import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.MatchFoundResponseDto;
 import net.datasa.project01.domain.dto.MatchRequestDto;
 import net.datasa.project01.domain.dto.MatchStartResponseDto;
+import net.datasa.project01.domain.entity.Follow;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
+import net.datasa.project01.repository.FollowRepository;
 import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
 import net.datasa.project01.repository.UserRepository;
@@ -33,6 +35,7 @@ public class MatchService {
     private final MatchRequestRepository matchRequestRepository;
     private final UserRepository userRepository;
     private final ChatService chatService;
+    private final FollowRepository followRepository;
     private final RealTimeMessagingService messagingService;
     private final ObjectMapper objectMapper;
 
@@ -249,19 +252,36 @@ public class MatchService {
 
     private MatchFoundResponseDto buildMatchFoundResponse(MatchRequest myRequest, MatchRequest partnerRequest) {
         Long partnerRequestId = partnerRequest != null ? partnerRequest.getRequestId() : null;
-        String partnerLoginId = partnerRequest != null ? partnerRequest.getUser().getLoginId() : null;
-        String partnerNickName = partnerRequest != null ? partnerRequest.getUser().getNickName() : null;
-        Long roomId = myRequest.getRoom() != null ? myRequest.getRoom().getRoomId() : null;
+        User partnerUser = partnerRequest != null ? partnerRequest.getUser() : null;
+        String partnerLoginId = partnerUser != null ? partnerUser.getLoginId() : null;
+        String partnerNickName = partnerUser != null ? partnerUser.getNickName() : null;
+
+        Room resolvedRoom = myRequest.getRoom() != null
+                ? myRequest.getRoom()
+                : (partnerRequest != null ? partnerRequest.getRoom() : null);
+        Long roomId = resolvedRoom != null ? resolvedRoom.getRoomId() : null;
+        Boolean roomTemporary = resolvedRoom != null ? resolvedRoom.isTemporary() : null;
+
+        FollowSnapshot followSnapshot = resolveFollowSnapshot(myRequest.getUser(), partnerUser);
 
         return MatchFoundResponseDto.builder()
                 .myRequestId(myRequest.getRequestId())
                 .partnerRequestId(partnerRequestId)
                 .partnerLoginId(partnerLoginId)
                 .partnerNickName(partnerNickName)
+                .partnerUserPid(partnerUser != null ? partnerUser.getUserPid() : null)
                 .roomId(roomId)
                 .handshakeKey(myRequest.getHandshakeKey())
                 .expiresAt(myRequest.getHandshakeExpiresAt())
                 .status(myRequest.getStatus())
+                .followStatus(followSnapshot.displayStatus())
+                .followRelationId(followSnapshot.relationId())
+                .incomingFollowId(followSnapshot.incomingId())
+                .incomingFollowStatus(followSnapshot.incomingStatus())
+                .outgoingFollowId(followSnapshot.outgoingId())
+                .outgoingFollowStatus(followSnapshot.outgoingStatus())
+                .mutualFollow(followSnapshot.mutualAccepted())
+                .roomTemporary(roomTemporary)
                 .build();
     }
 
@@ -280,6 +300,75 @@ public class MatchService {
         }
 
         matchRequestRepository.saveAll(requests);
+    }
+
+    private FollowSnapshot resolveFollowSnapshot(User currentUser, User partnerUser) {
+        if (currentUser == null || partnerUser == null) {
+            return FollowSnapshot.empty();
+        }
+
+        Optional<Follow> outgoing = followRepository.findByFollowerAndFollowee(currentUser, partnerUser);
+        Optional<Follow> incoming = followRepository.findByFollowerAndFollowee(partnerUser, currentUser);
+
+        return FollowSnapshot.from(outgoing, incoming);
+    }
+
+    private record FollowSnapshot(Long outgoingId,
+                                  String outgoingStatus,
+                                  Long incomingId,
+                                  String incomingStatus,
+                                  String displayStatus,
+                                  Long relationId,
+                                  boolean mutualAccepted) {
+        static FollowSnapshot empty() {
+            return new FollowSnapshot(null, null, null, null, null, null, false);
+        }
+
+        static FollowSnapshot from(Optional<Follow> outgoing, Optional<Follow> incoming) {
+            Follow.FollowStatus outgoingStatusEnum = outgoing.map(Follow::getStatus).orElse(null);
+            Follow.FollowStatus incomingStatusEnum = incoming.map(Follow::getStatus).orElse(null);
+
+            String outgoingStatus = outgoingStatusEnum != null ? outgoingStatusEnum.name() : null;
+            String incomingStatus = incomingStatusEnum != null ? incomingStatusEnum.name() : null;
+
+            boolean mutualAccepted = outgoingStatusEnum == Follow.FollowStatus.ACCEPTED
+                    && incomingStatusEnum == Follow.FollowStatus.ACCEPTED;
+
+            String displayStatus = null;
+            Long relationId = null;
+
+            if (incomingStatusEnum == Follow.FollowStatus.PENDING) {
+                displayStatus = "PENDING_INCOMING";
+                relationId = incoming.map(Follow::getFollowId).orElse(null);
+            } else if (outgoingStatusEnum == Follow.FollowStatus.PENDING) {
+                displayStatus = "PENDING_OUTGOING";
+                relationId = outgoing.map(Follow::getFollowId).orElse(null);
+            } else if (mutualAccepted) {
+                displayStatus = "ACCEPTED";
+                relationId = outgoing.map(Follow::getFollowId)
+                        .orElseGet(() -> incoming.map(Follow::getFollowId).orElse(null));
+            } else if (incomingStatusEnum == Follow.FollowStatus.ACCEPTED) {
+                displayStatus = "ACCEPTED_INCOMING";
+                relationId = incoming.map(Follow::getFollowId).orElse(null);
+            } else if (outgoingStatusEnum == Follow.FollowStatus.ACCEPTED) {
+                displayStatus = "ACCEPTED_OUTGOING";
+                relationId = outgoing.map(Follow::getFollowId).orElse(null);
+            } else if (incomingStatusEnum == Follow.FollowStatus.REJECTED) {
+                displayStatus = "REJECTED_INCOMING";
+            } else if (outgoingStatusEnum == Follow.FollowStatus.REJECTED) {
+                displayStatus = "REJECTED_OUTGOING";
+            }
+
+            return new FollowSnapshot(
+                    outgoing.map(Follow::getFollowId).orElse(null),
+                    outgoingStatus,
+                    incoming.map(Follow::getFollowId).orElse(null),
+                    incomingStatus,
+                    displayStatus,
+                    relationId,
+                    mutualAccepted
+            );
+        }
     }
 
     private Optional<MatchRequest> findHandshakePartner(MatchRequest request) {

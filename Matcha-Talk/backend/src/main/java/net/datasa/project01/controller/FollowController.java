@@ -3,6 +3,7 @@ package net.datasa.project01.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.FollowRequestDto;
+import net.datasa.project01.domain.dto.FollowResponseDto;
 import net.datasa.project01.domain.dto.FollowUpdateDto;
 import net.datasa.project01.service.UserService;
 import org.springframework.http.HttpStatus;
@@ -28,11 +29,11 @@ public class FollowController {
      * @return 성공 시 201 Created
      */
     @PostMapping
-    public ResponseEntity<Void> createFollow(@Valid @RequestBody FollowRequestDto req,
-                                             @AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<FollowResponseDto> createFollow(@Valid @RequestBody FollowRequestDto req,
+                                                          @AuthenticationPrincipal UserDetails userDetails) {
         String loginId = requireLoginId(userDetails);
-        userService.createFollow(req, loginId);
-        return ResponseEntity.status(HttpStatus.CREATED).build();
+        FollowResponseDto response = userService.createFollow(req, loginId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     /**

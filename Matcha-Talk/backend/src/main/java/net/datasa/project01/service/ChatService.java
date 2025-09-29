@@ -1,6 +1,7 @@
 package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.RoomDetailResponseDto;
 import net.datasa.project01.domain.dto.RoomListResponseDto;
 import net.datasa.project01.domain.entity.Room;
@@ -10,10 +11,14 @@ import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.RoomMessageRepository;
 import net.datasa.project01.repository.RoomRepository;
 import net.datasa.project01.repository.UserRepository;
+import net.datasa.project01.domain.entity.Follow;
+import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.dto.ChatMessageRequestDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.entity.RoomMessage;
 import net.datasa.project01.websocket.RealTimeMessagingService;
+import net.datasa.project01.repository.MatchRequestRepository;
+import net.datasa.project01.repository.FollowRepository;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
@@ -21,16 +26,21 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import net.datasa.project01.domain.entity.Room.RoomType;
 
@@ -39,12 +49,15 @@ import net.datasa.project01.service.TranslationService;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ChatService {
 
         private final RoomRepository roomRepository;
         private final RoomMemberRepository roomMemberRepository;
         private final UserRepository userRepository;
         private final RoomMessageRepository roomMessageRepository;
+        private final MatchRequestRepository matchRequestRepository;
+        private final FollowRepository followRepository;
         private final TranslationService translationService;
         private final RealTimeMessagingService messagingService;
 
@@ -225,6 +238,32 @@ public class ChatService {
         }
 
         @Transactional
+        public RoomCleanupResult cleanupTemporaryRoom(Long roomId, String loginId) {
+                User user = userRepository.findByLoginId(loginId)
+                        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+                Room room = roomRepository.findById(roomId)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+
+                roomMemberRepository.findByRoomAndUser(room, user)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방 멤버만 정리할 수 있습니다."));
+
+                boolean temporary = room.getRoomType() == Room.RoomType.RANDOM;
+                if (!temporary) {
+                        return new RoomCleanupResult(false, false, false, "ROOM_NOT_TEMPORARY");
+                }
+
+                List<RoomMember> members = roomMemberRepository.findByRoom(room);
+                boolean mutualFollow = hasMutualFollow(members);
+                if (mutualFollow) {
+                        return new RoomCleanupResult(false, true, true, "MUTUAL_FOLLOW");
+                }
+
+                removeRoomWithDependencies(room, members);
+                return new RoomCleanupResult(true, true, false, "DELETED");
+        }
+
+        @Transactional
         public ChatMessageResponseDto saveAttachment(Long roomId, MultipartFile file, String loginId) throws IOException {
                 if (file == null || file.isEmpty()) {
                         throw new IllegalArgumentException("업로드할 파일이 존재하지 않습니다.");
@@ -331,6 +370,106 @@ public class ChatService {
                         .build();
         }
 
+        private boolean hasMutualFollow(List<RoomMember> members) {
+                if (members == null) {
+                        return false;
+                }
+
+                Map<Long, User> distinct = new LinkedHashMap<>();
+                for (RoomMember member : members) {
+                        User participant = member.getUser();
+                        if (participant != null) {
+                                distinct.putIfAbsent(participant.getUserPid(), participant);
+                        }
+                }
+
+                Iterator<User> iterator = distinct.values().iterator();
+                if (!iterator.hasNext()) {
+                        return false;
+                }
+                User first = iterator.next();
+                if (!iterator.hasNext()) {
+                        return false;
+                }
+                User second = iterator.next();
+
+                boolean forward = followRepository.findByFollowerAndFolloweeAndStatus(first, second, Follow.FollowStatus.ACCEPTED).isPresent();
+                boolean reverse = followRepository.findByFollowerAndFolloweeAndStatus(second, first, Follow.FollowStatus.ACCEPTED).isPresent();
+                return forward && reverse;
+        }
+
+        private void removeRoomWithDependencies(Room room, List<RoomMember> existingMembers) {
+                List<RoomMessage> messages = roomMessageRepository.findByRoom(room);
+                for (RoomMessage message : messages) {
+                        deleteAttachmentFile(message.getFilePath());
+                }
+                if (!messages.isEmpty()) {
+                        roomMessageRepository.deleteAll(messages);
+                }
+
+                List<RoomMember> membersToRemove = existingMembers;
+                if (membersToRemove == null || membersToRemove.isEmpty()) {
+                        membersToRemove = roomMemberRepository.findByRoom(room);
+                }
+                if (membersToRemove != null && !membersToRemove.isEmpty()) {
+                        roomMemberRepository.deleteAll(membersToRemove);
+                }
+
+                archiveMatchRequestsForRoom(room);
+
+                roomRepository.delete(room);
+                deleteAttachmentDirectory(room.getRoomId());
+        }
+
+        private void archiveMatchRequestsForRoom(Room room) {
+                List<MatchRequest> relatedRequests = matchRequestRepository.findByRoom(room);
+                if (relatedRequests.isEmpty()) {
+                        return;
+                }
+
+                for (MatchRequest request : relatedRequests) {
+                        request.setStatus(MatchRequest.MatchStatus.ARCHIVED);
+                        request.setRoom(null);
+                        request.setHandshakeKey(null);
+                        request.setHandshakeExpiresAt(null);
+                }
+
+                matchRequestRepository.saveAll(relatedRequests);
+        }
+
+        private void deleteAttachmentFile(String filePath) {
+                if (!StringUtils.hasText(filePath)) {
+                        return;
+                }
+                try {
+                        Files.deleteIfExists(Paths.get(filePath));
+                } catch (IOException e) {
+                        log.warn("Failed to delete attachment file {}", filePath, e);
+                }
+        }
+
+        private void deleteAttachmentDirectory(Long roomId) {
+                if (roomId == null) {
+                        return;
+                }
+                Path directory = attachmentBasePath.resolve(String.valueOf(roomId));
+                if (!Files.exists(directory)) {
+                        return;
+                }
+                try (Stream<Path> walk = Files.walk(directory)) {
+                        walk.sorted(Comparator.reverseOrder())
+                                .forEach(path -> {
+                                        try {
+                                                Files.deleteIfExists(path);
+                                        } catch (IOException e) {
+                                                log.warn("Failed to delete path {}", path, e);
+                                        }
+                                });
+                } catch (IOException e) {
+                        log.warn("Failed to remove attachment directory for room {}", roomId, e);
+                }
+        }
+
         private RoomMessage.ContentType determineContentType(String mimeType) {
                 if (mimeType != null && mimeType.startsWith("image")) {
                         return RoomMessage.ContentType.IMAGE;
@@ -347,6 +486,8 @@ public class ChatService {
         }
 
         public record AttachmentResource(Resource resource, String fileName, String mimeType) {}
+
+        public record RoomCleanupResult(boolean deleted, boolean temporary, boolean mutualFollow, String reason) {}
 
     // TODO: 추가 필요한 메서드들
     // public void joinRoom(Long roomId, String loginId) { }

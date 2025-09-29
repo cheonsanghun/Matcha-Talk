@@ -104,7 +104,7 @@
                 >
                   채팅방 정보를 불러오는 중입니다.
                 </div>
-                <template v-else>
+                <div v-else class="chat-messages__list">
                   <div
                     v-for="(message, index) in messages"
                     :key="message.id || index"
@@ -133,7 +133,7 @@
                       <span>{{ message.time }}</span>
                     </div>
                   </div>
-                </template>
+                </div>
               </div>
               <div class="chat-input pa-4">
                 <input type="file" ref="fileInput" class="d-none" @change="handleFileSelect" />
@@ -183,6 +183,7 @@ import { useAuthStore } from '../stores/auth'
 import { useMatchStore } from '../stores/match'
 import api from '../services/api'
 import followService from '../services/follow'
+import { camelizeKeys } from '../utils/case'
 import { resolveClientIdentity } from '../utils/identity'
 import {
   createFileSelectHandler,
@@ -215,9 +216,16 @@ const videoCallLoading = ref(false)
 const followState = reactive({
   status: null,
   relationId: null,
+  incomingId: null,
+  incomingStatus: null,
+  outgoingId: null,
+  outgoingStatus: null,
+  mutual: false,
 })
 const followRequestLoading = ref(false)
 const followAcceptLoading = ref(false)
+const roomTemporary = ref(null)
+const cleanupState = reactive({ running: false, completed: false })
 
 const messages = computed(() => {
   if (!roomId.value) return []
@@ -244,32 +252,51 @@ const handshakeStatusLabel = computed(() => {
   }
 })
 
-const followStatusUpper = computed(() => (followState.status || '').toUpperCase())
+const followStatusUpper = computed(() => (followState.status || '').toString().toUpperCase())
+const incomingStatusUpper = computed(() => (followState.incomingStatus || '').toString().toUpperCase())
+const outgoingStatusUpper = computed(() => (followState.outgoingStatus || '').toString().toUpperCase())
+const hasMutualFollow = computed(() => {
+  if (followState.mutual) return true
+  if (incomingStatusUpper.value === 'ACCEPTED' && outgoingStatusUpper.value === 'ACCEPTED') {
+    return true
+  }
+  return followStatusUpper.value === 'ACCEPTED'
+})
 const canRequestFollow = computed(() => {
   if (partnerUserPid.value == null) return false
-  if (!followStatusUpper.value) return true
-  if (followStatusUpper.value.includes('ACCEPT')) return false
-  if (followStatusUpper.value.includes('OUTGOING')) return false
-  if (followStatusUpper.value.includes('PENDING') &&
-    !followStatusUpper.value.includes('INCOMING') &&
-    !followStatusUpper.value.includes('RECEIVED')) {
-    return false
-  }
+  if (hasMutualFollow.value) return false
+  const outgoing = outgoingStatusUpper.value
+  if (outgoing === 'PENDING' || outgoing === 'ACCEPTED') return false
   return true
 })
 const canAcceptFollow = computed(() => {
-  if (!followState.relationId) return false
-  if (!followStatusUpper.value) return true
-  if (followStatusUpper.value.includes('ACCEPT')) return false
-  return followStatusUpper.value.includes('INCOMING') ||
-    followStatusUpper.value.includes('RECEIVED') ||
-    followStatusUpper.value === 'PENDING'
+  if (!followState.incomingId) return false
+  return incomingStatusUpper.value === 'PENDING'
+})
+
+const isTemporaryRoom = computed(() => {
+  if (roomTemporary.value != null) {
+    return Boolean(roomTemporary.value)
+  }
+  if (roomInfo.value?.type) {
+    return String(roomInfo.value.type).toUpperCase() === 'RANDOM'
+  }
+  const bootstrapTemporary = matchStore.bootstrap?.roomTemporary
+  if (bootstrapTemporary != null) {
+    return Boolean(bootstrapTemporary)
+  }
+  return null
 })
 
 const canStartCall = computed(() => {
   if (!roomId.value) return false
   return participantLoginIds.value.some((loginId) => loginId && loginId !== resolveClientIdentity(auth))
 })
+
+function toFiniteNumber (value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
 
 function ensureConversation(roomKey) {
   if (!conversations.value[roomKey]) {
@@ -297,13 +324,42 @@ async function ensureRoomExists(roomKey, fallbackName) {
   try {
     const { data } = await api.get(`/rooms/${roomKey}`)
     const participants = (data.participants || []).map((participant) => participant.loginId).filter(Boolean)
+    const roomType = data.roomType || data.room_type || null
+    const temporary = roomType ? String(roomType).toUpperCase() === 'RANDOM' : undefined
+    const myLoginId = resolveClientIdentity(auth)
+    const partnerDetail = (data.participants || []).find((participant) => {
+      const loginId = participant.loginId || participant.login_id || participant.username
+      if (!loginId) return false
+      if (!myLoginId) return true
+      return String(loginId).toLowerCase() !== String(myLoginId).toLowerCase()
+    })
+    if (temporary !== undefined) {
+      roomTemporary.value = temporary
+    }
     roomInfo.value = {
       id: data.roomId,
       name: data.roomName || fallbackName || `대화방 #${data.roomId}`,
+      type: roomType,
+      temporary,
       participantLogins: participants,
       participantsDetail: data.participants || [],
     }
     participantLoginIds.value = participants
+    if (partnerDetail) {
+      const loginId = partnerDetail.loginId || partnerDetail.login_id || partnerDetail.username
+      const nickname = partnerDetail.nickName || partnerDetail.nickname || partnerDetail.name
+      const userPid = partnerDetail.userPid ?? partnerDetail.user_pid ?? null
+      if (loginId) {
+        partnerLoginId.value = loginId
+      }
+      if (nickname) {
+        partnerName.value = nickname
+      }
+      const numericPid = Number(userPid)
+      if (Number.isFinite(numericPid) && numericPid > 0) {
+        partnerUserPid.value = numericPid
+      }
+    }
     return roomInfo.value
   } catch (error) {
     console.warn('[match-session] Failed to fetch room detail', error)
@@ -313,6 +369,8 @@ async function ensureRoomExists(roomKey, fallbackName) {
         name: fallbackName || `대화방 #${roomKey}`,
         participantLogins: participantLoginIds.value,
         participantsDetail: [],
+        type: roomInfo.value?.type ?? null,
+        temporary: roomTemporary.value ?? null,
       }
     }
     return roomInfo.value
@@ -344,16 +402,37 @@ const handleFileSelect = createFileSelectHandler({
 
 async function handleMatchResultEvent(payload) {
   if (!payload) return
-  const nextRoomId = payload?.roomId ?? payload?.room_id
-  const partner = payload?.partnerNickName || payload?.partnerNickname
-  if (nextRoomId) {
-    roomId.value = Number(nextRoomId)
-    await ensureRoomExists(Number(nextRoomId), partner)
+  const normalized = camelizeKeys(payload)
+  matchStore.mergeBootstrap(normalized)
+  applyBootstrap(matchStore.bootstrap)
+  if (roomId.value) {
+    await ensureRoomExists(roomId.value, matchStore.bootstrap?.partnerName)
   }
-  if (partner) {
-    partnerName.value = partner
+}
+
+async function handleFollowUpdateEvent(payload) {
+  if (!payload) return
+  const normalized = camelizeKeys(payload)
+  matchStore.mergeBootstrap(normalized)
+  applyBootstrap(matchStore.bootstrap)
+  if (roomId.value) {
+    await ensureRoomExists(roomId.value, matchStore.bootstrap?.partnerName)
   }
-  await refreshBootstrapFromStore()
+}
+
+async function handleRoomPromotedEvent(payload) {
+  const normalized = camelizeKeys(payload || {})
+  const patch = {
+    ...normalized,
+    roomTemporary: false,
+    mutualFollow: true,
+    followStatus: normalized.followStatus || 'ACCEPTED',
+  }
+  matchStore.mergeBootstrap(patch)
+  applyBootstrap(matchStore.bootstrap)
+  if (roomId.value) {
+    await ensureRoomExists(roomId.value, matchStore.bootstrap?.partnerName)
+  }
 }
 
 const {
@@ -365,6 +444,10 @@ const {
   maxReconnectAttempts: 3,
   onChat: (payload) => handleIncomingMessage(payload),
   onMatchResult: (payload) => handleMatchResultEvent(payload),
+  events: {
+    'match-follow-updated': (payload) => { void handleFollowUpdateEvent(payload) },
+    'match-room-promoted': (payload) => { void handleRoomPromotedEvent(payload) },
+  },
 })
 
 function applyRouteContext() {
@@ -385,6 +468,39 @@ function applyRouteContext() {
   }
 }
 
+function applyFollowSnapshot (patch = {}) {
+  if (!patch || typeof patch !== 'object') return
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'followStatus')) {
+    followState.status = patch.followStatus ? patch.followStatus.toString().toUpperCase() : null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'incomingFollowStatus')) {
+    const nextStatus = patch.incomingFollowStatus
+    followState.incomingStatus = nextStatus ? nextStatus.toString().toUpperCase() : null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'outgoingFollowStatus')) {
+    const nextStatus = patch.outgoingFollowStatus
+    followState.outgoingStatus = nextStatus ? nextStatus.toString().toUpperCase() : null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'incomingFollowId')) {
+    followState.incomingId = toFiniteNumber(patch.incomingFollowId)
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'outgoingFollowId')) {
+    followState.outgoingId = toFiniteNumber(patch.outgoingFollowId)
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'followRelationId')) {
+    followState.relationId = toFiniteNumber(patch.followRelationId)
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'mutualFollow')) {
+    followState.mutual = Boolean(patch.mutualFollow)
+  }
+
+  followState.status = followState.status ? followState.status.toString().toUpperCase() : null
+  followState.incomingStatus = followState.incomingStatus ? followState.incomingStatus.toUpperCase() : null
+  followState.outgoingStatus = followState.outgoingStatus ? followState.outgoingStatus.toUpperCase() : null
+  followState.relationId = followState.incomingId ?? followState.outgoingId ?? followState.relationId ?? null
+}
+
 function applyBootstrap(payload) {
   if (!payload) return
   partnerName.value = payload.partnerName || partnerName.value
@@ -392,8 +508,12 @@ function applyBootstrap(payload) {
   partnerUserPid.value = payload.partnerUserPid ?? partnerUserPid.value
   roomId.value = payload.roomId ?? roomId.value
   handshakeStatus.value = payload.status || payload.handshake?.status || handshakeStatus.value
-  followState.status = payload.followStatus ?? followState.status
-  followState.relationId = payload.followRelationId ?? followState.relationId
+  if (Object.prototype.hasOwnProperty.call(payload, 'roomTemporary')) {
+    roomTemporary.value = payload.roomTemporary
+  } else if (payload.roomType) {
+    roomTemporary.value = String(payload.roomType).toUpperCase() === 'RANDOM'
+  }
+  applyFollowSnapshot(payload)
   if (payload.chatReady) {
     sessionStatus.value = '실시간 대화를 진행해보세요!'
   } else if (payload.handshakeReady) {
@@ -453,6 +573,7 @@ onUnmounted(() => {
   hangUpCall()
   setManualDisconnect(true)
   disconnectRealtime()
+  void cleanupTemporaryRoom('component-unmount')
 })
 
 function bubbleClass(message) {
@@ -539,9 +660,17 @@ async function requestFollow() {
   }
   followRequestLoading.value = true
   try {
-    await followService.requestFollow(followeeId)
+    const { data } = await followService.requestFollow(followeeId)
+    followState.outgoingId = toFiniteNumber(data?.followId) ?? followState.outgoingId
+    followState.outgoingStatus = data?.status ? data.status.toString().toUpperCase() : 'PENDING'
     followState.status = 'PENDING_OUTGOING'
-    matchStore.mergeBootstrap({ followStatus: followState.status })
+    followState.relationId = followState.outgoingId ?? followState.relationId
+    matchStore.mergeBootstrap({
+      followStatus: followState.status,
+      followRelationId: followState.relationId,
+      outgoingFollowId: followState.outgoingId,
+      outgoingFollowStatus: followState.outgoingStatus,
+    })
     sessionStatus.value = '팔로우 요청을 전송했습니다.'
   } catch (error) {
     console.error('Failed to send follow request', error)
@@ -553,12 +682,25 @@ async function requestFollow() {
 
 async function acceptFollowRequest() {
   if (!canAcceptFollow.value || followAcceptLoading.value) return
-  const followId = followState.relationId
+  const followId = followState.incomingId ?? followState.relationId
+  if (!followId) {
+    alert('수락할 팔로우 요청을 찾을 수 없습니다.')
+    return
+  }
   followAcceptLoading.value = true
   try {
     await followService.acceptFollow(followId)
-    followState.status = 'ACCEPTED'
-    matchStore.mergeBootstrap({ followStatus: 'ACCEPTED', followRelationId: followId })
+    followState.incomingStatus = 'ACCEPTED'
+    followState.status = hasMutualFollow.value ? 'ACCEPTED' : 'ACCEPTED_INCOMING'
+    followState.relationId = followState.incomingId ?? followId
+    followState.mutual = hasMutualFollow.value
+    matchStore.mergeBootstrap({
+      followStatus: followState.status,
+      followRelationId: followState.relationId,
+      incomingFollowId: followState.incomingId ?? followId,
+      incomingFollowStatus: followState.incomingStatus,
+      mutualFollow: followState.mutual,
+    })
     sessionStatus.value = '서로 팔로우 상태입니다.'
   } catch (error) {
     console.error('Failed to accept follow request', error)
@@ -568,12 +710,47 @@ async function acceptFollowRequest() {
   }
 }
 
+async function cleanupTemporaryRoom(reason = 'navigation') {
+  if (cleanupState.running || cleanupState.completed) return false
+  if (!roomId.value) return false
+
+  if (isTemporaryRoom.value === null) {
+    await ensureRoomExists(roomId.value)
+  }
+
+  if (isTemporaryRoom.value === false || hasMutualFollow.value) {
+    cleanupState.completed = true
+    return false
+  }
+
+  cleanupState.running = true
+  try {
+    await api.delete(`/rooms/${roomId.value}/temporary`, { params: { reason } })
+    cleanupState.completed = true
+    const cleanedRoom = roomId.value
+    roomId.value = null
+    roomInfo.value = null
+    roomTemporary.value = null
+    matchStore.mergeBootstrap({ roomId: null, chatReady: false, roomTemporary: null })
+    return Boolean(cleanedRoom)
+  } catch (error) {
+    console.warn('[match-session] Failed to cleanup temporary room', error)
+    return false
+  } finally {
+    cleanupState.running = false
+  }
+}
+
 function goBackToMatching() {
-  router.push({ name: 'match' })
+  cleanupTemporaryRoom('user-navigation').finally(() => {
+    router.push({ name: 'match' })
+  })
 }
 
 function goBackToResult() {
-  router.push({ name: 'match-result' })
+  cleanupTemporaryRoom('view-result').finally(() => {
+    router.push({ name: 'match-result' })
+  })
 }
 </script>
 
@@ -588,6 +765,7 @@ function goBackToResult() {
 
 .session-card {
   background: #fff;
+  min-height: 75vh;
 }
 
 .session-content {
@@ -595,6 +773,7 @@ function goBackToResult() {
   flex-direction: row;
   gap: 24px;
   padding: 24px;
+  height: 100%;
 }
 
 .video-pane {
@@ -602,6 +781,7 @@ function goBackToResult() {
   max-width: 55%;
   display: flex;
   flex-direction: column;
+  min-height: 420px;
 }
 
 .session-video {
@@ -627,6 +807,16 @@ function goBackToResult() {
   padding: 16px;
   overflow-y: auto;
   background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.chat-messages__list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: auto;
 }
 
 .message-row {

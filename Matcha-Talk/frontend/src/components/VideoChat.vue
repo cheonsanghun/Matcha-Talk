@@ -347,10 +347,18 @@ defineExpose({
 .video-surfaces {
   position: relative;
   width: 100%;
-  padding-top: 56.25%;
   background-color: #1f1f1f;
   border-radius: 12px;
   overflow: hidden;
+  aspect-ratio: 4 / 3;
+  min-height: 420px;
+}
+
+@supports not (aspect-ratio: 1 / 1) {
+  .video-surfaces {
+    height: 0;
+    padding-top: 75%;
+  }
 }
 
 .video-surface {

@@ -6,6 +6,7 @@ import net.datasa.project01.domain.dto.RoomDetailResponseDto;
 import net.datasa.project01.domain.dto.RoomCreateResponseDto;
 import net.datasa.project01.domain.dto.RoomListResponseDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
+import net.datasa.project01.domain.dto.RoomCleanupResponseDto;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.service.ChatService;
 import org.springframework.core.io.Resource;
@@ -103,6 +104,15 @@ public class ChatController {
             log.error("Failed to store attachment for room {}", roomId, exception);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    @DeleteMapping("/{roomId}/temporary")
+    public ResponseEntity<RoomCleanupResponseDto> cleanupTemporaryRoom(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
+        RoomCleanupResponseDto response = RoomCleanupResponseDto.from(chatService.cleanupTemporaryRoom(roomId, loginId));
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{roomId}/attachments/{messageId}")
