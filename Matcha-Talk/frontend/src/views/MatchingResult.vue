@@ -287,6 +287,8 @@ const sessionRouteQuery = computed(() => {
   }
 })
 
+let latestMatchFetchPromise = null
+
 watch(() => matchStore.bootstrap, (next) => {
   applyBootstrap(next)
 }, { immediate: true })
@@ -585,7 +587,7 @@ function restartMatching () {
   router.push({ name: 'match' })
 }
 
-let latestMatchFetchPromise = null
+//let latestMatchFetchPromise = null
 
 async function fetchLatestMatchFromRest (options = {}) {
   const { silent = false } = options
