@@ -757,6 +757,8 @@ function goBackToResult() {
 <style scoped>
 .match-session {
   min-height: calc(100vh - var(--v-layout-top));
+  display: flex;
+  flex-direction: column;
 }
 
 .session-header {
@@ -765,7 +767,12 @@ function goBackToResult() {
 
 .session-card {
   background: #fff;
-  min-height: 75vh;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 220px);
+  max-height: calc(100vh - 220px);
+  overflow: hidden;
 }
 
 .session-content {
@@ -774,6 +781,9 @@ function goBackToResult() {
   gap: 24px;
   padding: 24px;
   height: 100%;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .video-pane {
@@ -781,7 +791,8 @@ function goBackToResult() {
   max-width: 55%;
   display: flex;
   flex-direction: column;
-  min-height: 420px;
+  min-height: 0;
+  height: 100%;
 }
 
 .session-video {
@@ -800,6 +811,8 @@ function goBackToResult() {
   display: flex;
   flex-direction: column;
   border-left: 1px solid #f0f0f0;
+  min-height: 0;
+  height: 100%;
 }
 
 .chat-messages {
@@ -809,21 +822,21 @@ function goBackToResult() {
   background: #fafafa;
   display: flex;
   flex-direction: column;
-  min-height: 420px;
+  min-height: 0;
 }
 
 .chat-messages__list {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  margin-top: auto;
+  justify-content: flex-start;
+  flex: 1 0 auto;
 }
 
 .message-row {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  margin-bottom: 16px;
 }
 
 .message-row--me {
@@ -872,6 +885,10 @@ function goBackToResult() {
 @media (max-width: 1200px) {
   .session-content {
     flex-direction: column;
+  }
+  .session-card {
+    height: auto;
+    max-height: none;
   }
   .video-pane,
   .chat-pane {

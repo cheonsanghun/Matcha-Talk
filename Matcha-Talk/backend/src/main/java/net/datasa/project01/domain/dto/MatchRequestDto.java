@@ -34,4 +34,12 @@ public class MatchRequestDto {
     private List<String> interests; // 'interestsJson' -> 'interests'로 필드명 변경
 
     private String loginId;
+
+    @AssertTrue(message = "최소 나이는 최대 나이보다 클 수 없습니다.")
+    public boolean isValidAgeRange() {
+        if (minAge == null || maxAge == null) {
+            return true;
+        }
+        return minAge <= maxAge;
+    }
 }

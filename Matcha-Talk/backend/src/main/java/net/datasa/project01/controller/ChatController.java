@@ -2,6 +2,7 @@ package net.datasa.project01.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.datasa.project01.domain.dto.DirectChatRequestDto;
 import net.datasa.project01.domain.dto.RoomDetailResponseDto;
 import net.datasa.project01.domain.dto.RoomCreateResponseDto;
 import net.datasa.project01.domain.dto.RoomListResponseDto;
@@ -9,6 +10,7 @@ import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.dto.RoomCleanupResponseDto;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.service.ChatService;
+import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -46,6 +48,14 @@ public class ChatController {
             log.error("Error creating group room", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    @PostMapping("/direct")
+    public ResponseEntity<RoomDetailResponseDto> ensureDirectRoom(@AuthenticationPrincipal UserDetails userDetails,
+                                                                  @Valid @RequestBody DirectChatRequestDto requestDto) {
+        String loginId = requireLoginId(userDetails);
+        RoomDetailResponseDto responseDto = chatService.ensureDirectRoom(loginId, requestDto.targetUserPid());
+        return ResponseEntity.ok(responseDto);
     }
 
     /**

@@ -15,6 +15,7 @@ import net.datasa.project01.repository.FollowRepository;
 import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
 import net.datasa.project01.repository.UserRepository;
+import net.datasa.project01.service.support.MatchRequestSanitizer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +23,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -98,8 +100,8 @@ public class MatchService {
             myMatchedRequest.setHandshakeKey(handshakeKey);
             myMatchedRequest.setHandshakeExpiresAt(expiresAt);
 
-            matchRequestRepository.save(myMatchedRequest);
-            matchRequestRepository.save(matchedOpponentRequest);
+            saveNormalized(myMatchedRequest);
+            saveNormalized(matchedOpponentRequest);
 
             MatchFoundResponseDto myResponse = buildMatchFoundResponse(myMatchedRequest, matchedOpponentRequest);
             MatchFoundResponseDto opponentResponse = buildMatchFoundResponse(matchedOpponentRequest, myMatchedRequest);
@@ -112,7 +114,7 @@ public class MatchService {
 
         log.info("❌ No match found for user {}. Adding to queue.", loginId);
         MatchRequest newRequest = buildMatchRequest(me, requestDto, MatchRequest.MatchStatus.WAITING);
-        matchRequestRepository.save(newRequest);
+        saveNormalized(newRequest);
         sendWaitingNotification(loginId);
         return MatchStartResponseDto.queued(newRequest, false);
     }
@@ -175,7 +177,7 @@ public class MatchService {
         }
 
         request.setStatus(MatchRequest.MatchStatus.CONFIRMED);
-        matchRequestRepository.save(request);
+        saveNormalized(request);
 
         MatchRequest partner = findHandshakePartner(request)
                 .orElseThrow(() -> new IllegalStateException("상대 매칭 정보를 찾을 수 없습니다."));
@@ -189,8 +191,8 @@ public class MatchService {
             request.setHandshakeKey(null);
             partner.setHandshakeKey(null);
 
-            matchRequestRepository.save(request);
-            matchRequestRepository.save(partner);
+            saveNormalized(request);
+            saveNormalized(partner);
 
             MatchFoundResponseDto myPayload = buildMatchFoundResponse(request, partner);
             MatchFoundResponseDto partnerPayload = buildMatchFoundResponse(partner, request);
@@ -215,14 +217,14 @@ public class MatchService {
         request.setStatus(MatchRequest.MatchStatus.DECLINED);
         request.setHandshakeExpiresAt(null);
         request.setHandshakeKey(null);
-        matchRequestRepository.save(request);
+        saveNormalized(request);
 
         MatchRequest partner = findHandshakePartner(request)
                 .map(other -> {
                     other.setStatus(MatchRequest.MatchStatus.DECLINED);
                     other.setHandshakeExpiresAt(null);
                     other.setHandshakeKey(null);
-                    matchRequestRepository.save(other);
+                    saveNormalized(other);
                     return other;
                 })
                 .orElse(null);
@@ -239,11 +241,20 @@ public class MatchService {
     }
 
     private MatchRequest buildMatchRequest(User user, MatchRequestDto requestDto, MatchRequest.MatchStatus status) throws JsonProcessingException {
+        Integer minAge = requestDto.getMinAge();
+        Integer maxAge = requestDto.getMaxAge();
+
+        if (minAge != null && maxAge != null && minAge > maxAge) {
+            int swappedMin = maxAge;
+            maxAge = minAge;
+            minAge = swappedMin;
+        }
+
         return MatchRequest.builder()
                 .user(user)
                 .choiceGender(MatchRequest.Gender.valueOf(requestDto.getChoiceGender()))
-                .minAge(requestDto.getMinAge())
-                .maxAge(requestDto.getMaxAge())
+                .minAge(minAge)
+                .maxAge(maxAge)
                 .regionCode(requestDto.getRegionCode())
                 .interestsJson(objectMapper.writeValueAsString(requestDto.getInterests()))
                 .status(status)
@@ -299,7 +310,7 @@ public class MatchService {
             request.setStatus(MatchRequest.MatchStatus.ARCHIVED);
         }
 
-        matchRequestRepository.saveAll(requests);
+        saveAllNormalized(requests);
     }
 
     private FollowSnapshot resolveFollowSnapshot(User currentUser, User partnerUser) {
@@ -402,13 +413,13 @@ public class MatchService {
             partner.setStatus(MatchRequest.MatchStatus.CANCELLED);
             partner.setHandshakeKey(null);
             partner.setHandshakeExpiresAt(null);
-            matchRequestRepository.save(partner);
+            saveNormalized(partner);
         });
 
         request.setStatus(MatchRequest.MatchStatus.CANCELLED);
         request.setHandshakeKey(null);
         request.setHandshakeExpiresAt(null);
-        matchRequestRepository.save(request);
+        saveNormalized(request);
     }
 
     private void notifyMatchFound(MatchRequest request, MatchFoundResponseDto payload) {
@@ -423,6 +434,19 @@ public class MatchService {
         if (!request.getUser().getLoginId().equals(loginId)) {
             throw new IllegalArgumentException("본인의 매칭 요청만 처리할 수 있습니다.");
         }
+    }
+
+    private MatchRequest saveNormalized(MatchRequest request) {
+        MatchRequestSanitizer.normalizeAgeRange(request);
+        return matchRequestRepository.save(request);
+    }
+
+    private void saveAllNormalized(Collection<MatchRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return;
+        }
+        requests.forEach(MatchRequestSanitizer::normalizeAgeRange);
+        matchRequestRepository.saveAll(requests);
     }
 
     private boolean isMutuallyCompatible(User me, MatchRequestDto myRequestDto, MatchRequest opponentRequest) {
