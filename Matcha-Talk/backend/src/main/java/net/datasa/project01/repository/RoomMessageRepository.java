@@ -6,6 +6,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
+
 public interface RoomMessageRepository extends JpaRepository<RoomMessage, Long> {
 
     /**
@@ -15,5 +17,7 @@ public interface RoomMessageRepository extends JpaRepository<RoomMessage, Long> 
      * @return 페이징된 메시지 목록
      */
     Page<RoomMessage> findByRoomOrderByCreatedAtDesc(Room room, Pageable pageable);
+
+    List<RoomMessage> findByRoom(Room room);
 
 }

@@ -217,6 +217,11 @@ const promotionNotice = ref(false)
 const followState = reactive({
   status: null,
   relationId: null,
+  incomingId: null,
+  incomingStatus: null,
+  outgoingId: null,
+  outgoingStatus: null,
+  mutual: false,
 })
 const followRequestLoading = ref(false)
 const followAcceptLoading = ref(false)
@@ -224,6 +229,54 @@ const acceptLoading = ref(false)
 const declineLoading = ref(false)
 
 let countdownTimer = null
+
+function toFiniteNumber (value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function resetFollowState () {
+  followState.status = null
+  followState.relationId = null
+  followState.incomingId = null
+  followState.incomingStatus = null
+  followState.outgoingId = null
+  followState.outgoingStatus = null
+  followState.mutual = false
+}
+
+function applyFollowSnapshot (patch = {}) {
+  if (!patch || typeof patch !== 'object') return
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'followStatus')) {
+    followState.status = patch.followStatus ? patch.followStatus.toString().toUpperCase() : null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'incomingFollowStatus')) {
+    const nextStatus = patch.incomingFollowStatus
+    followState.incomingStatus = nextStatus ? nextStatus.toString().toUpperCase() : null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'outgoingFollowStatus')) {
+    const nextStatus = patch.outgoingFollowStatus
+    followState.outgoingStatus = nextStatus ? nextStatus.toString().toUpperCase() : null
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'incomingFollowId')) {
+    followState.incomingId = toFiniteNumber(patch.incomingFollowId)
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'outgoingFollowId')) {
+    followState.outgoingId = toFiniteNumber(patch.outgoingFollowId)
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'followRelationId')) {
+    followState.relationId = toFiniteNumber(patch.followRelationId)
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'mutualFollow')) {
+    followState.mutual = Boolean(patch.mutualFollow)
+  }
+
+  followState.status = followState.status ? followState.status.toUpperCase() : null
+  followState.incomingStatus = followState.incomingStatus ? followState.incomingStatus.toUpperCase() : null
+  followState.outgoingStatus = followState.outgoingStatus ? followState.outgoingStatus.toUpperCase() : null
+  followState.relationId = followState.incomingId ?? followState.outgoingId ?? followState.relationId ?? null
+}
 
 const isPending = computed(() => !matchReady.value && !matchDeclined.value)
 const shouldPollMatchStatus = computed(() => !chatReady.value && !matchDeclined.value)
@@ -243,38 +296,41 @@ const handshakeStatusLabel = computed(() => {
   }
 })
 const followStatusUpper = computed(() => (followState.status || '').toString().toUpperCase())
-const followStatusMessage = computed(() => {
-  if (!followState.status) return ''
-  if (followStatusUpper.value.includes('ACCEPT')) {
-    return '서로 팔로우 상태입니다.'
+const incomingStatusUpper = computed(() => (followState.incomingStatus || '').toString().toUpperCase())
+const outgoingStatusUpper = computed(() => (followState.outgoingStatus || '').toString().toUpperCase())
+const hasMutualFollow = computed(() => {
+  if (followState.mutual) return true
+  if (incomingStatusUpper.value === 'ACCEPTED' && outgoingStatusUpper.value === 'ACCEPTED') {
+    return true
   }
-  if (followStatusUpper.value.includes('INCOMING') || followStatusUpper.value.includes('RECEIVED')) {
+  return followStatusUpper.value === 'ACCEPTED'
+})
+const followStatusMessage = computed(() => {
+  if (hasMutualFollow.value) return '서로 팔로우 상태입니다.'
+  if (incomingStatusUpper.value === 'PENDING') {
     return '상대방이 팔로우 요청을 보냈습니다.'
   }
-  if (followStatusUpper.value.includes('PENDING') || followStatusUpper.value.includes('REQUEST')) {
+  if (outgoingStatusUpper.value === 'PENDING') {
     return '팔로우 응답을 기다리고 있습니다.'
   }
-  return followState.status
+  if (incomingStatusUpper.value === 'ACCEPTED' && outgoingStatusUpper.value !== 'ACCEPTED') {
+    return '상대가 나를 팔로우 중입니다.'
+  }
+  if (outgoingStatusUpper.value === 'ACCEPTED' && incomingStatusUpper.value !== 'ACCEPTED') {
+    return '상대를 팔로우했습니다.'
+  }
+  return followState.status || ''
 })
 const canRequestFollow = computed(() => {
   if (partnerUserPid.value == null) return false
-  if (!followStatusUpper.value) return true
-  if (followStatusUpper.value.includes('ACCEPT')) return false
-  if (followStatusUpper.value.includes('OUTGOING')) return false
-  if (followStatusUpper.value.includes('PENDING') &&
-    !followStatusUpper.value.includes('INCOMING') &&
-    !followStatusUpper.value.includes('RECEIVED')) {
-    return false
-  }
+  if (hasMutualFollow.value) return false
+  const outgoing = outgoingStatusUpper.value
+  if (outgoing === 'PENDING' || outgoing === 'ACCEPTED') return false
   return true
 })
 const canAcceptFollow = computed(() => {
-  if (!followState.relationId) return false
-  if (!followStatusUpper.value) return true
-  if (followStatusUpper.value.includes('ACCEPT')) return false
-  return followStatusUpper.value.includes('INCOMING') ||
-    followStatusUpper.value.includes('RECEIVED') ||
-    followStatusUpper.value === 'PENDING'
+  if (!followState.incomingId) return false
+  return incomingStatusUpper.value === 'PENDING'
 })
 
 const sessionRouteQuery = computed(() => {
@@ -375,8 +431,7 @@ function applyBootstrap (payload, options = {}) {
     chatReady.value = false
     matchReady.value = false
     matchDeclined.value = false
-    followState.status = null
-    followState.relationId = null
+    resetFollowState()
     sessionStatus.value = options.statusMessage || '매칭 대기 중입니다...'
     startCountdown(null)
     return
@@ -388,8 +443,7 @@ function applyBootstrap (payload, options = {}) {
   roomId.value = payload.roomId ?? payload.handshake?.roomId ?? roomId.value ?? null
   handshakeInfo.value = payload.handshake || handshakeInfo.value || null
   handshakeStatus.value = payload.status || payload.handshake?.status || handshakeStatus.value || null
-  followState.status = payload.followStatus ?? followState.status ?? null
-  followState.relationId = payload.followRelationId ?? payload.followId ?? followState.relationId ?? null
+  applyFollowSnapshot(payload)
 
   handshakeReady.value = !!payload.handshakeReady
   chatReady.value = !!payload.chatReady || (roomId.value != null && (handshakeStatus.value === 'CONFIRMED' || handshakeStatus.value === 'ARCHIVED'))
@@ -421,6 +475,12 @@ function ingestMatchPayload (payload, options = {}) {
     status: normalized.status ?? handshakeStatus.value ?? null,
     followStatus: normalized.followStatus ?? followState.status ?? null,
     followRelationId: normalized.followRelationId ?? normalized.followId ?? followState.relationId ?? null,
+    incomingFollowId: normalized.incomingFollowId ?? followState.incomingId ?? null,
+    incomingFollowStatus: normalized.incomingFollowStatus ?? followState.incomingStatus ?? null,
+    outgoingFollowId: normalized.outgoingFollowId ?? followState.outgoingId ?? null,
+    outgoingFollowStatus: normalized.outgoingFollowStatus ?? followState.outgoingStatus ?? null,
+    mutualFollow: normalized.mutualFollow ?? followState.mutual ?? false,
+    roomTemporary: normalized.roomTemporary ?? matchStore.bootstrap?.roomTemporary ?? null,
     handshake: {
       myRequestId: normalized.myRequestId ?? handshakeInfo.value?.myRequestId ?? null,
       partnerRequestId: normalized.partnerRequestId ?? handshakeInfo.value?.partnerRequestId ?? null,
@@ -453,20 +513,19 @@ function handleMatchDeclined (payload) {
   matchDeclined.value = true
 }
 
+function handleFollowUpdated (payload) {
+  ingestMatchPayload(payload, { statusMessage: sessionStatus.value })
+}
+
 function handleRoomPromoted (payload) {
   const normalized = camelizeKeys(payload || {})
-  if (normalized.roomId) {
-    matchStore.mergeBootstrap({
-      roomId: normalized.roomId,
-      chatReady: true,
-    })
-    roomId.value = normalized.roomId
-  }
-  followState.status = 'ACCEPTED'
-  matchStore.mergeBootstrap({
-    followStatus: 'ACCEPTED',
-    followRelationId: normalized.followRelationId ?? matchStore.bootstrap?.followRelationId ?? null,
-  })
+  ingestMatchPayload({
+    ...normalized,
+    chatReady: true,
+    followStatus: normalized.followStatus || 'ACCEPTED',
+    mutualFollow: true,
+    roomTemporary: false,
+  }, { statusMessage: '서로 팔로우 상태입니다.' })
   promotionNotice.value = true
 }
 
@@ -544,9 +603,17 @@ async function requestFollow () {
   }
   followRequestLoading.value = true
   try {
-    await followService.requestFollow(followeeId)
+    const { data } = await followService.requestFollow(followeeId)
+    followState.outgoingId = toFiniteNumber(data?.followId) ?? followState.outgoingId
+    followState.outgoingStatus = data?.status ? data.status.toString().toUpperCase() : 'PENDING'
     followState.status = 'PENDING_OUTGOING'
-    matchStore.mergeBootstrap({ followStatus: followState.status })
+    followState.relationId = followState.outgoingId ?? followState.relationId
+    matchStore.mergeBootstrap({
+      followStatus: followState.status,
+      followRelationId: followState.relationId,
+      outgoingFollowId: followState.outgoingId,
+      outgoingFollowStatus: followState.outgoingStatus,
+    })
     sessionStatus.value = '팔로우 요청을 전송했습니다.'
   } catch (error) {
     console.error('Failed to send follow request', error)
@@ -558,13 +625,26 @@ async function requestFollow () {
 
 async function acceptFollowRequest () {
   if (!canAcceptFollow.value || followAcceptLoading.value) return
-  const followId = followState.relationId
+  const followId = followState.incomingId ?? followState.relationId
+  if (!followId) {
+    alert('수락할 팔로우 요청을 찾을 수 없습니다.')
+    return
+  }
   followAcceptLoading.value = true
   try {
     await followService.acceptFollow(followId)
-    followState.status = 'ACCEPTED'
-    matchStore.mergeBootstrap({ followStatus: 'ACCEPTED', followRelationId: followId })
-    promotionNotice.value = true
+    followState.incomingStatus = 'ACCEPTED'
+    followState.status = hasMutualFollow.value ? 'ACCEPTED' : 'ACCEPTED_INCOMING'
+    followState.relationId = followState.incomingId ?? followId
+    followState.mutual = hasMutualFollow.value
+    matchStore.mergeBootstrap({
+      followStatus: followState.status,
+      followRelationId: followState.relationId,
+      incomingFollowId: followState.incomingId ?? followId,
+      incomingFollowStatus: followState.incomingStatus,
+      mutualFollow: followState.mutual,
+    })
+    promotionNotice.value = followState.mutual || promotionNotice.value
   } catch (error) {
     console.error('Failed to accept follow request', error)
     alert('팔로우 수락에 실패했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
@@ -770,6 +850,7 @@ async function connectWebSocket () {
       websocketClient.onEvent('match-found', handleMatchFound),
       websocketClient.onEvent('match-room-ready', handleMatchRoomReady),
       websocketClient.onEvent('match-declined', handleMatchDeclined),
+      websocketClient.onEvent('match-follow-updated', handleFollowUpdated),
       websocketClient.onEvent('match-room-promoted', handleRoomPromoted),
       websocketClient.onEvent('match-status', handleMatchStatus),
       websocketClient.onEvent('connected', () => {
