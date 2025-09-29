@@ -65,24 +65,25 @@
               <VideoChat ref="videoChatRef" class="session-video" />
               <div class="video-actions">
                 <v-btn
-                  color="primary"
+                  class="session-pill video-start-btn"
                   variant="flat"
-                  class="me-2"
+                  rounded="pill"
                   :loading="videoCallLoading"
                   :disabled="!canStartCall"
                   @click="startVideoCall"
                 >
-                  <v-icon start>mdi-video</v-icon>
-                  영상 통화 시작
+                  <v-icon start size="20">mdi-video</v-icon>
+                  <span>영상 통화 시작</span>
                 </v-btn>
                 <v-btn
-                  color="error"
-                  variant="outlined"
+                  class="session-pill hangup-btn"
+                  variant="flat"
+                  rounded="pill"
                   :disabled="!callActive"
                   @click="hangUpCall"
                 >
-                  <v-icon start>mdi-phone-hangup</v-icon>
-                  통화 종료
+                  <v-icon start size="20">mdi-phone-hangup</v-icon>
+                  <span>통화 종료</span>
                 </v-btn>
               </div>
             </div>
@@ -139,13 +140,13 @@
                 <input type="file" ref="fileInput" class="d-none" @change="handleFileSelect" />
                 <div class="d-flex ga-2 align-center">
                   <v-btn
-                    icon
-                    variant="outlined"
-                    color="success"
+                    class="session-pill chat-action-btn session-file-btn"
+                    variant="flat"
+                    rounded="pill"
                     :disabled="!roomId"
                     @click="triggerFilePicker"
                   >
-                    <v-icon>mdi-plus</v-icon>
+                    <v-icon size="22">mdi-plus</v-icon>
                   </v-btn>
                   <v-text-field
                     v-model="draft"
@@ -158,12 +159,14 @@
                     @keydown.enter.prevent="send"
                   />
                   <v-btn
-                    icon
-                    color="success"
+                    class="session-pill chat-action-btn session-send-btn"
+                    variant="flat"
+                    rounded="pill"
                     :disabled="!roomId || !draft.trim()"
                     @click="send"
                   >
-                    <v-icon>mdi-send</v-icon>
+                    <v-icon start size="18">mdi-send</v-icon>
+                    <span>보내기</span>
                   </v-btn>
                 </div>
               </div>
@@ -766,7 +769,7 @@ function goBackToResult() {
 }
 
 .session-card {
-  background: #fff;
+  background: linear-gradient(180deg, #fffdf4 0%, #ffffff 55%, #f3fbf7 100%);
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -806,6 +809,7 @@ function goBackToResult() {
   margin-top: 16px;
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 
 .chat-pane {
@@ -813,7 +817,7 @@ function goBackToResult() {
   max-width: 45%;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid #f0f0f0;
+  border-left: 1px solid #ecf2e5;
   min-height: 0;
   height: 100%;
 
@@ -823,7 +827,7 @@ function goBackToResult() {
   flex: 1;
   padding: 16px;
   overflow-y: auto;
-  background: #fafafa;
+  background: linear-gradient(180deg, #fffef5 0%, #f4fff8 100%);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -883,8 +887,65 @@ function goBackToResult() {
 }
 
 .chat-input {
-  border-top: 1px solid #f0f0f0;
-  background: #fff;
+  border-top: 1px solid #f4efe0;
+  background: #fff8d6;
+}
+
+.session-pill {
+  border-radius: 999px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: -0.2px;
+  padding: 0 18px;
+  height: 44px;
+  min-width: 44px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.session-pill :deep(.v-btn__content) {
+  gap: 6px;
+}
+
+.session-pill:not([disabled]):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.12);
+}
+
+.session-pill[disabled] {
+  filter: grayscale(0.35);
+  box-shadow: none;
+}
+
+.video-start-btn {
+  background: linear-gradient(135deg, #fff3a0, #ffd84d);
+  color: #3b2a07;
+}
+
+.hangup-btn {
+  background: linear-gradient(135deg, #ff9a9e, #ff6f61);
+  color: #fff;
+}
+
+.chat-action-btn {
+  padding-inline: 18px;
+}
+
+.session-file-btn {
+  background: linear-gradient(135deg, #ffeb99, #ffd43b);
+  color: #3b2f10;
+  min-width: 48px;
+  padding-inline: 14px;
+}
+
+.session-send-btn {
+  background: linear-gradient(135deg, #06c755, #00a884);
+  color: #fff;
+}
+
+.session-send-btn[disabled] {
+  background: #c8f5df;
+  color: #5ca98a;
 }
 
 @media (max-width: 1200px) {
