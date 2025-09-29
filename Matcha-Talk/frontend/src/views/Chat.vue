@@ -106,7 +106,7 @@
             >
               좌측 목록에서 채팅방을 선택하세요.
             </div>
-            <template v-else>
+            <div v-else class="chat-messages__list">
               <div
                 v-for="(m, i) in messages"
                 :key="m.id || i"
@@ -189,7 +189,7 @@
                   </div>
                 </template>
               </div>
-            </template>
+            </div>
           </div>
         </div>
         <div class="chat-input d-flex align-center pa-4 ga-2">
@@ -731,9 +731,12 @@ watch(messages, () => scrollToBottom())
   flex: 1 1 55%;
   max-width: 55%;
   display: flex;
+  flex-direction: column;
+  min-height: 420px;
 }
 
 .video-pane :deep(.video-chat) {
+  flex: 1;
   width: 100%;
 }
 
@@ -741,6 +744,16 @@ watch(messages, () => scrollToBottom())
   background: #fff;
   flex: 1 1 45%;
   max-width: 45%;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.chat-messages__list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: auto;
 }
 
 .chat-input {

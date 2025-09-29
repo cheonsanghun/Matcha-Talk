@@ -25,15 +25,30 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
 
     const content = payload.content ?? ''
     const senderNickname = payload.senderNickName || payload.senderNickname || '상대방'
+    const senderLoginId = payload.senderLoginId ||
+      payload.senderLoginID ||
+      payload.sender_login_id ||
+      payload.senderLogin ||
+      null
     const messagesForRoom = ensureConversation(roomKey)
     const myNickname = auth.user?.nickName || auth.user?.nickname
+    const myLoginId = resolveClientIdentity(auth)
+    const normalizedMyLogin = myLoginId ? String(myLoginId).toLowerCase() : null
+    const normalizedSenderLogin = senderLoginId ? String(senderLoginId).toLowerCase() : null
+    let isMine = false
+    if (normalizedMyLogin && normalizedSenderLogin) {
+      isMine = normalizedMyLogin === normalizedSenderLogin
+    } else if (myNickname) {
+      isMine = senderNickname === myNickname
+    }
 
     const message = {
       id: `${roomKey}-${Date.now()}-${messagesForRoom.length}`,
       text: content,
       time: timeFormatter(payload.sentAt),
       sender: senderNickname,
-      me: myNickname ? senderNickname === myNickname : false,
+      senderLoginId,
+      me: isMine,
       contentType: (payload.contentType || 'TEXT').toUpperCase(),
       fileName: payload.fileName || null,
       fileUrl: payload.fileUrl || null,

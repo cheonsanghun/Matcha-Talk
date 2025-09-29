@@ -104,7 +104,7 @@
                 >
                   채팅방 정보를 불러오는 중입니다.
                 </div>
-                <template v-else>
+                <div v-else class="chat-messages__list">
                   <div
                     v-for="(message, index) in messages"
                     :key="message.id || index"
@@ -133,7 +133,7 @@
                       <span>{{ message.time }}</span>
                     </div>
                   </div>
-                </template>
+                </div>
               </div>
               <div class="chat-input pa-4">
                 <input type="file" ref="fileInput" class="d-none" @change="handleFileSelect" />
@@ -297,6 +297,13 @@ async function ensureRoomExists(roomKey, fallbackName) {
   try {
     const { data } = await api.get(`/rooms/${roomKey}`)
     const participants = (data.participants || []).map((participant) => participant.loginId).filter(Boolean)
+    const myLoginId = resolveClientIdentity(auth)
+    const partnerDetail = (data.participants || []).find((participant) => {
+      const loginId = participant.loginId || participant.login_id || participant.username
+      if (!loginId) return false
+      if (!myLoginId) return true
+      return String(loginId).toLowerCase() !== String(myLoginId).toLowerCase()
+    })
     roomInfo.value = {
       id: data.roomId,
       name: data.roomName || fallbackName || `대화방 #${data.roomId}`,
@@ -304,6 +311,21 @@ async function ensureRoomExists(roomKey, fallbackName) {
       participantsDetail: data.participants || [],
     }
     participantLoginIds.value = participants
+    if (partnerDetail) {
+      const loginId = partnerDetail.loginId || partnerDetail.login_id || partnerDetail.username
+      const nickname = partnerDetail.nickName || partnerDetail.nickname || partnerDetail.name
+      const userPid = partnerDetail.userPid ?? partnerDetail.user_pid ?? null
+      if (loginId) {
+        partnerLoginId.value = loginId
+      }
+      if (nickname) {
+        partnerName.value = nickname
+      }
+      const numericPid = Number(userPid)
+      if (Number.isFinite(numericPid) && numericPid > 0) {
+        partnerUserPid.value = numericPid
+      }
+    }
     return roomInfo.value
   } catch (error) {
     console.warn('[match-session] Failed to fetch room detail', error)
@@ -588,6 +610,7 @@ function goBackToResult() {
 
 .session-card {
   background: #fff;
+  min-height: 75vh;
 }
 
 .session-content {
@@ -595,6 +618,7 @@ function goBackToResult() {
   flex-direction: row;
   gap: 24px;
   padding: 24px;
+  height: 100%;
 }
 
 .video-pane {
@@ -602,6 +626,7 @@ function goBackToResult() {
   max-width: 55%;
   display: flex;
   flex-direction: column;
+  min-height: 420px;
 }
 
 .session-video {
@@ -627,6 +652,16 @@ function goBackToResult() {
   padding: 16px;
   overflow-y: auto;
   background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.chat-messages__list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: auto;
 }
 
 .message-row {
