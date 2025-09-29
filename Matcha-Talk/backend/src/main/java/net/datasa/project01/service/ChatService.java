@@ -38,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -206,6 +207,38 @@ public class ChatService {
                         .filter(entry -> !entry.getKey().isTemporary())
                         .map(entry -> RoomListResponseDto.fromEntity(entry.getKey(), entry.getValue()))
                         .collect(Collectors.toList());
+        }
+
+        @Transactional
+        public RoomDetailResponseDto ensureDirectRoom(String loginId, Long targetUserPid) {
+                if (targetUserPid == null) {
+                        throw new IllegalArgumentException("대상 사용자를 선택해주세요.");
+                }
+
+                User requester = userRepository.findByLoginId(loginId)
+                        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+                if (requester.getUserPid().equals(targetUserPid)) {
+                        throw new IllegalArgumentException("자기 자신과는 채팅방을 만들 수 없습니다.");
+                }
+
+                User target = userRepository.findById(targetUserPid)
+                        .orElseThrow(() -> new IllegalArgumentException("대상 사용자를 찾을 수 없습니다."));
+
+                boolean hasAcceptedFollow = followRepository.findByFollowerAndFolloweeAndStatus(requester, target, Follow.FollowStatus.ACCEPTED)
+                        .isPresent()
+                        || followRepository.findByFollowerAndFolloweeAndStatus(target, requester, Follow.FollowStatus.ACCEPTED)
+                        .isPresent();
+
+                if (!hasAcceptedFollow) {
+                        throw new IllegalStateException("상대방과 팔로우가 수락된 상태에서만 1:1 채팅을 시작할 수 있습니다.");
+                }
+
+                Room existing = findExistingDirectRoom(requester, target);
+                Room resolved = existing != null ? existing : createPrivateRoom(requester, target);
+
+                List<RoomMember> members = roomMemberRepository.findByRoom(resolved);
+                return RoomDetailResponseDto.fromEntity(resolved, members);
         }
 
         @Transactional(readOnly = true)
@@ -396,6 +429,29 @@ public class ChatService {
                 boolean forward = followRepository.findByFollowerAndFolloweeAndStatus(first, second, Follow.FollowStatus.ACCEPTED).isPresent();
                 boolean reverse = followRepository.findByFollowerAndFolloweeAndStatus(second, first, Follow.FollowStatus.ACCEPTED).isPresent();
                 return forward && reverse;
+        }
+
+        private Room findExistingDirectRoom(User user1, User user2) {
+                List<RoomMember> memberships = roomMemberRepository.findByUser(user1);
+                Set<Long> requiredMembers = Set.of(user1.getUserPid(), user2.getUserPid());
+
+                for (RoomMember membership : memberships) {
+                        Room room = membership.getRoom();
+                        if (room == null || room.getRoomType() != Room.RoomType.PRIVATE) {
+                                continue;
+                        }
+
+                        List<RoomMember> participants = roomMemberRepository.findByRoom(room);
+                        Set<Long> participantIds = participants.stream()
+                                .map(member -> member.getUser().getUserPid())
+                                .collect(Collectors.toSet());
+
+                        if (participantIds.containsAll(requiredMembers) && participantIds.size() == requiredMembers.size()) {
+                                return room;
+                        }
+                }
+
+                return null;
         }
 
         private void removeRoomWithDependencies(Room room, List<RoomMember> existingMembers) {

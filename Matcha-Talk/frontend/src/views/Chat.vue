@@ -37,7 +37,14 @@
                 lines="two"
               >
                 <template #prepend>
-                  <v-avatar size="40"><v-icon color="primary">mdi-account</v-icon></v-avatar>
+                  <v-avatar size="40">
+                    <template v-if="item.avatarUrl">
+                      <v-img :src="item.avatarUrl" alt="프로필 이미지" cover />
+                    </template>
+                    <template v-else>
+                      <v-icon color="primary">mdi-account</v-icon>
+                    </template>
+                  </v-avatar>
                 </template>
                 <v-list-item-title>{{ item.name }}</v-list-item-title>
                 <v-list-item-subtitle>{{ item.last }}</v-list-item-subtitle>
@@ -226,6 +233,7 @@ import { translate } from '../services/translator'
 import { useVocabularyStore } from '../stores/vocabulary'
 import { resolveClientIdentity } from '../utils/identity'
 import VideoChat from '../components/VideoChat.vue'
+import followService from '../services/follow'
 import {
   createFileSelectHandler,
   createIncomingMessageHandler,
@@ -239,6 +247,7 @@ const groups = ref([])
 const conversations = ref({})
 const current = ref({})
 const draft = ref('')
+const followings = ref([])
 
 const chatMessagesContainer = ref(null)
 const fileInput = ref(null)
@@ -280,6 +289,10 @@ const {
   maxReconnectAttempts: 3,
   onChat: (payload) => handleIncomingMessage(payload),
   onMatchResult: (payload) => handleMatchResultEvent(payload),
+  events: {
+    'match-follow-updated': () => { void loadRooms({ preserveCurrent: true }) },
+    'match-room-promoted': () => { void loadRooms({ preserveCurrent: true }) },
+  },
 })
 
 onMounted(async () => {
@@ -297,7 +310,7 @@ watch(
   () => auth.user?.userPid,
   async (userPid, prev) => {
     if (userPid && userPid !== prev) {
-      await loadRooms()
+      await loadRooms({ preserveCurrent: true })
       await ensureActiveRoomFromRoute()
     }
   }
@@ -323,10 +336,16 @@ onUnmounted(() => {
   disconnectRealtime()
 })
 
-async function loadRooms() {
+async function loadRooms(options = {}) {
   try {
     isLoadingRooms.value = true
-    const { data } = await api.get('/rooms/my')
+    const { preserveCurrent = false } = options
+    const [roomsResponse, followingList] = await Promise.all([
+      api.get('/rooms/my'),
+      fetchFollowingList(),
+    ])
+
+    const data = Array.isArray(roomsResponse?.data) ? roomsResponse.data : []
     const meNickname = auth.user?.nickName || auth.user?.nickname
     const directRooms = []
     const groupRooms = []
@@ -344,17 +363,84 @@ async function loadRooms() {
       }
     })
 
-    chats.value = directRooms
+    followings.value = Array.isArray(followingList) ? followingList : []
+    const followEntries = buildFollowEntries(followings.value, directRooms)
+
+    chats.value = [...directRooms, ...followEntries]
     groups.value = groupRooms
 
-    if (current.value?.id) {
+    const hasActiveRoom = Boolean(current.value?.id)
+
+    if (hasActiveRoom) {
       await selectRoomById(current.value.id, { skipRouteUpdate: true })
+    } else if (!preserveCurrent) {
+      const fallback = [...chats.value.filter((room) => !room.virtual), ...groups.value][0]
+      if (fallback) {
+        await openChat(fallback, { skipRouteUpdate: true })
+      }
     }
   } catch (error) {
     console.error('[chat] Failed to load rooms', error)
   } finally {
     isLoadingRooms.value = false
   }
+}
+
+async function fetchFollowingList() {
+  const userPid = auth.user?.userPid ?? auth.user?.user_pid ?? null
+  if (!userPid) {
+    return []
+  }
+
+  try {
+    const { data } = await followService.getFollowing(userPid)
+    return Array.isArray(data) ? data : []
+  } catch (error) {
+    console.warn('[chat] Failed to load follow list', error)
+    return []
+  }
+}
+
+function buildFollowEntries(followList, directRooms) {
+  if (!Array.isArray(followList) || followList.length === 0) {
+    return []
+  }
+
+  const existingLogins = new Set()
+  directRooms.forEach((room) => {
+    (room.participantLogins || []).forEach((login) => {
+      if (login) {
+        existingLogins.add(String(login).toLowerCase())
+      }
+    })
+  })
+
+  return followList
+    .map((follow) => {
+      const loginId = follow?.loginId || follow?.login_id || null
+      const userPid = follow?.userPid ?? follow?.user_pid ?? null
+      if (!loginId || userPid == null) {
+        return null
+      }
+      if (existingLogins.has(String(loginId).toLowerCase())) {
+        return null
+      }
+      const displayName = follow?.nickName || follow?.nickname || loginId
+      return {
+        id: `follow-${userPid}`,
+        name: displayName,
+        last: '클릭하여 채팅을 시작하세요.',
+        participants: [displayName],
+        participantLogins: [loginId],
+        participantsDetail: [],
+        type: 'DIRECT',
+        virtual: true,
+        targetUserPid: userPid,
+        avatarUrl: follow?.avatarUrl || null,
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
 function normalizeRoomListEntry(room, meNickname) {
@@ -441,7 +527,7 @@ async function ensureActiveRoomFromRoute() {
   }
 
   if (!current.value?.id) {
-    const fallback = chats.value[0] || groups.value[0]
+    const fallback = [...chats.value.filter((room) => !room.virtual), ...groups.value][0]
     if (fallback) {
       await openChat(fallback, { skipRouteUpdate: true })
     }
@@ -475,6 +561,11 @@ const messages = computed(() => conversations.value[current.value?.id] ?? [])
 async function openChat(item, options = {}) {
   if (!item) return
 
+  if (item.virtual && item.targetUserPid) {
+    await openDirectFollowRoom(item, options)
+    return
+  }
+
   const room = await ensureRoomExists(item.id, item.name)
   current.value = room
   tab.value = item.type === 'GROUP' ? 'group' : 'direct'
@@ -486,6 +577,23 @@ async function openChat(item, options = {}) {
   }
 
   scrollToBottom()
+}
+
+async function openDirectFollowRoom(item, options = {}) {
+  try {
+    const { data } = await api.post('/rooms/direct', { targetUserPid: item.targetUserPid })
+    const entry = normalizeRoomDetail(data)
+    followings.value = followings.value.filter((follow) => {
+      const pid = follow?.userPid ?? follow?.user_pid ?? null
+      return pid === null || pid !== item.targetUserPid
+    })
+    chats.value = chats.value.filter((chat) => chat.id !== item.id)
+    const persisted = addOrUpdateRoom(entry)
+    await openChat(persisted, options)
+  } catch (error) {
+    console.error('[chat] Failed to prepare direct chat room', error)
+    alert('채팅방을 준비하지 못했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
+  }
 }
 
 function ensureConversation(roomId) {
@@ -550,7 +658,7 @@ async function handleMatchResultEvent(payload) {
   if (roomId) {
     await ensureRoomExists(roomId, partner)
   }
-  await loadRooms()
+  await loadRooms({ preserveCurrent: true })
   if (roomId) {
     selectRoomById(Number(roomId))
   }
