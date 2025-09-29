@@ -291,6 +291,7 @@ const draft = ref('')
 const followings = ref([])
 const followers = ref([])
 
+
 const chatMessagesContainer = ref(null)
 const fileInput = ref(null)
 const videoChatRef = ref(null)
@@ -385,6 +386,7 @@ async function loadRooms(options = {}) {
     const [roomsResponse, followData] = await Promise.all([
       api.get('/rooms/my'),
       fetchFollowLists(),
+
     ])
 
     const data = Array.isArray(roomsResponse?.data) ? roomsResponse.data : []
@@ -454,6 +456,7 @@ function buildFollowEntries(followingList, followerList, directRooms) {
   const hasFollowing = Array.isArray(followingList) && followingList.length
   const hasFollowers = Array.isArray(followerList) && followerList.length
   if (!hasFollowing && !hasFollowers) {
+
     return []
   }
 
@@ -516,6 +519,7 @@ function buildFollowEntries(followingList, followerList, directRooms) {
       avatarUrl: candidate.avatarUrl,
       mutual: true,
     }))
+
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
@@ -662,6 +666,7 @@ async function openDirectFollowRoom(item, options = {}) {
   try {
     const { data } = await api.post('/rooms/direct', { targetUserPid: item.targetUserPid })
     const entry = normalizeRoomDetail(data)
+
     chats.value = chats.value.filter((chat) => chat.id !== item.id)
     const persisted = addOrUpdateRoom(entry)
     await openChat(persisted, options)

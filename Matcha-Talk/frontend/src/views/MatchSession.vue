@@ -773,6 +773,7 @@ function goBackToResult() {
   height: calc(100vh - 220px);
   max-height: calc(100vh - 220px);
   overflow: hidden;
+
 }
 
 .session-content {
@@ -784,6 +785,7 @@ function goBackToResult() {
   min-height: 0;
   flex: 1;
   overflow: hidden;
+
 }
 
 .video-pane {
@@ -793,6 +795,7 @@ function goBackToResult() {
   flex-direction: column;
   min-height: 0;
   height: 100%;
+
 }
 
 .session-video {
@@ -813,6 +816,7 @@ function goBackToResult() {
   border-left: 1px solid #f0f0f0;
   min-height: 0;
   height: 100%;
+
 }
 
 .chat-messages {
@@ -831,6 +835,7 @@ function goBackToResult() {
   gap: 16px;
   justify-content: flex-start;
   flex: 1 0 auto;
+
 }
 
 .message-row {
