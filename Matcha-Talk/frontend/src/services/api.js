@@ -1,6 +1,8 @@
 import axios from 'axios'
 import { camelizeKeys, snakifyKeys, isTransformable } from '../utils/case'
 
+axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL, withCredentials: true })
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   withCredentials: true,
