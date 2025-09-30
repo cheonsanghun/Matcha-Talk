@@ -11,10 +11,14 @@ import net.datasa.project01.domain.dto.UserProfileUpdateRequest;
 import net.datasa.project01.domain.dto.UserResponse;
 import net.datasa.project01.domain.dto.UserSignUpRequestDto;
 import net.datasa.project01.domain.entity.Follow;
+import net.datasa.project01.domain.entity.FollowList;
+import net.datasa.project01.domain.entity.FollowRequest;
 import net.datasa.project01.domain.entity.Profile;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
+import net.datasa.project01.repository.FollowListRepository;
 import net.datasa.project01.repository.FollowRepository;
+import net.datasa.project01.repository.FollowRequestRepository;
 import net.datasa.project01.repository.ProfileRepository;
 import net.datasa.project01.repository.RoomMemberRepository;
 import net.datasa.project01.repository.UserRepository;
@@ -25,6 +29,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,6 +46,8 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
+    private final FollowListRepository followListRepository;
+    private final FollowRequestRepository followRequestRepository;
     private final ProfileRepository profileRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final ChatService chatService;
@@ -237,6 +244,36 @@ public class UserService {
                 .build();
         followRepository.save(follow);
 
+        FollowList outgoing = FollowList.builder()
+                .follow(follow)
+                .owner(follower)
+                .target(followee)
+                .direction(FollowList.FollowDirection.FOLLOWING)
+                .status(Follow.FollowStatus.PENDING)
+                .build();
+        FollowList incoming = FollowList.builder()
+                .follow(follow)
+                .owner(followee)
+                .target(follower)
+                .direction(FollowList.FollowDirection.FOLLOWER)
+                .status(Follow.FollowStatus.PENDING)
+                .build();
+        followListRepository.save(outgoing);
+        followListRepository.save(incoming);
+
+        Room matchedRoom = roomMemberRepository.findFirstRandomRoomByUsers(
+                        follower.getUserPid(),
+                        followee.getUserPid())
+                .orElseThrow(() -> new IllegalStateException("매칭된 1:1 대화방 정보를 찾을 수 없습니다."));
+
+        FollowRequest followRequest = FollowRequest.builder()
+                .room(matchedRoom)
+                .requester(follower)
+                .receiver(followee)
+                .status(FollowRequest.Status.PENDING)
+                .build();
+        followRequestRepository.save(followRequest);
+
         FollowResponseDto response = FollowResponseDto.fromEntity(follow, followee);
         broadcastFollowStatus(follower, followee);
         return response;
@@ -260,7 +297,11 @@ public class UserService {
         follow.setStatus(newStatus);
         followRepository.save(follow);
 
+        updateFollowListCaches(follow, newStatus);
+        updateFollowRequestStatus(follow, newStatus);
+
         if (newStatus == Follow.FollowStatus.ACCEPTED) {
+            synchronizeMutualAcceptanceCaches(follow);
             handleMutualFollowPromotion(follow);
         }
 
@@ -302,6 +343,64 @@ public class UserService {
                 .map(Follow::getFollower)
                 .map(UserResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    private void synchronizeMutualAcceptanceCaches(Follow follow) {
+        followRepository.findByFollowerAndFolloweeAndStatus(
+                        follow.getFollowee(),
+                        follow.getFollower(),
+                        Follow.FollowStatus.ACCEPTED)
+                .ifPresent(reciprocal -> {
+                    updateFollowListCaches(reciprocal, Follow.FollowStatus.ACCEPTED);
+                    updateFollowRequestStatus(reciprocal, Follow.FollowStatus.ACCEPTED);
+                });
+    }
+
+    private void updateFollowListCaches(Follow follow, Follow.FollowStatus status) {
+        applyFollowListStatus(follow.getFollower(), follow.getFollowee(), FollowList.FollowDirection.FOLLOWING, follow, status);
+        applyFollowListStatus(follow.getFollowee(), follow.getFollower(), FollowList.FollowDirection.FOLLOWER, follow, status);
+    }
+
+    private void applyFollowListStatus(User owner,
+                                       User target,
+                                       FollowList.FollowDirection direction,
+                                       Follow follow,
+                                       Follow.FollowStatus status) {
+        FollowList cache = followListRepository.findByOwnerAndTargetAndDirection(owner, target, direction)
+                .orElseGet(() -> FollowList.builder()
+                        .owner(owner)
+                        .target(target)
+                        .direction(direction)
+                        .follow(follow)
+                        .status(status)
+                        .build());
+        cache.setFollow(follow);
+        cache.setStatus(status);
+        followListRepository.save(cache);
+    }
+
+    private void updateFollowRequestStatus(Follow follow, Follow.FollowStatus status) {
+        followRequestRepository.findFirstByRequesterAndReceiverOrderByCreatedAtDesc(
+                        follow.getFollower(),
+                        follow.getFollowee())
+                .ifPresent(request -> {
+                    FollowRequest.Status mappedStatus = mapFollowRequestStatus(status);
+                    request.setStatus(mappedStatus);
+                    if (mappedStatus == FollowRequest.Status.PENDING) {
+                        request.setRespondedAt(null);
+                    } else if (request.getRespondedAt() == null) {
+                        request.setRespondedAt(LocalDateTime.now());
+                    }
+                    followRequestRepository.save(request);
+                });
+    }
+
+    private FollowRequest.Status mapFollowRequestStatus(Follow.FollowStatus status) {
+        return switch (status) {
+            case PENDING -> FollowRequest.Status.PENDING;
+            case ACCEPTED -> FollowRequest.Status.ACCEPTED;
+            case REJECTED -> FollowRequest.Status.DECLINED;
+        };
     }
 
     private void broadcastFollowStatus(User follower, User followee) {

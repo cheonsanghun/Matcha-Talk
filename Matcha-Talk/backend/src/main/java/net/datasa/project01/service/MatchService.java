@@ -8,10 +8,11 @@ import net.datasa.project01.domain.dto.MatchFoundResponseDto;
 import net.datasa.project01.domain.dto.MatchRequestDto;
 import net.datasa.project01.domain.dto.MatchStartResponseDto;
 import net.datasa.project01.domain.entity.Follow;
+import net.datasa.project01.domain.entity.FollowList;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.domain.entity.User;
-import net.datasa.project01.repository.FollowRepository;
+import net.datasa.project01.repository.FollowListRepository;
 import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
 import net.datasa.project01.repository.UserRepository;
@@ -37,7 +38,7 @@ public class MatchService {
     private final MatchRequestRepository matchRequestRepository;
     private final UserRepository userRepository;
     private final ChatService chatService;
-    private final FollowRepository followRepository;
+    private final FollowListRepository followListRepository;
     private final RealTimeMessagingService messagingService;
     private final ObjectMapper objectMapper;
 
@@ -318,8 +319,16 @@ public class MatchService {
             return FollowSnapshot.empty();
         }
 
-        Optional<Follow> outgoing = followRepository.findByFollowerAndFollowee(currentUser, partnerUser);
-        Optional<Follow> incoming = followRepository.findByFollowerAndFollowee(partnerUser, currentUser);
+        Optional<FollowList> outgoing = followListRepository.findByOwnerAndTargetAndDirection(
+                currentUser,
+                partnerUser,
+                FollowList.FollowDirection.FOLLOWING
+        );
+        Optional<FollowList> incoming = followListRepository.findByOwnerAndTargetAndDirection(
+                currentUser,
+                partnerUser,
+                FollowList.FollowDirection.FOLLOWER
+        );
 
         return FollowSnapshot.from(outgoing, incoming);
     }
@@ -335,9 +344,9 @@ public class MatchService {
             return new FollowSnapshot(null, null, null, null, null, null, false);
         }
 
-        static FollowSnapshot from(Optional<Follow> outgoing, Optional<Follow> incoming) {
-            Follow.FollowStatus outgoingStatusEnum = outgoing.map(Follow::getStatus).orElse(null);
-            Follow.FollowStatus incomingStatusEnum = incoming.map(Follow::getStatus).orElse(null);
+        static FollowSnapshot from(Optional<FollowList> outgoing, Optional<FollowList> incoming) {
+            Follow.FollowStatus outgoingStatusEnum = outgoing.map(FollowList::getStatus).orElse(null);
+            Follow.FollowStatus incomingStatusEnum = incoming.map(FollowList::getStatus).orElse(null);
 
             String outgoingStatus = outgoingStatusEnum != null ? outgoingStatusEnum.name() : null;
             String incomingStatus = incomingStatusEnum != null ? incomingStatusEnum.name() : null;
@@ -350,20 +359,31 @@ public class MatchService {
 
             if (incomingStatusEnum == Follow.FollowStatus.PENDING) {
                 displayStatus = "PENDING_INCOMING";
-                relationId = incoming.map(Follow::getFollowId).orElse(null);
+                relationId = incoming.map(FollowList::getFollow)
+                        .map(Follow::getFollowId)
+                        .orElse(null);
             } else if (outgoingStatusEnum == Follow.FollowStatus.PENDING) {
                 displayStatus = "PENDING_OUTGOING";
-                relationId = outgoing.map(Follow::getFollowId).orElse(null);
+                relationId = outgoing.map(FollowList::getFollow)
+                        .map(Follow::getFollowId)
+                        .orElse(null);
             } else if (mutualAccepted) {
                 displayStatus = "ACCEPTED";
-                relationId = outgoing.map(Follow::getFollowId)
-                        .orElseGet(() -> incoming.map(Follow::getFollowId).orElse(null));
+                relationId = outgoing.map(FollowList::getFollow)
+                        .map(Follow::getFollowId)
+                        .orElseGet(() -> incoming.map(FollowList::getFollow)
+                                .map(Follow::getFollowId)
+                                .orElse(null));
             } else if (incomingStatusEnum == Follow.FollowStatus.ACCEPTED) {
                 displayStatus = "ACCEPTED_INCOMING";
-                relationId = incoming.map(Follow::getFollowId).orElse(null);
+                relationId = incoming.map(FollowList::getFollow)
+                        .map(Follow::getFollowId)
+                        .orElse(null);
             } else if (outgoingStatusEnum == Follow.FollowStatus.ACCEPTED) {
                 displayStatus = "ACCEPTED_OUTGOING";
-                relationId = outgoing.map(Follow::getFollowId).orElse(null);
+                relationId = outgoing.map(FollowList::getFollow)
+                        .map(Follow::getFollowId)
+                        .orElse(null);
             } else if (incomingStatusEnum == Follow.FollowStatus.REJECTED) {
                 displayStatus = "REJECTED_INCOMING";
             } else if (outgoingStatusEnum == Follow.FollowStatus.REJECTED) {
@@ -371,9 +391,13 @@ public class MatchService {
             }
 
             return new FollowSnapshot(
-                    outgoing.map(Follow::getFollowId).orElse(null),
+                    outgoing.map(FollowList::getFollow)
+                            .map(Follow::getFollowId)
+                            .orElse(null),
                     outgoingStatus,
-                    incoming.map(Follow::getFollowId).orElse(null),
+                    incoming.map(FollowList::getFollow)
+                            .map(Follow::getFollowId)
+                            .orElse(null),
                     incomingStatus,
                     displayStatus,
                     relationId,
