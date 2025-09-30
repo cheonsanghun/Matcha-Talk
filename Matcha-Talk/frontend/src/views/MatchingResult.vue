@@ -271,8 +271,8 @@ const handshakeStatusLabel = computed(() => {
       return '채팅 준비 완료'
     case 'DECLINED':
       return '매칭 거절됨'
-    case 'ARCHIVED':
-      return '대화 이력 보관됨'
+    case 'CANCELLED':
+      return '매칭이 종료되었습니다.'
     default:
       return handshakeStatus.value
   }
@@ -416,12 +416,12 @@ function applyBootstrap (payload, options = {}) {
   applyFollowSnapshot(payload)
 
   handshakeReady.value = !!payload.handshakeReady
-  chatReady.value = !!payload.chatReady || (roomId.value != null && (handshakeStatus.value === 'CONFIRMED' || handshakeStatus.value === 'ARCHIVED'))
+  chatReady.value = !!payload.chatReady || (roomId.value != null && handshakeStatus.value === 'CONFIRMED')
   matchReady.value = handshakeReady.value || chatReady.value
-  matchDeclined.value = handshakeStatus.value === 'DECLINED'
+  matchDeclined.value = handshakeStatus.value === 'DECLINED' || handshakeStatus.value === 'CANCELLED'
 
   if (matchDeclined.value) {
-    sessionStatus.value = options.statusMessage || '매칭이 거절되었습니다.'
+    sessionStatus.value = options.statusMessage || '매칭이 종료되었습니다.'
   } else if (chatReady.value) {
     sessionStatus.value = options.statusMessage || '채팅이 가능합니다!'
   } else if (handshakeReady.value) {

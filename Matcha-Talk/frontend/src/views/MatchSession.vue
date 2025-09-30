@@ -251,8 +251,8 @@ const handshakeStatusLabel = computed(() => {
       return '채팅 진행 중'
     case 'MATCHED':
       return '상대 수락 대기'
-    case 'ARCHIVED':
-      return '대화 완료'
+    case 'CANCELLED':
+      return '매칭 종료'
     case 'DECLINED':
       return '매칭 거절됨'
     default:
@@ -566,6 +566,8 @@ function applyBootstrap(payload) {
     sessionStatus.value = '상대방의 수락을 기다리는 중입니다.'
   } else if ((payload.status || '').toUpperCase() === 'DECLINED') {
     sessionStatus.value = '상대방이 매칭을 거절했습니다.'
+  } else if ((payload.status || '').toUpperCase() === 'CANCELLED') {
+    sessionStatus.value = '매칭이 종료되었습니다.'
   }
 }
 
@@ -850,19 +852,20 @@ function goBackToMatching() {
 .session-content {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 24px;
   padding: 24px;
   height: 100%;
   min-height: 0;
   flex: 1;
   overflow: visible;
-  align-content: flex-start;
+  align-content: stretch;
+  align-items: stretch;
 }
 
 .video-pane {
-  flex: 1 1 55%;
-  max-width: 55%;
+  flex: 1 1 52%;
+  max-width: 52%;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -872,7 +875,9 @@ function goBackToMatching() {
 
 .session-video {
   flex: 1;
-  min-height: 260px;
+  min-height: 300px;
+  aspect-ratio: 16 / 9;
+  width: 100%;
 }
 
 .video-actions {
@@ -884,8 +889,8 @@ function goBackToMatching() {
 }
 
 .chat-pane {
-  flex: 1 1 45%;
-  max-width: 45%;
+  flex: 1 1 48%;
+  max-width: 48%;
   display: flex;
   flex-direction: column;
   border-left: 1px solid #ecf2e5;
@@ -1019,23 +1024,28 @@ function goBackToMatching() {
   color: #5ca98a;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1080px) {
   .session-content {
     flex-direction: column;
+    flex-wrap: nowrap;
   }
   .video-pane,
   .chat-pane {
     max-width: 100%;
+    flex-basis: auto;
   }
 }
 
-@media (max-height: 860px) {
+@media (max-height: 780px) {
   .session-content {
     flex-direction: column;
+    flex-wrap: nowrap;
+
   }
   .video-pane,
   .chat-pane {
     max-width: 100%;
+    flex-basis: auto;
   }
 }
 </style>

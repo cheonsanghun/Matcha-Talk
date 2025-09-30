@@ -64,7 +64,7 @@ function normalizeBootstrap (payload) {
   const status = handshake.status
 
   const computedHandshakeReady = status === 'MATCHED' && !roomId
-  const computedChatReady = roomId != null && (status === 'CONFIRMED' || status === 'ARCHIVED' || status === 'MATCHED' || payload.chatReady === true)
+  const computedChatReady = roomId != null && (status === 'CONFIRMED' || status === 'MATCHED' || payload.chatReady === true)
 
   const incomingFollowId = toNumberOrNull(payload.incomingFollowId ?? payload.incomingFollow?.id ?? handshakeSource.incomingFollowId)
   const outgoingFollowId = toNumberOrNull(payload.outgoingFollowId ?? payload.outgoingFollow?.id ?? handshakeSource.outgoingFollowId)

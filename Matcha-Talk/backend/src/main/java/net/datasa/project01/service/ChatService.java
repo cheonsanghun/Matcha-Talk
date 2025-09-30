@@ -545,7 +545,7 @@ public class ChatService {
                 }
 
                 for (MatchRequest request : relatedRequests) {
-                        request.setStatus(MatchRequest.MatchStatus.ARCHIVED);
+                        request.setStatus(MatchRequest.MatchStatus.CANCELLED);
                         request.setRoom(null);
                         request.setHandshakeKey(null);
                         request.setHandshakeExpiresAt(null);

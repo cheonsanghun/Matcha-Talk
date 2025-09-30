@@ -307,7 +307,7 @@ public class MatchService {
         }
 
         for (MatchRequest request : requests) {
-            request.setStatus(MatchRequest.MatchStatus.ARCHIVED);
+            request.setStatus(MatchRequest.MatchStatus.CANCELLED);
         }
 
         saveAllNormalized(requests);
