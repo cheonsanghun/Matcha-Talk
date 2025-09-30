@@ -865,6 +865,8 @@ const messages = computed(() => conversations.value[current.value?.id] ?? [])
 async function openChat(item, options = {}) {
   if (!item) return
 
+  const { skipRouteUpdate = false, forceHistory = false } = options
+
   if (item.virtual && item.targetUserPid) {
     await openDirectFollowRoom(item, options)
     return
@@ -877,10 +879,10 @@ async function openChat(item, options = {}) {
   ensureConversation(item.id)
   const numericRoomId = Number(item.id)
   if (Number.isFinite(numericRoomId) && numericRoomId > 0) {
-    await ensureMessageHistory(numericRoomId)
+    await ensureMessageHistory(numericRoomId, { force: forceHistory })
   }
 
-  if (!options.skipRouteUpdate) {
+  if (!skipRouteUpdate) {
     const newQuery = { ...route.query, roomId: String(item.id) }
     router.replace({ name: 'chat', query: newQuery })
   }
@@ -895,7 +897,7 @@ async function openDirectFollowRoom(item, options = {}) {
 
     chats.value = chats.value.filter((chat) => chat.id !== item.id)
     const persisted = addOrUpdateRoom(entry)
-    await openChat(persisted, options)
+    await openChat(persisted, { ...options, forceHistory: true })
   } catch (error) {
     console.error('[chat] Failed to prepare direct chat room', error)
     alert('채팅방을 준비하지 못했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
@@ -1050,19 +1052,25 @@ function mergeMessageHistory(roomId, historyMessages) {
   }
 }
 
-async function ensureMessageHistory(roomId) {
-  if (!roomId) return
-  if (historyLoadedRooms.value.has(roomId)) return
+async function ensureMessageHistory(roomId, options = {}) {
+  const numericRoomId = Number(roomId)
+  if (!Number.isFinite(numericRoomId) || numericRoomId <= 0) {
+    return
+  }
+
+  const { force = false } = options
+
+  if (!force && historyLoadedRooms.value.has(numericRoomId)) return
 
   try {
-    const { data } = await api.get(`/rooms/${roomId}/messages`, { params: { limit: 100 } })
+    const { data } = await api.get(`/rooms/${numericRoomId}/messages`, { params: { limit: 100 } })
     const normalized = Array.isArray(data)
       ? data
-        .map((entry) => normalizeHistoryMessage(entry, roomId))
+        .map((entry) => normalizeHistoryMessage(entry, numericRoomId))
         .filter(Boolean)
       : []
-    mergeMessageHistory(roomId, normalized)
-    historyLoadedRooms.value.add(roomId)
+    mergeMessageHistory(numericRoomId, normalized)
+    historyLoadedRooms.value.add(numericRoomId)
     scrollToBottom()
   } catch (error) {
     console.warn('[chat] Failed to load message history', error)
