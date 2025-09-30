@@ -6,8 +6,8 @@
           <div class="d-flex align-center ga-4">
             <v-avatar size="64" class="bg-pink-lighten-4"><v-icon color="pink">mdi-account</v-icon></v-avatar>
             <div>
-              <div class="text-subtitle-1">{{ user?.nickName || 'Guest' }}</div>
-              <div class="text-caption">{{ user?.email }}</div>
+              <div class="text-subtitle-1">{{ displayName }}</div>
+              <div class="text-caption" v-if="displayLoginId">@{{ displayLoginId }}</div>
             </div>
             <v-spacer/>
             <v-btn color="pink" variant="tonal" @click="logout" to="/">로그아웃</v-btn>
@@ -24,7 +24,7 @@
               <v-list>
                 <v-list-item v-for="f in followingList" :key="f.userPid">
                   <v-list-item-title>{{ f.nickName }}</v-list-item-title>
-                  <v-list-item-subtitle>{{ f.email }}</v-list-item-subtitle>
+                  <v-list-item-subtitle v-if="f.loginId">@{{ f.loginId }}</v-list-item-subtitle>
                   <template v-slot:append>
                     <v-btn icon variant="text" color="red" size="small" @click="unfollow(f.userPid)">
                       <v-icon>mdi-account-remove</v-icon>
@@ -41,7 +41,7 @@
               <v-list>
                 <v-list-item v-for="f in followerList" :key="f.userPid">
                   <v-list-item-title>{{ f.nickName }}</v-list-item-title>
-                  <v-list-item-subtitle>{{ f.email }}</v-list-item-subtitle>
+                  <v-list-item-subtitle v-if="f.loginId">@{{ f.loginId }}</v-list-item-subtitle>
                   <!-- 팔로워 목록에서는 수락/거절 또는 차단 등의 액션이 필요할 수 있음 -->
                 </v-list-item>
                 <v-list-item v-if="followerList.length === 0">
@@ -57,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
@@ -71,6 +71,16 @@ const tab = ref(null) // For v-tabs
 const followingList = ref([])
 const followerList = ref([])
 
+const displayName = computed(() =>
+  user.value?.nickName ||
+  user.value?.nickname ||
+  user.value?.loginId ||
+  user.value?.login_id ||
+  '게스트'
+)
+
+const displayLoginId = computed(() => user.value?.loginId || user.value?.login_id || '')
+
 async function fetchFollowLists() {
   if (user.value?.userPid) { // Use userPid from the backend User entity
     try {
@@ -78,13 +88,31 @@ async function fetchFollowLists() {
         followService.getFollowingList(user.value.userPid),
         followService.getFollowerList(user.value.userPid)
       ])
-      followingList.value = followingRes.data
-      followerList.value = followerRes.data
+      followingList.value = normalizeFollowEntries(followingRes.data)
+      followerList.value = normalizeFollowEntries(followerRes.data)
     } catch (error) {
       console.error('Failed to fetch follow lists:', error)
       // Optionally, show an alert or message to the user
     }
   }
+}
+
+function normalizeFollowEntries(entries = []) {
+  if (!Array.isArray(entries)) return []
+  return entries
+    .map((entry) => {
+      if (!entry) return null
+      const userPid = entry.userPid ?? entry.user_pid ?? null
+      if (userPid == null) return null
+      return {
+        userPid,
+        nickName: entry.nickName || entry.nickname || entry.loginId || entry.login_id || entry.email || '이름 미정',
+        loginId: entry.loginId || entry.login_id || '',
+        email: entry.email || '',
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.nickName.localeCompare(b.nickName, 'ko'))
 }
 
 async function unfollow(targetUserPid) {
