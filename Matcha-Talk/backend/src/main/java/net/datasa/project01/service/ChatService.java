@@ -16,6 +16,7 @@ import net.datasa.project01.domain.entity.Follow;
 import net.datasa.project01.domain.entity.MatchRequest;
 import net.datasa.project01.domain.dto.ChatMessageRequestDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
+import net.datasa.project01.domain.dto.TranslationResponseDto;
 import net.datasa.project01.domain.entity.RoomMessage;
 import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
@@ -28,6 +29,7 @@ import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -80,6 +82,29 @@ public class ChatService {
         private final CallSessionCoordinator callSessionCoordinator;
 
         private static final String PROMOTION_REASON_MUTUAL_FOLLOW = "MUTUAL_FOLLOW";
+
+        private static final Map<String, String> COUNTRY_TO_LANGUAGE_MAP = Map.ofEntries(
+                Map.entry("KR", "ko"),
+                Map.entry("KP", "ko"),
+                Map.entry("US", "en"),
+                Map.entry("GB", "en"),
+                Map.entry("CA", "en"),
+                Map.entry("AU", "en"),
+                Map.entry("NZ", "en"),
+                Map.entry("PH", "en"),
+                Map.entry("JP", "ja"),
+                Map.entry("CN", "zh-CN"),
+                Map.entry("TW", "zh-TW"),
+                Map.entry("HK", "zh-TW"),
+                Map.entry("MO", "zh-TW"),
+                Map.entry("FR", "fr"),
+                Map.entry("DE", "de"),
+                Map.entry("ES", "es"),
+                Map.entry("IT", "it"),
+                Map.entry("TH", "th"),
+                Map.entry("VN", "vi"),
+                Map.entry("ID", "id")
+        );
 
         private final Path attachmentBasePath = Paths.get("uploads", "attachments");
 
@@ -546,6 +571,69 @@ public class ChatService {
                 return new AttachmentResource(resource, message.getFileName(), message.getMimeType());
         }
 
+        @Transactional(readOnly = true)
+        public TranslationResponseDto translateMessage(Long roomId, Long messageId, String loginId) {
+                User requester = requireUser(loginId);
+                Room room = requireRoom(roomId);
+
+                try {
+                        ensureRoomMembership(room, requester);
+                } catch (IllegalArgumentException exception) {
+                        throw new AccessDeniedException(exception.getMessage());
+                }
+
+                RoomMessage message = roomMessageRepository.findById(messageId)
+                        .orElseThrow(() -> new IllegalArgumentException("메시지를 찾을 수 없습니다."));
+
+                if (message.getRoom() == null || !roomId.equals(message.getRoom().getRoomId())) {
+                        throw new IllegalArgumentException("요청한 메시지가 해당 채팅방에 존재하지 않습니다.");
+                }
+
+                RoomMessage.ContentType contentType = message.getContentType() != null
+                        ? message.getContentType()
+                        : RoomMessage.ContentType.TEXT;
+
+                String originalText = message.getTextContent() != null ? message.getTextContent() : "";
+                String sourceLanguage = sanitizeSourceLanguage(resolvePapagoLanguageFromUser(message.getSender(), "auto"));
+                String targetLanguage = sanitizeTargetLanguage(resolvePapagoLanguageFromUser(requester, "en"));
+
+                if (contentType != RoomMessage.ContentType.TEXT || !StringUtils.hasText(originalText)) {
+                        return TranslationResponseDto.builder()
+                                .roomId(roomId)
+                                .messageId(messageId)
+                                .originalText(originalText)
+                                .translatedText(originalText)
+                                .sourceLanguage(sourceLanguage)
+                                .targetLanguage(targetLanguage)
+                                .translated(false)
+                                .build();
+                }
+
+                boolean languagesEqual = StringUtils.hasText(sourceLanguage)
+                        && StringUtils.hasText(targetLanguage)
+                        && sourceLanguage.equalsIgnoreCase(targetLanguage);
+
+                boolean shouldTranslate = StringUtils.hasText(targetLanguage) && !languagesEqual;
+
+                String translatedText = originalText;
+                boolean translated = false;
+
+                if (shouldTranslate) {
+                        translatedText = translationService.translate(originalText, sourceLanguage, targetLanguage);
+                        translated = !Objects.equals(originalText, translatedText);
+                }
+
+                return TranslationResponseDto.builder()
+                        .roomId(roomId)
+                        .messageId(messageId)
+                        .originalText(originalText)
+                        .translatedText(translatedText)
+                        .sourceLanguage(sourceLanguage)
+                        .targetLanguage(targetLanguage)
+                        .translated(translated)
+                        .build();
+        }
+
         private ChatMessageResponseDto toResponseDto(RoomMessage message) {
                 if (message == null) {
                         throw new IllegalArgumentException("메시지 정보를 확인할 수 없습니다.");
@@ -604,6 +692,53 @@ public class ChatService {
                         log.debug("No request context available while building attachment URL for message {}", messageId, exception);
                         return String.format("/api/rooms/%s/attachments/%s", roomId, messageId);
                 }
+        }
+
+        private String sanitizeSourceLanguage(String language) {
+                if (StringUtils.hasText(language)) {
+                        return language;
+                }
+                return "auto";
+        }
+
+        private String sanitizeTargetLanguage(String language) {
+                if (StringUtils.hasText(language) && !"auto".equalsIgnoreCase(language)) {
+                        return language;
+                }
+                return "en";
+        }
+
+        private String resolvePapagoLanguageFromUser(User user, String fallbackLanguage) {
+                String normalizedFallback = normalizeLanguageCode(fallbackLanguage);
+                if (user == null) {
+                        return normalizedFallback;
+                }
+
+                String languageCode = normalizeLanguageCode(user.getLanguageCode());
+                if (StringUtils.hasText(languageCode)) {
+                        return languageCode;
+                }
+
+                String fromCountry = resolvePapagoLanguageFromCountry(user.getCountryCode());
+                if (StringUtils.hasText(fromCountry)) {
+                        return fromCountry;
+                }
+
+                return normalizedFallback;
+        }
+
+        private String resolvePapagoLanguageFromCountry(String countryCode) {
+                if (!StringUtils.hasText(countryCode)) {
+                        return null;
+                }
+                return COUNTRY_TO_LANGUAGE_MAP.get(countryCode.trim().toUpperCase());
+        }
+
+        private String normalizeLanguageCode(String languageCode) {
+                if (!StringUtils.hasText(languageCode)) {
+                        return null;
+                }
+                return languageCode.trim();
         }
 
         private boolean hasMutualFollow(List<RoomMember> members) {

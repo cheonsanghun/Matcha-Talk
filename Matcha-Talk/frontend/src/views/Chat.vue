@@ -217,7 +217,7 @@
                     </div>
                     <div class="message-tools">
                       <v-btn
-                        v-if="m.contentType === 'TEXT'"
+                        v-if="m.contentType === 'TEXT' && !m.translationUnavailable"
                         icon
                         variant="text"
                         density="compact"
@@ -259,7 +259,7 @@
                     </div>
                     <div class="message-tools justify-end">
                       <v-btn
-                        v-if="m.contentType === 'TEXT'"
+                        v-if="m.contentType === 'TEXT' && !m.translationUnavailable"
                         icon
                         variant="text"
                         density="compact"
@@ -972,9 +972,14 @@ function normalizeHistoryMessage(entry, roomKey) {
   const normalizedSender = senderLogin ? String(senderLogin).toLowerCase() : null
   const normalizedMyLogin = myLogin ? String(myLogin).toLowerCase() : null
 
-  const messageId = entry.messageId || entry.message_id || `${roomKey}-${entry.sentAt || Date.now()}`
+  const rawMessageId = entry.messageId || entry.message_id || `${roomKey}-${entry.sentAt || Date.now()}`
+  const parsedMessageId = typeof rawMessageId === 'number' ? rawMessageId : Number(rawMessageId)
+  const messageId = Number.isFinite(parsedMessageId) ? parsedMessageId : rawMessageId
+  const parsedRoomId = Number(roomKey)
+  const resolvedRoomId = Number.isFinite(parsedRoomId) ? parsedRoomId : roomKey
   return {
     id: messageId,
+    roomId: resolvedRoomId,
     text: entry.content || '',
     time: formatTime(entry.sentAt),
     sender: entry.senderNickName || entry.senderNickname || senderLogin || '상대방',
@@ -986,6 +991,9 @@ function normalizeHistoryMessage(entry, roomKey) {
     translation: null,
     translating: false,
     sentAt: entry.sentAt || null,
+    translationError: null,
+    translationUnavailable: false,
+    translationMeta: null,
   }
 }
 
@@ -1220,14 +1228,60 @@ function formatTime(isoString) {
 }
 
 async function translateMessage(message) {
-  if (!message || message.translating || message.translation || message.contentType !== 'TEXT') return
+  if (!message || message.translating || message.contentType !== 'TEXT' || message.translationUnavailable) return
+  if (message.translation && !message.translationError) return
+
+  const roomKey = message.roomId ?? current.value?.id
+  const parsedRoomId = typeof roomKey === 'number' ? roomKey : Number(roomKey)
+  const resolvedRoomId = Number.isFinite(parsedRoomId) && parsedRoomId > 0 ? parsedRoomId : null
+  const parsedMessageId = typeof message.id === 'number' ? message.id : Number(message.id)
+  const resolvedMessageId = Number.isFinite(parsedMessageId) && parsedMessageId > 0 ? parsedMessageId : null
+
+  if (!resolvedRoomId) {
+    console.warn('[chat] 번역할 채팅방 정보를 확인할 수 없습니다.', { roomKey })
+    message.translationUnavailable = true
+    message.translationError = '채팅방 정보가 없어 번역할 수 없습니다.'
+    return
+  }
+
+  if (!resolvedMessageId) {
+    console.warn('[chat] 번역할 메시지 ID를 확인할 수 없습니다.', { id: message.id })
+    message.translationUnavailable = true
+    message.translationError = '메시지 정보가 없어 번역할 수 없습니다.'
+    return
+  }
 
   message.translating = true
+  message.translationError = null
+
   try {
-    const targetLang = auth.user?.languageCode || 'en'
-    message.translation = await translate(message.text, targetLang)
+    const result = await translate({ roomId: resolvedRoomId, messageId: resolvedMessageId })
+    if (result && typeof result === 'object') {
+      const { translatedText, originalText, translated } = result
+      const fallbackText = typeof originalText === 'string' ? originalText : message.text
+      const resolvedTranslation = typeof translatedText === 'string' ? translatedText : fallbackText
+      message.translation = resolvedTranslation
+      message.translationMeta = result
+      message.roomId = resolvedRoomId
+      message.translationUnavailable = false
+      if (translated === false && resolvedTranslation === fallbackText) {
+        message.translationUnavailable = true
+      }
+    } else if (typeof result === 'string') {
+      message.translation = result
+      message.roomId = resolvedRoomId
+      message.translationUnavailable = false
+    } else {
+      message.translation = message.text
+      message.translationUnavailable = true
+    }
   } catch (error) {
     console.error('문장을 번역하지 못했습니다.', error)
+    message.translationError = error?.response?.data?.message || error?.message || '번역에 실패했습니다.'
+    if (error?.response?.status === 400 || error?.response?.status === 403) {
+      message.translationUnavailable = true
+    }
+    alert('문장을 번역하지 못했습니다. 잠시 후 다시 시도해주세요.')
   } finally {
     message.translating = false
   }

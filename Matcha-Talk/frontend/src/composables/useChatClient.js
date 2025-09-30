@@ -64,7 +64,11 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
       console.warn('[chat] Received message without senderLoginId', payload)
     }
     const messagesForRoom = ensureConversation(roomKey)
-    if (messageId && messagesForRoom.some((existing) => existing?.id === messageId)) {
+    const parsedIncomingId = typeof messageId === 'number' ? messageId : Number(messageId)
+    if (
+      messageId &&
+      messagesForRoom.some((existing) => existing?.id === messageId || existing?.id === parsedIncomingId)
+    ) {
       return
     }
     const myLoginId = resolveClientIdentity(auth)
@@ -72,9 +76,15 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
     const normalizedSenderLogin = senderLoginId ? String(senderLoginId).toLowerCase() : null
     const isMine = Boolean(normalizedMyLogin && normalizedSenderLogin && normalizedMyLogin === normalizedSenderLogin)
     const displayName = senderNickname || senderLoginId || '상대방'
+    const rawMessageId = messageId || `${roomKey}-${Date.now()}-${messagesForRoom.length}`
+    const parsedMessageId = typeof rawMessageId === 'number' ? rawMessageId : Number(rawMessageId)
+    const resolvedMessageId = Number.isFinite(parsedMessageId) ? parsedMessageId : rawMessageId
+    const parsedRoomId = Number(roomKey)
+    const resolvedRoomId = Number.isFinite(parsedRoomId) ? parsedRoomId : roomKey
 
     const message = {
-      id: messageId || `${roomKey}-${Date.now()}-${messagesForRoom.length}`,
+      id: resolvedMessageId,
+      roomId: resolvedRoomId,
       text: content,
       time: timeFormatter(payload.sentAt),
       sender: displayName,
@@ -88,6 +98,9 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
       translation: null,
       translating: false,
       sentAt: payload.sentAt ?? null,
+      translationError: null,
+      translationUnavailable: false,
+      translationMeta: null,
     }
 
     messagesForRoom.push(message)

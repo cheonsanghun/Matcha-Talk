@@ -8,6 +8,7 @@ import net.datasa.project01.domain.dto.RoomDetailResponseDto;
 import net.datasa.project01.domain.dto.RoomListResponseDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.dto.RoomCleanupResponseDto;
+import net.datasa.project01.domain.dto.TranslationResponseDto;
 import net.datasa.project01.service.ChatService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
@@ -212,6 +214,27 @@ public class ChatController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         } catch (IOException exception) {
             log.error("Failed to read attachment {} in room {}", messageId, roomId, exception);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @PostMapping("/{roomId}/messages/{messageId}/translate")
+    public ResponseEntity<TranslationResponseDto> translateMessage(
+            @PathVariable Long roomId,
+            @PathVariable Long messageId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
+        try {
+            TranslationResponseDto responseDto = chatService.translateMessage(roomId, messageId, loginId);
+            return ResponseEntity.ok(responseDto);
+        } catch (AccessDeniedException exception) {
+            log.warn("Translation request rejected for room {} by {}: {}", roomId, loginId, exception.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        } catch (IllegalArgumentException exception) {
+            log.warn("Invalid translation request for message {} in room {} by {}: {}", messageId, roomId, loginId, exception.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        } catch (Exception exception) {
+            log.error("Unexpected error while translating message {} in room {}", messageId, roomId, exception);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
