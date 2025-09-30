@@ -21,8 +21,13 @@ import net.datasa.project01.websocket.RealTimeMessagingService;
 import net.datasa.project01.repository.MatchRequestRepository;
 import net.datasa.project01.service.support.MatchRequestSanitizer;
 import net.datasa.project01.repository.FollowRepository;
+import net.datasa.project01.repository.FollowListRepository;
+import net.datasa.project01.repository.FollowRequestRepository;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -35,6 +40,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -52,7 +58,9 @@ import java.util.stream.StreamSupport;
 import net.datasa.project01.domain.entity.Room.RoomType;
 
 import net.datasa.project01.service.TranslationService;
-
+import net.datasa.project01.domain.entity.FollowList;
+import net.datasa.project01.domain.entity.FollowRequest;
+import net.datasa.project01.service.support.CallSessionCoordinator;
 
 @Service
 @RequiredArgsConstructor
@@ -65,8 +73,11 @@ public class ChatService {
         private final RoomMessageRepository roomMessageRepository;
         private final MatchRequestRepository matchRequestRepository;
         private final FollowRepository followRepository;
+        private final FollowRequestRepository followRequestRepository;
+        private final FollowListRepository followListRepository;
         private final TranslationService translationService;
         private final RealTimeMessagingService messagingService;
+        private final CallSessionCoordinator callSessionCoordinator;
 
         private static final String PROMOTION_REASON_MUTUAL_FOLLOW = "MUTUAL_FOLLOW";
 
@@ -330,6 +341,103 @@ public class ChatService {
                         .toList();
         }
 
+        @Transactional(readOnly = true)
+        public List<ChatMessageResponseDto> getMessageHistory(Long roomId, String loginId, int limit) {
+                User requester = requireUser(loginId);
+                Room room = requireRoom(roomId);
+                ensureRoomMembership(room, requester);
+
+                int sanitizedLimit = Math.max(1, Math.min(limit, 200));
+                Pageable pageable = PageRequest.of(0, sanitizedLimit, Sort.by(Sort.Direction.DESC, "createdAt"));
+                List<RoomMessage> messages = roomMessageRepository.findByRoomOrderByCreatedAtDesc(room, pageable).getContent();
+                Collections.reverse(messages);
+                return messages.stream()
+                        .map(this::toResponseDto)
+                        .collect(Collectors.toList());
+        }
+
+        @Transactional(readOnly = true)
+        public CallReadyResponse markCallReady(Long roomId, String loginId) {
+                User requester = requireUser(loginId);
+                Room room = requireRoom(roomId);
+                ensureRoomMembership(room, requester);
+
+                List<String> participants = findParticipantLoginIds(roomId);
+                CallSessionCoordinator.CallHandshakeStatus status = callSessionCoordinator.markReady(roomId, loginId, participants);
+
+                messagingService.broadcastToUsers(
+                        participants,
+                        RealTimeMessagingService.EVENT_ROOM_CALL_READY,
+                        new CallReadyPayload(roomId, loginId, status.readyMembers(), status.allReady())
+                );
+
+                return new CallReadyResponse(roomId, status.readyMembers(), status.allReady());
+        }
+
+        @Transactional
+        public CallTerminationResponse endCall(Long roomId, String loginId) {
+                User requester = requireUser(loginId);
+                Room room = requireRoom(roomId);
+                ensureRoomMembership(room, requester);
+
+                List<RoomMember> members = roomMemberRepository.findByRoom(room);
+                List<String> participantLogins = members.stream()
+                        .map(RoomMember::getUser)
+                        .filter(Objects::nonNull)
+                        .map(User::getLoginId)
+                        .filter(StringUtils::hasText)
+                        .distinct()
+                        .collect(Collectors.toList());
+
+                CallSessionCoordinator.CallHandshakeStatus handshakeStatus = callSessionCoordinator.reset(roomId);
+
+                boolean randomRoom = room.getRoomType() == Room.RoomType.RANDOM;
+                boolean followDataCleared = false;
+                boolean roomRemoved = false;
+                boolean singleFollow = false;
+
+                if (members.size() >= 2) {
+                        User first = members.get(0).getUser();
+                        User second = members.get(1).getUser();
+                        if (first != null && second != null) {
+                                boolean forwardAccepted = isFollowAccepted(first, second);
+                                boolean reverseAccepted = isFollowAccepted(second, first);
+                                singleFollow = forwardAccepted ^ reverseAccepted;
+                                if (randomRoom && singleFollow) {
+                                        followDataCleared = removeFollowRelations(first, second);
+                                        int removedRequests = removeFollowRequestsForRoom(room);
+                                        followDataCleared = followDataCleared || removedRequests > 0;
+                                        removeRoomWithDependencies(room, members);
+                                        roomRemoved = true;
+                                }
+                        }
+                }
+
+                if (participantLogins.isEmpty() && handshakeStatus.participants() != null) {
+                        participantLogins = handshakeStatus.participants().stream()
+                                .filter(StringUtils::hasText)
+                                .distinct()
+                                .collect(Collectors.toList());
+                }
+
+                boolean redirectToMatch = randomRoom;
+
+                messagingService.broadcastToUsers(
+                        participantLogins,
+                        RealTimeMessagingService.EVENT_ROOM_CALL_ENDED,
+                        new CallEndedPayload(
+                                roomId,
+                                loginId,
+                                redirectToMatch,
+                                roomRemoved,
+                                followDataCleared,
+                                singleFollow ? "SINGLE_FOLLOW" : "ENDED"
+                        )
+                );
+
+                return new CallTerminationResponse(roomId, redirectToMatch, roomRemoved, followDataCleared);
+        }
+
         @Transactional
         public RoomCleanupResult cleanupTemporaryRoom(Long roomId, String loginId) {
                 User user = userRepository.findByLoginId(loginId)
@@ -450,6 +558,7 @@ public class ChatService {
                 }
 
                 return ChatMessageResponseDto.builder()
+                        .messageId(message.getMessageId())
                         .roomId(message.getRoom().getRoomId())
                         .senderLoginId(message.getSender() != null ? message.getSender().getLoginId() : null)
                         .senderNickName(message.getSender() != null ? message.getSender().getNickName() : "시스템")
@@ -513,6 +622,61 @@ public class ChatService {
                 }
 
                 return null;
+        }
+
+        private User requireUser(String loginId) {
+                if (!StringUtils.hasText(loginId)) {
+                        throw new IllegalArgumentException("로그인 정보를 확인할 수 없습니다.");
+                }
+                return userRepository.findByLoginId(loginId)
+                        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        }
+
+        private Room requireRoom(Long roomId) {
+                if (roomId == null) {
+                        throw new IllegalArgumentException("채팅방 정보를 확인할 수 없습니다.");
+                }
+                return roomRepository.findById(roomId)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방을 찾을 수 없습니다."));
+        }
+
+        private void ensureRoomMembership(Room room, User user) {
+                roomMemberRepository.findByRoomAndUser(room, user)
+                        .orElseThrow(() -> new IllegalArgumentException("채팅방 멤버만 이용할 수 있습니다."));
+        }
+
+        private boolean isFollowAccepted(User follower, User followee) {
+                return followRepository.findByFollowerAndFolloweeAndStatus(follower, followee, Follow.FollowStatus.ACCEPTED)
+                        .isPresent();
+        }
+
+        private boolean removeFollowRelations(User first, User second) {
+                boolean removed = false;
+                removed = removeFollowEntry(first, second) || removed;
+                removed = removeFollowEntry(second, first) || removed;
+                return removed;
+        }
+
+        private boolean removeFollowEntry(User follower, User followee) {
+                return followRepository.findByFollowerAndFollowee(follower, followee)
+                        .map(follow -> {
+                                List<FollowList> lists = followListRepository.findAllByFollow(follow);
+                                if (lists != null && !lists.isEmpty()) {
+                                        followListRepository.deleteAll(lists);
+                                }
+                                followRepository.delete(follow);
+                                return true;
+                        })
+                        .orElse(false);
+        }
+
+        private int removeFollowRequestsForRoom(Room room) {
+                List<FollowRequest> requests = followRequestRepository.findByRoom(room);
+                if (requests == null || requests.isEmpty()) {
+                        return 0;
+                }
+                followRequestRepository.deleteAll(requests);
+                return requests.size();
         }
 
         private void removeRoomWithDependencies(Room room, List<RoomMember> existingMembers) {
@@ -602,6 +766,14 @@ public class ChatService {
                 }
                 return roomDir;
         }
+
+        public record CallReadyResponse(Long roomId, List<String> readyMembers, boolean allReady) {}
+
+        public record CallTerminationResponse(Long roomId, boolean redirectToMatch, boolean roomRemoved, boolean followDataCleared) {}
+
+        public record CallReadyPayload(Long roomId, String triggeredBy, List<String> readyMembers, boolean allReady) {}
+
+        public record CallEndedPayload(Long roomId, String triggeredBy, boolean redirectToMatch, boolean roomRemoved, boolean followDataCleared, String reason) {}
 
         public record AttachmentResource(Resource resource, String fileName, String mimeType) {}
 

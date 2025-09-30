@@ -120,6 +120,47 @@ public class ChatController {
         }
     }
 
+    @GetMapping("/{roomId}/messages")
+    public ResponseEntity<List<ChatMessageResponseDto>> getRoomMessages(
+            @PathVariable Long roomId,
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
+        try {
+            List<ChatMessageResponseDto> messages = chatService.getMessageHistory(roomId, loginId, limit);
+            return ResponseEntity.ok(messages);
+        } catch (IllegalArgumentException e) {
+            log.warn("Message history request rejected for room {} by {}: {}", roomId, loginId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+    }
+
+    @PostMapping("/{roomId}/call/ready")
+    public ResponseEntity<ChatService.CallReadyResponse> markCallReady(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
+        try {
+            return ResponseEntity.ok(chatService.markCallReady(roomId, loginId));
+        } catch (IllegalArgumentException e) {
+            log.warn("Call ready rejected for room {} by {}: {}", roomId, loginId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+    }
+
+    @PostMapping("/{roomId}/call/hangup")
+    public ResponseEntity<ChatService.CallTerminationResponse> terminateCall(
+            @PathVariable Long roomId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        String loginId = requireLoginId(userDetails);
+        try {
+            return ResponseEntity.ok(chatService.endCall(roomId, loginId));
+        } catch (IllegalArgumentException e) {
+            log.warn("Call termination rejected for room {} by {}: {}", roomId, loginId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+    }
+
     @PostMapping("/{roomId}/attachments")
     public ResponseEntity<ChatMessageResponseDto> uploadAttachment(
             @PathVariable Long roomId,

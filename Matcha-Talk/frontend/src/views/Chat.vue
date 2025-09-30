@@ -138,11 +138,20 @@
             variant="flat"
             elevation="2"
             rounded="pill"
-            :disabled="!current.id"
+            :disabled="!current.id || callRequestInFlight || callStartInProgress || callActive"
+            :loading="callRequestInFlight || callStartInProgress"
             @click="startVideoCall"
           >
             <v-icon size="18" class="mr-1">mdi-video</v-icon>
-            <span>영상통화</span>
+            <span>
+              {{
+                callActive
+                  ? '통화 중'
+                  : callReady
+                    ? (remoteCallReady ? '통화 연결 중...' : '상대 대기 중...')
+                    : '영상통화'
+              }}
+            </span>
           </v-btn>
           <v-btn icon variant="text" :disabled="!callActive" @click="hangUpCall"><v-icon>mdi-phone-hangup</v-icon></v-btn>
         </div>
@@ -399,6 +408,11 @@ const chatMessagesContainer = ref(null)
 const fileInput = ref(null)
 const videoChatRef = ref(null)
 const callActive = ref(false)
+const callRequestInFlight = ref(false)
+const callStartInProgress = ref(false)
+const callReady = ref(false)
+const remoteCallReady = ref(false)
+const historyLoadedRooms = ref(new Set())
 const isLoadingRooms = ref(false)
 
 const auth = useAuthStore()
@@ -439,6 +453,8 @@ const {
   events: {
     'match-follow-updated': () => { void loadRooms({ preserveCurrent: true }) },
     'match-room-promoted': () => { void loadRooms({ preserveCurrent: true }) },
+    'room-call-ready': (payload) => { handleCallReadyEvent(payload) },
+    'room-call-ended': (payload) => { handleCallEndedEvent(payload) },
   },
 })
 
@@ -465,7 +481,7 @@ watch(
 
 watch(
   () => current.value?.id,
-  () => {
+  (nextRoom) => {
     if (videoChatRef.value?.hangUp) {
       try {
         videoChatRef.value.hangUp()
@@ -474,6 +490,11 @@ watch(
       }
     }
     callActive.value = false
+    resetCallHandshake()
+    const numericRoomId = Number(nextRoom)
+    if (Number.isFinite(numericRoomId) && numericRoomId > 0) {
+      void ensureMessageHistory(numericRoomId)
+    }
     scrollToBottom()
   }
 )
@@ -841,6 +862,10 @@ async function openChat(item, options = {}) {
   current.value = room
   tab.value = item.type === 'GROUP' ? 'group' : 'direct'
   ensureConversation(item.id)
+  const numericRoomId = Number(item.id)
+  if (Number.isFinite(numericRoomId) && numericRoomId > 0) {
+    await ensureMessageHistory(numericRoomId)
+  }
 
   if (!options.skipRouteUpdate) {
     const newQuery = { ...route.query, roomId: String(item.id) }
@@ -871,6 +896,13 @@ function ensureConversation(roomId) {
   return conversations.value[roomId]
 }
 
+function resetCallHandshake() {
+  callReady.value = false
+  remoteCallReady.value = false
+  callRequestInFlight.value = false
+  callStartInProgress.value = false
+}
+
 function scrollToBottom() {
   nextTick(() => {
     const el = chatMessagesContainer.value
@@ -878,6 +910,116 @@ function scrollToBottom() {
       el.scrollTop = el.scrollHeight
     }
   })
+}
+
+function applyCallReadyState(readyMembers = [], allReady = false) {
+  const myLogin = resolveClientIdentity(auth)
+  const normalizedReady = Array.isArray(readyMembers)
+    ? readyMembers
+      .map((login) => (login ? String(login).toLowerCase() : null))
+      .filter(Boolean)
+    : []
+  const normalizedMyLogin = myLogin ? String(myLogin).toLowerCase() : null
+
+  if (normalizedMyLogin) {
+    callReady.value = normalizedReady.includes(normalizedMyLogin)
+  } else {
+    callReady.value = false
+  }
+
+  remoteCallReady.value = normalizedReady.some((login) => login !== normalizedMyLogin)
+
+  if (!allReady && callReady.value && !remoteCallReady.value) {
+    // 내가 준비 완료이고 상대 대기 중
+    callStartInProgress.value = false
+  }
+}
+
+function normalizeHistoryMessage(entry, roomKey) {
+  if (!entry) return null
+  const myLogin = resolveClientIdentity(auth)
+  const senderLogin = entry.senderLoginId || entry.senderLoginID || entry.sender_login_id || null
+  const normalizedSender = senderLogin ? String(senderLogin).toLowerCase() : null
+  const normalizedMyLogin = myLogin ? String(myLogin).toLowerCase() : null
+
+  const messageId = entry.messageId || entry.message_id || `${roomKey}-${entry.sentAt || Date.now()}`
+  return {
+    id: messageId,
+    text: entry.content || '',
+    time: formatTime(entry.sentAt),
+    sender: entry.senderNickName || entry.senderNickname || senderLogin || '상대방',
+    senderLoginId: senderLogin,
+    me: Boolean(normalizedMyLogin && normalizedSender && normalizedMyLogin === normalizedSender),
+    contentType: (entry.contentType || 'TEXT').toUpperCase(),
+    fileName: entry.fileName || null,
+    fileUrl: normalizeAttachmentUrl(entry.fileUrl || entry.file_url || null),
+    translation: null,
+    translating: false,
+    sentAt: entry.sentAt || null,
+  }
+}
+
+function mergeMessageHistory(roomId, historyMessages) {
+  const existing = ensureConversation(roomId)
+  if (!Array.isArray(historyMessages) || historyMessages.length === 0) {
+    if (!existing.length) {
+      conversations.value[roomId] = []
+    }
+    return
+  }
+
+  const map = new Map()
+  const keyFor = (message) => {
+    if (!message) return null
+    return message.id || `${message.sentAt ?? ''}-${message.senderLoginId ?? ''}-${message.text ?? ''}`
+  }
+
+  historyMessages.forEach((message) => {
+    const key = keyFor(message)
+    if (!key) return
+    map.set(key, message)
+  })
+
+  existing.forEach((message) => {
+    const key = keyFor(message)
+    if (!key) return
+    const stored = map.get(key)
+    if (stored) {
+      map.set(key, { ...stored, ...message })
+    } else {
+      map.set(key, message)
+    }
+  })
+
+  const sorted = Array.from(map.values()).sort((a, b) => {
+    const aTime = a?.sentAt ? new Date(a.sentAt).getTime() : NaN
+    const bTime = b?.sentAt ? new Date(b.sentAt).getTime() : NaN
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0
+    if (Number.isNaN(aTime)) return -1
+    if (Number.isNaN(bTime)) return 1
+    return aTime - bTime
+  })
+
+  conversations.value[roomId] = sorted
+}
+
+async function ensureMessageHistory(roomId) {
+  if (!roomId) return
+  if (historyLoadedRooms.value.has(roomId)) return
+
+  try {
+    const { data } = await api.get(`/rooms/${roomId}/messages`, { params: { limit: 100 } })
+    const normalized = Array.isArray(data)
+      ? data
+        .map((entry) => normalizeHistoryMessage(entry, roomId))
+        .filter(Boolean)
+      : []
+    mergeMessageHistory(roomId, normalized)
+    historyLoadedRooms.value.add(roomId)
+    scrollToBottom()
+  } catch (error) {
+    console.warn('[chat] Failed to load message history', error)
+  }
 }
 
 async function ensureRoomExists(roomId, fallbackName) {
@@ -920,6 +1062,42 @@ async function ensureRoomExists(roomId, fallbackName) {
   return room
 }
 
+async function initiateVideoCall() {
+  if (callActive.value || callStartInProgress.value) {
+    return
+  }
+  if (!current.value?.id) {
+    return
+  }
+  if (!videoChatRef.value?.startCall) {
+    console.warn('VideoChat component is not ready')
+    return
+  }
+
+  callStartInProgress.value = true
+  try {
+    const participantLogins = await resolveParticipantLogins(current.value.id)
+    const myLoginId = resolveClientIdentity(auth)
+    const targets = participantLogins.filter((loginId) => loginId && loginId !== myLoginId)
+
+    if (!targets.length) {
+      console.warn('[chat] No target available for video call')
+      return
+    }
+
+    for (const loginId of targets) {
+      await videoChatRef.value.startCall(loginId)
+    }
+    callActive.value = true
+  } catch (error) {
+    console.error('[chat] Failed to start video call', error)
+    alert('영상 통화를 시작하지 못했습니다.')
+  } finally {
+    callStartInProgress.value = false
+    callRequestInFlight.value = false
+  }
+}
+
 async function handleMatchResultEvent(payload) {
   const roomId = payload?.roomId ?? payload?.room_id
   const partner = payload?.partnerNickName || payload?.partnerNickname
@@ -930,6 +1108,35 @@ async function handleMatchResultEvent(payload) {
   if (roomId) {
     selectRoomById(Number(roomId))
   }
+}
+
+function handleCallReadyEvent(payload) {
+  const roomId = Number(payload?.roomId ?? payload?.room_id ?? 0)
+  if (!roomId || Number(current.value?.id) !== roomId) {
+    return
+  }
+  const readyMembers = payload?.readyMembers ?? payload?.ready_members ?? []
+  const allReady = Boolean(payload?.allReady ?? payload?.all_ready)
+  applyCallReadyState(readyMembers, allReady)
+  if (allReady) {
+    void initiateVideoCall()
+  }
+}
+
+function handleCallEndedEvent(payload) {
+  const roomId = Number(payload?.roomId ?? payload?.room_id ?? 0)
+  if (!roomId || Number(current.value?.id) !== roomId) {
+    return
+  }
+  if (videoChatRef.value?.hangUp) {
+    try {
+      videoChatRef.value.hangUp()
+    } catch (error) {
+      console.warn('Failed to hang up call from event', error)
+    }
+  }
+  callActive.value = false
+  resetCallHandshake()
 }
 
 function bubbleClass(message) {
@@ -1121,29 +1328,30 @@ async function startVideoCall() {
     alert('채팅방이 선택되지 않았습니다.')
     return
   }
-
-  const participantLogins = await resolveParticipantLogins(current.value.id)
-  const myLoginId = resolveClientIdentity(auth)
-  const targets = participantLogins.filter((loginId) => loginId !== myLoginId)
-
-  if (!targets.length) {
-    alert('통화할 상대가 없습니다.')
+  if (callRequestInFlight.value || callStartInProgress.value) {
     return
   }
 
-  if (!videoChatRef.value?.startCall) {
-    console.warn('VideoChat component is not ready')
-    return
-  }
-
+  callRequestInFlight.value = true
   try {
-    for (const loginId of targets) {
-      await videoChatRef.value.startCall(loginId)
+    const { data } = await api.post(`/rooms/${current.value.id}/call/ready`)
+    const readyMembers = Array.isArray(data?.readyMembers)
+      ? [...data.readyMembers]
+      : []
+    const myLogin = resolveClientIdentity(auth)
+    if (myLogin && !readyMembers.some((login) => login && String(login).toLowerCase() === String(myLogin).toLowerCase())) {
+      readyMembers.push(myLogin)
     }
-    callActive.value = true
+    applyCallReadyState(readyMembers, Boolean(data?.allReady))
+    if (data?.allReady) {
+      await initiateVideoCall()
+    }
   } catch (error) {
-    console.error('[chat] Failed to start video call', error)
-    alert('영상 통화를 시작하지 못했습니다.')
+    console.error('[chat] Failed to mark call ready', error)
+    alert('영상 통화를 준비하지 못했습니다.')
+    resetCallHandshake()
+  } finally {
+    callRequestInFlight.value = false
   }
 }
 
@@ -1156,6 +1364,13 @@ function hangUpCall() {
     }
   }
   callActive.value = false
+  resetCallHandshake()
+  if (!current.value?.id) {
+    return
+  }
+  void api.post(`/rooms/${current.value.id}/call/hangup`).catch((error) => {
+    console.warn('[chat] Failed to notify call hangup', error)
+  })
 }
 
 watch(messages, () => scrollToBottom())

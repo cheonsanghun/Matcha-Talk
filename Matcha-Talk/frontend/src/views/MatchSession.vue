@@ -56,12 +56,20 @@
                   class="session-pill video-start-btn"
                   variant="flat"
                   rounded="pill"
-                  :loading="videoCallLoading"
-                  :disabled="!canStartCall"
+                  :loading="callRequestInFlight || callStartInProgress"
+                  :disabled="!canStartCall || callRequestInFlight || callStartInProgress || callActive"
                   @click="startVideoCall"
                 >
                   <v-icon start size="20">mdi-video</v-icon>
-                  <span>영상 통화 시작</span>
+                  <span>
+                    {{
+                      callActive
+                        ? '통화 중'
+                        : callReady
+                          ? (remoteCallReady ? '통화 연결 중...' : '상대 대기 중...')
+                          : '영상 통화 시작'
+                    }}
+                  </span>
                 </v-btn>
                 <v-btn
                   class="session-pill hangup-btn"
@@ -209,7 +217,11 @@ const chatMessagesContainer = ref(null)
 const fileInput = ref(null)
 const videoChatRef = ref(null)
 const callActive = ref(false)
-const videoCallLoading = ref(false)
+const callRequestInFlight = ref(false)
+const callStartInProgress = ref(false)
+const callReady = ref(false)
+const remoteCallReady = ref(false)
+const historyLoadedRooms = ref(new Set())
 
 const followState = reactive({
   status: null,
@@ -399,6 +411,35 @@ function ensureConversation(roomKey) {
   return conversations.value[roomKey]
 }
 
+function resetCallHandshake() {
+  callReady.value = false
+  remoteCallReady.value = false
+  callRequestInFlight.value = false
+  callStartInProgress.value = false
+}
+
+function applyCallReadyState(readyMembers = [], allReady = false) {
+  const myLogin = resolveClientIdentity(auth)
+  const normalizedReady = Array.isArray(readyMembers)
+    ? readyMembers
+      .map((login) => (login ? String(login).toLowerCase() : null))
+      .filter(Boolean)
+    : []
+  const normalizedMyLogin = myLogin ? String(myLogin).toLowerCase() : null
+
+  if (normalizedMyLogin) {
+    callReady.value = normalizedReady.includes(normalizedMyLogin)
+  } else {
+    callReady.value = false
+  }
+
+  remoteCallReady.value = normalizedReady.some((login) => login !== normalizedMyLogin)
+
+  if (!allReady && callReady.value && !remoteCallReady.value) {
+    callStartInProgress.value = false
+  }
+}
+
 function scrollToBottom(roomKey) {
   if (roomId.value !== roomKey) return
   nextTick(() => {
@@ -407,6 +448,93 @@ function scrollToBottom(roomKey) {
       el.scrollTop = el.scrollHeight
     }
   })
+}
+
+function normalizeHistoryMessage(entry, roomKey) {
+  if (!entry) return null
+  const myLogin = resolveClientIdentity(auth)
+  const senderLogin = entry.senderLoginId || entry.senderLoginID || entry.sender_login_id || null
+  const normalizedSender = senderLogin ? String(senderLogin).toLowerCase() : null
+  const normalizedMyLogin = myLogin ? String(myLogin).toLowerCase() : null
+
+  const messageId = entry.messageId || entry.message_id || `${roomKey}-${entry.sentAt || Date.now()}`
+  return {
+    id: messageId,
+    text: entry.content || '',
+    time: formatTime(entry.sentAt),
+    sender: entry.senderNickName || entry.senderNickname || senderLogin || '상대방',
+    senderLoginId: senderLogin,
+    me: Boolean(normalizedMyLogin && normalizedSender && normalizedMyLogin === normalizedSender),
+    contentType: (entry.contentType || 'TEXT').toUpperCase(),
+    fileName: entry.fileName || null,
+    fileUrl: normalizeAttachmentUrl(entry.fileUrl || entry.file_url || null),
+    translation: null,
+    translating: false,
+    sentAt: entry.sentAt || null,
+  }
+}
+
+function mergeMessageHistory(roomKey, historyMessages) {
+  const existing = ensureConversation(roomKey)
+  if (!Array.isArray(historyMessages) || historyMessages.length === 0) {
+    if (!existing.length) {
+      conversations.value[roomKey] = []
+    }
+    return
+  }
+
+  const map = new Map()
+  const keyFor = (message) => {
+    if (!message) return null
+    return message.id || `${message.sentAt ?? ''}-${message.senderLoginId ?? ''}-${message.text ?? ''}`
+  }
+
+  historyMessages.forEach((message) => {
+    const key = keyFor(message)
+    if (!key) return
+    map.set(key, message)
+  })
+
+  existing.forEach((message) => {
+    const key = keyFor(message)
+    if (!key) return
+    const stored = map.get(key)
+    if (stored) {
+      map.set(key, { ...stored, ...message })
+    } else {
+      map.set(key, message)
+    }
+  })
+
+  const sorted = Array.from(map.values()).sort((a, b) => {
+    const aTime = a?.sentAt ? new Date(a.sentAt).getTime() : NaN
+    const bTime = b?.sentAt ? new Date(b.sentAt).getTime() : NaN
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0
+    if (Number.isNaN(aTime)) return -1
+    if (Number.isNaN(bTime)) return 1
+    return aTime - bTime
+  })
+
+  conversations.value[roomKey] = sorted
+}
+
+async function ensureMessageHistory(roomKey) {
+  if (!roomKey) return
+  if (historyLoadedRooms.value.has(roomKey)) return
+
+  try {
+    const { data } = await api.get(`/rooms/${roomKey}/messages`, { params: { limit: 100 } })
+    const normalized = Array.isArray(data)
+      ? data
+        .map((entry) => normalizeHistoryMessage(entry, roomKey))
+        .filter(Boolean)
+      : []
+    mergeMessageHistory(roomKey, normalized)
+    historyLoadedRooms.value.add(roomKey)
+    scrollToBottom(roomKey)
+  } catch (error) {
+    console.warn('[match-session] Failed to load message history', error)
+  }
 }
 
 async function ensureRoomExists(roomKey, fallbackName) {
@@ -454,6 +582,7 @@ async function ensureRoomExists(roomKey, fallbackName) {
         partnerUserPid.value = numericPid
       }
     }
+    await ensureMessageHistory(roomKey)
     return roomInfo.value
   } catch (error) {
     console.warn('[match-session] Failed to fetch room detail', error)
@@ -468,6 +597,42 @@ async function ensureRoomExists(roomKey, fallbackName) {
       }
     }
     return roomInfo.value
+  }
+}
+
+async function initiateVideoCall() {
+  if (callActive.value || callStartInProgress.value) {
+    return
+  }
+  if (!roomId.value) {
+    return
+  }
+  if (!videoChatRef.value?.startCall) {
+    console.warn('[match-session] VideoChat component is not ready')
+    return
+  }
+
+  callStartInProgress.value = true
+  try {
+    if (!participantLoginIds.value.length) {
+      await fetchRoomParticipants(roomId.value)
+    }
+    const myLoginId = resolveClientIdentity(auth)
+    const targets = participantLoginIds.value.filter((loginId) => loginId && loginId !== myLoginId)
+    if (!targets.length) {
+      alert('통화할 상대가 아직 입장하지 않았습니다.')
+      return
+    }
+    for (const loginId of targets) {
+      await videoChatRef.value.startCall(loginId)
+    }
+    callActive.value = true
+  } catch (error) {
+    console.error('[match-session] Failed to start call', error)
+    alert('영상 통화를 시작하지 못했습니다.')
+  } finally {
+    callStartInProgress.value = false
+    callRequestInFlight.value = false
   }
 }
 
@@ -564,6 +729,49 @@ async function handleRoomPromotedEvent(payload) {
   }
 }
 
+function handleCallReadyEvent(payload) {
+  const roomKey = Number(payload?.roomId ?? payload?.room_id ?? 0)
+  if (!roomKey || Number(roomId.value) !== roomKey) {
+    return
+  }
+  const readyMembers = payload?.readyMembers ?? payload?.ready_members ?? []
+  const allReady = Boolean(payload?.allReady ?? payload?.all_ready)
+  applyCallReadyState(readyMembers, allReady)
+  if (allReady) {
+    void initiateVideoCall()
+  }
+}
+
+function handleCallEndedEvent(payload) {
+  const roomKey = Number(payload?.roomId ?? payload?.room_id ?? 0)
+  if (!roomKey || Number(roomId.value) !== roomKey) {
+    return
+  }
+  if (videoChatRef.value?.hangUp) {
+    try {
+      videoChatRef.value.hangUp()
+    } catch (error) {
+      console.warn('[match-session] Failed to hang up call from event', error)
+    }
+  }
+  callActive.value = false
+  resetCallHandshake()
+  if (payload?.roomRemoved) {
+    historyLoadedRooms.value.delete(roomKey)
+  }
+  const redirect = Boolean(payload?.redirectToMatch)
+  if (redirect) {
+    cleanupState.completed = true
+    matchStore.mergeBootstrap({ roomId: null, chatReady: false })
+    roomId.value = null
+    roomInfo.value = null
+    const currentRoute = router.currentRoute?.value?.name
+    if (currentRoute !== 'match') {
+      router.push({ name: 'match' })
+    }
+  }
+}
+
 const {
   realtimeClient,
   connect: connectRealtime,
@@ -576,6 +784,8 @@ const {
   events: {
     'match-follow-updated': (payload) => { void handleFollowUpdateEvent(payload) },
     'match-room-promoted': (payload) => { void handleRoomPromotedEvent(payload) },
+    'room-call-ready': (payload) => { handleCallReadyEvent(payload) },
+    'room-call-ended': (payload) => { handleCallEndedEvent(payload) },
   },
 })
 
@@ -633,6 +843,8 @@ function applyFollowSnapshot (patch = {}) {
 
 function applyBootstrap(payload) {
   if (!payload) return
+  callActive.value = false
+  resetCallHandshake()
   partnerName.value = payload.partnerName || partnerName.value
   partnerLoginId.value = payload.partnerLoginId || partnerLoginId.value
   partnerUserPid.value = payload.partnerUserPid ?? partnerUserPid.value
@@ -684,13 +896,23 @@ watch(() => route.query, () => {
   applyRouteContext()
   if (roomId.value) {
     void fetchRoomParticipants(roomId.value)
+    const numericRoomId = Number(roomId.value)
+    if (Number.isFinite(numericRoomId) && numericRoomId > 0) {
+      void ensureMessageHistory(numericRoomId)
+    }
   }
 })
 
 watch(roomId, (nextRoom) => {
   if (nextRoom) {
     void fetchRoomParticipants(nextRoom)
+    const numericRoomId = Number(nextRoom)
+    if (Number.isFinite(numericRoomId) && numericRoomId > 0) {
+      void ensureMessageHistory(numericRoomId)
+    }
   }
+  resetCallHandshake()
+  callActive.value = false
 })
 
 watch(messages, () => {
@@ -776,27 +998,34 @@ async function downloadAttachment(message) {
 }
 
 async function startVideoCall() {
-  if (!videoChatRef.value?.startCall) return
-  if (!participantLoginIds.value.length) {
-    await fetchRoomParticipants(roomId.value)
-  }
-  const myLoginId = resolveClientIdentity(auth)
-  const targets = participantLoginIds.value.filter((loginId) => loginId && loginId !== myLoginId)
-  if (!targets.length) {
-    alert('통화할 상대가 아직 입장하지 않았습니다.')
+  if (!roomId.value) {
+    alert('채팅방 정보를 확인할 수 없습니다.')
     return
   }
-  videoCallLoading.value = true
+  if (callRequestInFlight.value || callStartInProgress.value) {
+    return
+  }
+
+  callRequestInFlight.value = true
   try {
-    for (const loginId of targets) {
-      await videoChatRef.value.startCall(loginId)
+    const { data } = await api.post(`/rooms/${roomId.value}/call/ready`)
+    const readyMembers = Array.isArray(data?.readyMembers)
+      ? [...data.readyMembers]
+      : []
+    const myLogin = resolveClientIdentity(auth)
+    if (myLogin && !readyMembers.some((login) => login && String(login).toLowerCase() === String(myLogin).toLowerCase())) {
+      readyMembers.push(myLogin)
     }
-    callActive.value = true
+    applyCallReadyState(readyMembers, Boolean(data?.allReady))
+    if (data?.allReady) {
+      await initiateVideoCall()
+    }
   } catch (error) {
-    console.error('[match-session] Failed to start call', error)
-    alert('영상 통화를 시작하지 못했습니다.')
+    console.error('[match-session] Failed to mark call ready', error)
+    alert('영상 통화를 준비하지 못했습니다.')
+    resetCallHandshake()
   } finally {
-    videoCallLoading.value = false
+    callRequestInFlight.value = false
   }
 }
 
@@ -809,6 +1038,13 @@ function hangUpCall() {
     }
   }
   callActive.value = false
+  resetCallHandshake()
+  if (!roomId.value) {
+    return
+  }
+  void api.post(`/rooms/${roomId.value}/call/hangup`).catch((error) => {
+    console.warn('[match-session] Failed to notify hangup', error)
+  })
 }
 
 async function requestFollow() {
@@ -914,6 +1150,7 @@ async function cleanupTemporaryRoom(reason = 'navigation') {
 }
 
 function goBackToMatching() {
+  hangUpCall()
   cleanupTemporaryRoom('user-navigation').finally(() => {
     router.push({ name: 'match' })
   })
@@ -1008,7 +1245,7 @@ function goBackToMatching() {
   flex-direction: column;
   gap: 16px;
   justify-content: flex-start;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
 
 }
 
@@ -1118,28 +1355,4 @@ function goBackToMatching() {
   color: #5ca98a;
 }
 
-@media (max-width: 1080px) {
-  .session-content {
-    flex-direction: column;
-    flex-wrap: nowrap;
-  }
-  .video-pane,
-  .chat-pane {
-    max-width: 100%;
-    flex-basis: auto;
-  }
-}
-
-@media (max-height: 780px) {
-  .session-content {
-    flex-direction: column;
-    flex-wrap: nowrap;
-
-  }
-  .video-pane,
-  .chat-pane {
-    max-width: 100%;
-    flex-basis: auto;
-  }
-}
 </style>

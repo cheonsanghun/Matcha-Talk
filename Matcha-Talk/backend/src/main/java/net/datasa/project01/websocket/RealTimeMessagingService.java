@@ -25,6 +25,8 @@ public class RealTimeMessagingService {
     public static final String EVENT_MATCH_STATUS = "match-status";
     public static final String EVENT_MATCH_ROOM_PROMOTED = "match-room-promoted";
     public static final String EVENT_MATCH_FOLLOW_UPDATED = "match-follow-updated";
+    public static final String EVENT_ROOM_CALL_READY = "room-call-ready";
+    public static final String EVENT_ROOM_CALL_ENDED = "room-call-ended";
 
     public void sendEventToUser(String loginId, String event, Object payload) {
         broadcastToUsers(java.util.List.of(loginId), event, payload);
