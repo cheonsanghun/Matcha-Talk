@@ -1237,16 +1237,18 @@ function goBackToMatching() {
   background: linear-gradient(180deg, #fffef5 0%, #f4fff8 100%);
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   min-height: 0;
+  scrollbar-gutter: stable;
 }
 
 .chat-messages__list {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  justify-content: flex-start;
+  justify-content: flex-end;
   flex: 1 1 auto;
-
+  min-height: 100%;
 }
 
 .message-row {

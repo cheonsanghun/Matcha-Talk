@@ -158,7 +158,13 @@
         <v-divider />
         <div class="chat-body d-flex flex-grow-1">
           <div class="video-pane" v-if="current.id">
-            <VideoChat ref="videoChatRef" />
+            <VideoChat v-if="videoPaneVisible" ref="videoChatRef" />
+            <div v-else class="video-placeholder d-flex flex-column align-center justify-center ga-3">
+              <v-icon size="56" color="primary">mdi-video-outline</v-icon>
+              <div class="text-subtitle-2 text-medium-emphasis text-center">
+                영상 통화를 시작하려면 상단의 버튼을 눌러주세요.
+              </div>
+            </div>
           </div>
           <div class="chat-messages flex-grow-1 pa-4 overflow-y-auto" ref="chatMessagesContainer">
             <div
@@ -407,6 +413,7 @@ const maxAdditionalGroupMembers = 3
 const chatMessagesContainer = ref(null)
 const fileInput = ref(null)
 const videoChatRef = ref(null)
+const videoPaneVisible = ref(false)
 const callActive = ref(false)
 const callRequestInFlight = ref(false)
 const callStartInProgress = ref(false)
@@ -491,6 +498,7 @@ watch(
     }
     callActive.value = false
     resetCallHandshake()
+    videoPaneVisible.value = false
     const numericRoomId = Number(nextRoom)
     if (Number.isFinite(numericRoomId) && numericRoomId > 0) {
       void ensureMessageHistory(numericRoomId)
@@ -686,8 +694,8 @@ function buildFollowEntries(relationshipMap, directRooms) {
   })
 
   return Array.from(relationshipMap.values())
+    .filter((candidate) => candidate && candidate.following && candidate.follower)
     .filter((candidate) => {
-      if (!candidate) return false
       if (existingUserPids.has(candidate.userPid)) return false
       if (candidate.loginId && existingLogins.has(String(candidate.loginId).toLowerCase())) {
         return false
@@ -695,15 +703,8 @@ function buildFollowEntries(relationshipMap, directRooms) {
       return true
     })
     .map((candidate) => {
-      const mutual = candidate.following && candidate.follower
-      let subtitle = '대화를 시작해보세요.'
-      if (mutual) {
-        subtitle = '서로 팔로우 중입니다. 클릭하여 채팅을 시작하세요.'
-      } else if (candidate.following) {
-        subtitle = '내가 팔로우한 친구입니다. 대화를 시작해보세요.'
-      } else if (candidate.follower) {
-        subtitle = '나를 팔로우한 친구입니다. 대화를 시작해보세요.'
-      }
+      const mutual = true
+      const subtitle = '서로 팔로우 중입니다. 클릭하여 채팅을 시작하세요.'
 
       return {
         id: `follow-${candidate.userPid}`,
@@ -841,7 +842,9 @@ const filteredChats = computed(() => {
 })
 
 const filteredDirectChats = computed(() => filteredChats.value.filter((room) => !room.virtual))
-const filteredFollowShortcuts = computed(() => filteredChats.value.filter((room) => room.virtual))
+const filteredFollowShortcuts = computed(() =>
+  filteredChats.value.filter((room) => room.virtual && room.mutual === true)
+)
 
 const filteredGroups = computed(() => {
   const keyword = query.value.trim().toLowerCase()
@@ -866,6 +869,7 @@ async function openChat(item, options = {}) {
 
   const room = await ensureRoomExists(item.id, item.name)
   current.value = room
+  videoPaneVisible.value = false
   tab.value = item.type === 'GROUP' ? 'group' : 'direct'
   ensureConversation(item.id)
   const numericRoomId = Number(item.id)
@@ -907,6 +911,21 @@ function resetCallHandshake() {
   remoteCallReady.value = false
   callRequestInFlight.value = false
   callStartInProgress.value = false
+}
+
+async function ensureVideoPaneReady() {
+  if (!current.value?.id) {
+    return false
+  }
+  if (!videoPaneVisible.value) {
+    videoPaneVisible.value = true
+    await nextTick()
+  }
+  return Boolean(videoChatRef.value)
+}
+
+function hideVideoPane() {
+  videoPaneVisible.value = false
 }
 
 function scrollToBottom() {
@@ -1075,7 +1094,8 @@ async function initiateVideoCall() {
   if (!current.value?.id) {
     return
   }
-  if (!videoChatRef.value?.startCall) {
+  const paneReady = await ensureVideoPaneReady()
+  if (!paneReady || !videoChatRef.value?.startCall) {
     console.warn('VideoChat component is not ready')
     return
   }
@@ -1143,6 +1163,7 @@ function handleCallEndedEvent(payload) {
   }
   callActive.value = false
   resetCallHandshake()
+  hideVideoPane()
 }
 
 function bubbleClass(message) {
@@ -1338,6 +1359,12 @@ async function startVideoCall() {
     return
   }
 
+  const paneReady = await ensureVideoPaneReady()
+  if (!paneReady) {
+    alert('영상 통화 화면을 준비하지 못했습니다.')
+    return
+  }
+
   callRequestInFlight.value = true
   try {
     const { data } = await api.post(`/rooms/${current.value.id}/call/ready`)
@@ -1371,6 +1398,7 @@ function hangUpCall() {
   }
   callActive.value = false
   resetCallHandshake()
+  hideVideoPane()
   if (!current.value?.id) {
     return
   }
@@ -1425,6 +1453,16 @@ watch(messages, () => scrollToBottom())
 .video-pane :deep(.video-chat) {
   flex: 1;
   width: 100%;
+}
+
+.video-placeholder {
+  flex: 1;
+  width: 100%;
+  border: 2px dashed rgba(255, 169, 0, 0.35);
+  border-radius: 16px;
+  background: rgba(255, 248, 214, 0.35);
+  padding: 32px 24px;
+  color: #8c8676;
 }
 
 .chat-messages {
