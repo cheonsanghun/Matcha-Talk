@@ -296,7 +296,9 @@
             hide-details
             placeholder="메시지를 입력하세요..."
             class="flex-grow-1"
-            @keydown.enter.prevent="send"
+            @keydown.enter="handleEnterKey"
+            @compositionstart="onCompositionStart"
+            @compositionend="onCompositionEnd"
             :disabled="!current.id"
           />
           <v-btn icon variant="text"><v-icon>mdi-emoticon-outline</v-icon></v-btn>
@@ -402,6 +404,7 @@ const groups = ref([])
 const conversations = ref({})
 const current = ref({})
 const draft = ref('')
+const isComposing = ref(false)
 const followings = ref([])
 const followers = ref([])
 const createGroupDialog = ref(false)
@@ -1026,6 +1029,25 @@ function mergeMessageHistory(roomId, historyMessages) {
   })
 
   conversations.value[roomId] = sorted
+
+  const latest = [...sorted].reverse().find((message) => {
+    if (!message) return false
+    if (message.contentType && message.contentType !== 'TEXT') {
+      return true
+    }
+    return Boolean(message.text && message.text.trim().length)
+  })
+
+  if (latest) {
+    const room = findRoomById(roomId)
+    if (room && Object.prototype.hasOwnProperty.call(room, 'last')) {
+      if (latest.contentType && latest.contentType !== 'TEXT') {
+        room.last = latest.fileName || latest.text || '[첨부파일]'
+      } else {
+        room.last = latest.text
+      }
+    }
+  }
 }
 
 async function ensureMessageHistory(roomId) {
@@ -1208,7 +1230,30 @@ function saveWord(message) {
   vocabularyStore.addWord(message.text, message.translation)
 }
 
+function onCompositionStart () {
+  isComposing.value = true
+}
+
+function onCompositionEnd () {
+  isComposing.value = false
+}
+
+function handleEnterKey(event) {
+  if (!event) return
+  if (event.shiftKey) {
+    return
+  }
+  if (event.isComposing || isComposing.value) {
+    return
+  }
+  event.preventDefault()
+  void send()
+}
+
 async function send() {
+  if (isComposing.value) {
+    return
+  }
   const message = draft.value.trim()
   if (!message) return
 

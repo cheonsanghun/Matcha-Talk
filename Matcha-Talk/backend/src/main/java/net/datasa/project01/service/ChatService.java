@@ -547,30 +547,63 @@ public class ChatService {
         }
 
         private ChatMessageResponseDto toResponseDto(RoomMessage message) {
-                String downloadUrl = null;
-                if (message.getContentType() != RoomMessage.ContentType.TEXT && StringUtils.hasText(message.getFilePath())) {
-                        downloadUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
-                                .path("/api/rooms/")
-                                .path(String.valueOf(message.getRoom().getRoomId()))
-                                .path("/attachments/")
-                                .path(String.valueOf(message.getMessageId()))
-                                .toUriString();
+                if (message == null) {
+                        throw new IllegalArgumentException("메시지 정보를 확인할 수 없습니다.");
                 }
+
+                RoomMessage.ContentType contentType = message.getContentType() != null
+                        ? message.getContentType()
+                        : RoomMessage.ContentType.TEXT;
+
+                Long roomId = null;
+                try {
+                        roomId = message.getRoom() != null ? message.getRoom().getRoomId() : null;
+                } catch (Exception exception) {
+                        log.warn("Failed to resolve room information for message {}", message.getMessageId(), exception);
+                }
+
+                String downloadUrl = buildAttachmentDownloadUrl(message, contentType, roomId);
 
                 return ChatMessageResponseDto.builder()
                         .messageId(message.getMessageId())
-                        .roomId(message.getRoom().getRoomId())
+                        .roomId(roomId)
                         .senderLoginId(message.getSender() != null ? message.getSender().getLoginId() : null)
                         .senderNickName(message.getSender() != null ? message.getSender().getNickName() : "시스템")
                         .senderLanguageCode(message.getSender() != null ? message.getSender().getLanguageCode() : null)
                         .content(message.getTextContent())
-                        .contentType(message.getContentType().name())
+                        .contentType(contentType.name())
                         .fileName(message.getFileName())
                         .fileUrl(downloadUrl)
                         .mimeType(message.getMimeType())
                         .sizeBytes(message.getSizeBytes())
                         .sentAt(message.getCreatedAt())
                         .build();
+        }
+
+        private String buildAttachmentDownloadUrl(RoomMessage message, RoomMessage.ContentType contentType, Long roomId) {
+                if (message == null || contentType == null || contentType == RoomMessage.ContentType.TEXT) {
+                        return null;
+                }
+                if (!StringUtils.hasText(message.getFilePath())) {
+                        return null;
+                }
+
+                Long messageId = message.getMessageId();
+                if (roomId == null || messageId == null) {
+                        return null;
+                }
+
+                try {
+                        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                                .path("/api/rooms/")
+                                .path(String.valueOf(roomId))
+                                .path("/attachments/")
+                                .path(String.valueOf(messageId))
+                                .toUriString();
+                } catch (IllegalStateException exception) {
+                        log.debug("No request context available while building attachment URL for message {}", messageId, exception);
+                        return String.format("/api/rooms/%s/attachments/%s", roomId, messageId);
+                }
         }
 
         private boolean hasMutualFollow(List<RoomMember> members) {
