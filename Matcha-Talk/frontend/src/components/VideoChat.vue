@@ -30,6 +30,9 @@ let peerConnection = null
 let activeReceiver = null
 let initializing = null
 let acquiringLocalStream = null
+let makingOffer = false
+let ignoreOffer = false
+let isSettingRemoteAnswerPending = false
 
 function isMediaDeviceSupported () {
   return typeof navigator !== 'undefined' &&
@@ -49,6 +52,37 @@ function attachLocalTracks(stream, pc) {
       pc.addTrack(track, stream)
     }
   })
+}
+
+function normalizeLoginId(value) {
+  return value ? String(value).toLowerCase() : ''
+}
+
+function determinePoliteness(remoteLoginId) {
+  const local = normalizeLoginId(identity.value)
+  const remote = normalizeLoginId(remoteLoginId)
+  if (!local || !remote) {
+    return true
+  }
+  return local > remote
+}
+
+async function tryPlayVideo(element) {
+  if (!element) return
+  try {
+    await element.play()
+  } catch (error) {
+    console.warn('[webrtc] Failed to autoplay video surface', error)
+  }
+}
+
+async function attachRemoteStream(stream) {
+  if (!stream) return
+  remoteStream = stream
+  if (remoteVideo.value) {
+    remoteVideo.value.srcObject = stream
+    await tryPlayVideo(remoteVideo.value)
+  }
 }
 
 function ensurePeerConnection() {
@@ -75,9 +109,8 @@ function ensurePeerConnection() {
 
   pc.ontrack = (event) => {
     const [stream] = event.streams
-    if (stream && remoteVideo.value) {
-      remoteStream = stream
-      remoteVideo.value.srcObject = stream
+    if (stream) {
+      void attachRemoteStream(stream)
     }
   }
 
@@ -117,6 +150,7 @@ async function ensureLocalStream() {
   if (localStream) {
     if (localVideo.value && localVideo.value.srcObject !== localStream) {
       localVideo.value.srcObject = localStream
+      void tryPlayVideo(localVideo.value)
     }
     return localStream
   }
@@ -137,6 +171,7 @@ async function ensureLocalStream() {
       bindLocalStreamEvents(stream)
       if (localVideo.value) {
         localVideo.value.srcObject = stream
+        void tryPlayVideo(localVideo.value)
       }
       const pc = ensurePeerConnection()
       attachLocalTracks(stream, pc)
@@ -217,8 +252,14 @@ async function startCall(receiverLoginId) {
 
   updateStatus('호출 중...')
 
-  const offer = await pc.createOffer()
-  await pc.setLocalDescription(offer)
+  makingOffer = true
+  let offer
+  try {
+    offer = await pc.createOffer()
+    await pc.setLocalDescription(offer)
+  } finally {
+    makingOffer = false
+  }
 
   await signalClient.sendSignal({
     event: 'offer',
@@ -235,21 +276,52 @@ async function handleIncomingSignal(message) {
   const pc = ensurePeerConnection()
 
   if (eventType === 'offer') {
-    activeReceiver = message.senderLoginId
-    await ensureLocalStream()
-    await pc.setRemoteDescription(message.data)
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    await signalClient.sendSignal({
-      event: 'answer',
-      receiverLoginId: message.senderLoginId,
-      data: answer,
-      senderLoginId: identity.value
-    })
-    updateStatus('상대방과 연결 중')
+    const senderLoginId = message.senderLoginId
+    activeReceiver = senderLoginId
+    const polite = determinePoliteness(senderLoginId)
+    const offerCollision = makingOffer || pc.signalingState === 'have-local-offer' || isSettingRemoteAnswerPending
+
+    ignoreOffer = !polite && offerCollision
+    if (ignoreOffer) {
+      console.warn('[webrtc] Ignoring offer because of collision and impolite role')
+      return
+    }
+
+    try {
+      await ensureLocalStream()
+      if (offerCollision) {
+        await Promise.all([
+          pc.setLocalDescription({ type: 'rollback' }),
+          pc.setRemoteDescription(message.data)
+        ])
+      } else {
+        await pc.setRemoteDescription(message.data)
+      }
+      const answer = await pc.createAnswer()
+      isSettingRemoteAnswerPending = true
+      await pc.setLocalDescription(answer)
+      await signalClient.sendSignal({
+        event: 'answer',
+        receiverLoginId: senderLoginId,
+        data: answer,
+        senderLoginId: identity.value
+      })
+      updateStatus('상대방과 연결 중')
+    } catch (error) {
+      console.error('[webrtc] Failed to process incoming offer', error)
+    } finally {
+      isSettingRemoteAnswerPending = false
+    }
   } else if (eventType === 'answer') {
-    await pc.setRemoteDescription(message.data)
-    updateStatus('통화 연결 완료')
+    if (ignoreOffer) {
+      return
+    }
+    try {
+      await pc.setRemoteDescription(message.data)
+      updateStatus('통화 연결 완료')
+    } catch (error) {
+      console.error('[webrtc] Failed to apply remote answer', error)
+    }
   } else if (eventType === 'ice-candidate' || eventType === 'iceCandidate') {
     try {
       await pc.addIceCandidate(message.data)
@@ -261,6 +333,9 @@ async function handleIncomingSignal(message) {
 
 function hangUp() {
   activeReceiver = null
+  makingOffer = false
+  ignoreOffer = false
+  isSettingRemoteAnswerPending = false
 
   if (peerConnection) {
     try { peerConnection.close() } catch (error) {
@@ -299,6 +374,14 @@ watch(() => auth.loginId, () => {
 watch(localVideo, (element) => {
   if (element && localStream) {
     element.srcObject = localStream
+    void tryPlayVideo(element)
+  }
+})
+
+watch(remoteVideo, (element) => {
+  if (element && remoteStream) {
+    element.srcObject = remoteStream
+    void tryPlayVideo(element)
   }
 })
 
