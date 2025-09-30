@@ -666,12 +666,18 @@ function buildFollowEntries(relationshipMap, directRooms) {
   const existingUserPids = new Set()
 
   directRooms.forEach((room) => {
-    (room.participantLogins || []).forEach((login) => {
+    const participantLogins = Array.isArray(room.participantLogins)
+      ? room.participantLogins
+      : []
+    participantLogins.forEach((login) => {
       if (login) {
         existingLogins.add(String(login).toLowerCase())
       }
     })
-    (room.participantsDetail || []).forEach((participant) => {
+    const participantsDetail = Array.isArray(room.participantsDetail)
+      ? room.participantsDetail
+      : []
+    participantsDetail.forEach((participant) => {
       const pid = participant?.userPid ?? participant?.user_pid ?? null
       if (pid != null) {
         existingUserPids.add(Number(pid))
@@ -734,7 +740,7 @@ function normalizeRoomListEntry(room, meNickname) {
     name: displayName,
     last: '',
     participants,
-    participantLogins: room.memberLoginIds || [],
+    participantLogins: Array.isArray(room.memberLoginIds) ? room.memberLoginIds : [],
     participantsDetail: [],
     type,
     temporary,
