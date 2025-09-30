@@ -75,7 +75,6 @@ public class MatchRequest {
         MATCHED,
         CONFIRMED,
         DECLINED,
-        CANCELLED,
-        ARCHIVED
+        CANCELLED
     }
 }

@@ -45,9 +45,6 @@
               <v-btn color="secondary" variant="outlined" @click="goBackToMatching">
                 새 매칭 찾기
               </v-btn>
-              <v-btn color="primary" variant="text" @click="goBackToResult">
-                매칭 정보 보기
-              </v-btn>
             </div>
           </div>
           <div class="text-caption text-medium-emphasis mt-3">
@@ -120,7 +117,13 @@
                         </div>
                       </template>
                       <template v-else-if="message.contentType === 'FILE' && message.fileUrl">
-                        <a :href="message.fileUrl" class="file-link" target="_blank" rel="noopener">
+                        <a
+                          :href="message.fileUrl"
+                          class="file-link"
+                          target="_blank"
+                          rel="noopener"
+                          @click.prevent="downloadAttachment(message)"
+                        >
                           <v-icon size="18" class="me-1">mdi-paperclip</v-icon>
                           {{ message.fileName || message.text || '파일 다운로드' }}
                         </a>
@@ -146,7 +149,7 @@
                     :disabled="!roomId"
                     @click="triggerFilePicker"
                   >
-                    <v-icon size="22">mdi-plus</v-icon>
+                    <v-icon size="22">mdi-file-outline</v-icon>
                   </v-btn>
                   <v-text-field
                     v-model="draft"
@@ -191,6 +194,7 @@ import { resolveClientIdentity } from '../utils/identity'
 import {
   createFileSelectHandler,
   createIncomingMessageHandler,
+  normalizeAttachmentUrl,
   useRealtimeChatClient,
 } from '../composables/useChatClient'
 
@@ -227,6 +231,7 @@ const followState = reactive({
 })
 const followRequestLoading = ref(false)
 const followAcceptLoading = ref(false)
+const pendingIncomingId = ref(null)
 const roomTemporary = ref(null)
 const cleanupState = reactive({ running: false, completed: false })
 
@@ -246,8 +251,8 @@ const handshakeStatusLabel = computed(() => {
       return '채팅 진행 중'
     case 'MATCHED':
       return '상대 수락 대기'
-    case 'ARCHIVED':
-      return '대화 완료'
+    case 'CANCELLED':
+      return '매칭 종료'
     case 'DECLINED':
       return '매칭 거절됨'
     default:
@@ -273,8 +278,8 @@ const canRequestFollow = computed(() => {
   return true
 })
 const canAcceptFollow = computed(() => {
-  if (!followState.incomingId) return false
-  return incomingStatusUpper.value === 'PENDING'
+  if (incomingStatusUpper.value !== 'PENDING') return false
+  return Boolean(followState.incomingId || followState.relationId || pendingIncomingId.value)
 })
 
 const isTemporaryRoom = computed(() => {
@@ -423,6 +428,41 @@ async function handleFollowUpdateEvent(payload) {
   }
 }
 
+async function refreshFollowSnapshot() {
+  try {
+    const { data } = await api.get('/match/results/latest', { skipSnakifyParams: true })
+    if (data) {
+      const normalized = camelizeKeys(data)
+      matchStore.mergeBootstrap(normalized)
+      applyBootstrap(matchStore.bootstrap)
+    }
+  } catch (error) {
+    console.warn('[match-session] Failed to refresh follow snapshot', error)
+  }
+  return followState.incomingId ?? followState.relationId ?? null
+}
+
+async function resolveIncomingFollowId() {
+  if (incomingStatusUpper.value === 'PENDING') {
+    const candidate = followState.incomingId ?? followState.relationId ?? pendingIncomingId.value
+    if (candidate) {
+      pendingIncomingId.value = candidate
+      return candidate
+    }
+  }
+
+  const refreshed = await refreshFollowSnapshot()
+  if (incomingStatusUpper.value === 'PENDING') {
+    const candidate = followState.incomingId ?? followState.relationId ?? refreshed ?? pendingIncomingId.value
+    if (candidate) {
+      pendingIncomingId.value = candidate
+      return candidate
+    }
+  }
+
+  return null
+}
+
 async function handleRoomPromotedEvent(payload) {
   const normalized = camelizeKeys(payload || {})
   const patch = {
@@ -502,6 +542,7 @@ function applyFollowSnapshot (patch = {}) {
   followState.incomingStatus = followState.incomingStatus ? followState.incomingStatus.toUpperCase() : null
   followState.outgoingStatus = followState.outgoingStatus ? followState.outgoingStatus.toUpperCase() : null
   followState.relationId = followState.incomingId ?? followState.outgoingId ?? followState.relationId ?? null
+  pendingIncomingId.value = followState.incomingId ?? null
 }
 
 function applyBootstrap(payload) {
@@ -525,6 +566,8 @@ function applyBootstrap(payload) {
     sessionStatus.value = '상대방의 수락을 기다리는 중입니다.'
   } else if ((payload.status || '').toUpperCase() === 'DECLINED') {
     sessionStatus.value = '상대방이 매칭을 거절했습니다.'
+  } else if ((payload.status || '').toUpperCase() === 'CANCELLED') {
+    sessionStatus.value = '매칭이 종료되었습니다.'
   }
 }
 
@@ -618,6 +661,34 @@ function triggerFilePicker() {
   fileInput.value?.click()
 }
 
+async function downloadAttachment(message) {
+  if (!message?.fileUrl) return
+  const normalizedUrl = normalizeAttachmentUrl(message.fileUrl)
+  if (!normalizedUrl) {
+    alert('다운로드할 파일 경로를 확인할 수 없습니다.')
+    return
+  }
+
+  try {
+    const response = await api.get(normalizedUrl, {
+      responseType: 'blob',
+      skipSnakifyParams: true,
+    })
+    const blob = response.data
+    const blobUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = message.fileName || 'attachment'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(blobUrl)
+  } catch (error) {
+    console.error('[match-session] Failed to download attachment', error)
+    alert('파일을 다운로드하지 못했습니다. 잠시 후 다시 시도하세요.')
+  }
+}
+
 async function startVideoCall() {
   if (!videoChatRef.value?.startCall) return
   if (!participantLoginIds.value.length) {
@@ -685,7 +756,10 @@ async function requestFollow() {
 
 async function acceptFollowRequest() {
   if (!canAcceptFollow.value || followAcceptLoading.value) return
-  const followId = followState.incomingId ?? followState.relationId
+  let followId = followState.incomingId ?? (incomingStatusUpper.value === 'PENDING' ? followState.relationId : null) ?? pendingIncomingId.value
+  if (!followId) {
+    followId = await resolveIncomingFollowId()
+  }
   if (!followId) {
     alert('수락할 팔로우 요청을 찾을 수 없습니다.')
     return
@@ -697,6 +771,7 @@ async function acceptFollowRequest() {
     followState.status = hasMutualFollow.value ? 'ACCEPTED' : 'ACCEPTED_INCOMING'
     followState.relationId = followState.incomingId ?? followId
     followState.mutual = hasMutualFollow.value
+    pendingIncomingId.value = null
     matchStore.mergeBootstrap({
       followStatus: followState.status,
       followRelationId: followState.relationId,
@@ -750,11 +825,6 @@ function goBackToMatching() {
   })
 }
 
-function goBackToResult() {
-  cleanupTemporaryRoom('view-result').finally(() => {
-    router.push({ name: 'match-result' })
-  })
-}
 </script>
 
 <style scoped>
@@ -773,36 +843,41 @@ function goBackToResult() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 220px);
-  max-height: calc(100vh - 220px);
-  overflow: hidden;
-
+  min-height: calc(100vh - 220px);
+  height: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .session-content {
   display: flex;
   flex-direction: row;
+  flex-wrap: nowrap;
   gap: 24px;
   padding: 24px;
   height: 100%;
   min-height: 0;
   flex: 1;
-  overflow: hidden;
-
+  overflow: visible;
+  align-content: stretch;
+  align-items: stretch;
 }
 
 .video-pane {
-  flex: 1 1 55%;
-  max-width: 55%;
+  flex: 1 1 52%;
+  max-width: 52%;
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
-
+  gap: 16px;
 }
 
 .session-video {
   flex: 1;
+  min-height: 300px;
+  aspect-ratio: 16 / 9;
+  width: 100%;
 }
 
 .video-actions {
@@ -810,17 +885,18 @@ function goBackToResult() {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .chat-pane {
-  flex: 1 1 45%;
-  max-width: 45%;
+  flex: 1 1 48%;
+  max-width: 48%;
   display: flex;
   flex-direction: column;
   border-left: 1px solid #ecf2e5;
   min-height: 0;
   height: 100%;
-
+  gap: 0;
 }
 
 .chat-messages {
@@ -948,17 +1024,27 @@ function goBackToResult() {
   color: #5ca98a;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1080px) {
   .session-content {
     flex-direction: column;
-  }
-  .session-card {
-    height: auto;
-    max-height: none;
+    flex-wrap: nowrap;
   }
   .video-pane,
   .chat-pane {
     max-width: 100%;
+    flex-basis: auto;
+  }
+}
+
+@media (max-height: 780px) {
+  .session-content {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+  .video-pane,
+  .chat-pane {
+    max-width: 100%;
+    flex-basis: auto;
   }
 }
 </style>

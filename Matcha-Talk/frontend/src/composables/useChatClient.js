@@ -3,6 +3,35 @@ import api from '../services/api'
 import { createRealtimeClient } from '../services/ws'
 import { resolveClientIdentity } from '../utils/identity'
 
+export function normalizeAttachmentUrl (url) {
+  if (!url) return null
+
+  const stringUrl = String(url)
+  if (/^https?:\/\//i.test(stringUrl)) {
+    return stringUrl
+  }
+
+  const base = api?.defaults?.baseURL || ''
+  let resolvedBase = base
+
+  if (typeof window !== 'undefined') {
+    try {
+      const origin = window.location?.origin || ''
+      resolvedBase = base ? new URL(base, origin).href : origin
+    } catch (error) {
+      console.warn('[chat] Failed to resolve attachment base URL', error)
+      resolvedBase = base || ''
+    }
+  }
+
+  try {
+    return new URL(stringUrl, resolvedBase || undefined).href
+  } catch (error) {
+    console.warn('[chat] Failed to normalize attachment URL', error)
+    return stringUrl
+  }
+}
+
 export function createIncomingMessageHandler ({ auth, ensureConversation, ensureRoomExists, scrollToBottom, formatTime }) {
   if (!auth) {
     throw new Error('auth store is required to handle incoming messages')
@@ -49,7 +78,7 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
       me: isMine,
       contentType: (payload.contentType || 'TEXT').toUpperCase(),
       fileName: payload.fileName || null,
-      fileUrl: payload.fileUrl || null,
+      fileUrl: normalizeAttachmentUrl(payload.fileUrl || payload.file_url || null),
       mimeType: payload.mimeType || null,
       sizeBytes: payload.sizeBytes || null,
       translation: null,

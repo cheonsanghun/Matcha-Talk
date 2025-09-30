@@ -3,12 +3,11 @@ package net.datasa.project01.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.datasa.project01.domain.dto.DirectChatRequestDto;
+import net.datasa.project01.domain.dto.GroupRoomCreateRequestDto;
 import net.datasa.project01.domain.dto.RoomDetailResponseDto;
-import net.datasa.project01.domain.dto.RoomCreateResponseDto;
 import net.datasa.project01.domain.dto.RoomListResponseDto;
 import net.datasa.project01.domain.dto.ChatMessageResponseDto;
 import net.datasa.project01.domain.dto.RoomCleanupResponseDto;
-import net.datasa.project01.domain.entity.Room;
 import net.datasa.project01.service.ChatService;
 import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
@@ -37,15 +36,38 @@ public class ChatController {
      * @return 생성된 방 정보
      */
     @PostMapping
-    public ResponseEntity<RoomCreateResponseDto> createGroupRoom(@AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<RoomDetailResponseDto> createGroupRoom(@AuthenticationPrincipal UserDetails userDetails) {
         String loginId = requireLoginId(userDetails);
         try {
-            Room createdRoom = chatService.createGroupRoom(loginId); // 생성자 정보를 서비스에 전달
-            RoomCreateResponseDto responseDto = RoomCreateResponseDto.fromEntity(createdRoom);
-            log.info("Group room created by user '{}' with ID: {}", loginId, createdRoom.getRoomId());
+            RoomDetailResponseDto responseDto = chatService.createGroupRoom(loginId, new GroupRoomCreateRequestDto(null, List.of()));
+            log.info("Group room created by user '{}' with ID: {}", loginId, responseDto.getRoomId());
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid group room create request from '{}': {}", loginId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         } catch (Exception e) {
             log.error("Error creating group room", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @PostMapping("/group")
+    public ResponseEntity<RoomDetailResponseDto> createGroupRoomWithMembers(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody GroupRoomCreateRequestDto requestDto) {
+        String loginId = requireLoginId(userDetails);
+        try {
+            RoomDetailResponseDto responseDto = chatService.createGroupRoom(loginId, requestDto);
+            log.info("Group room created by user '{}' with members {}", loginId, requestDto.memberUserPids());
+            return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid group room create request from '{}': {}", loginId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        } catch (IllegalStateException e) {
+            log.warn("Group room create request rejected for '{}': {}", loginId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        } catch (Exception e) {
+            log.error("Error creating group room with members", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

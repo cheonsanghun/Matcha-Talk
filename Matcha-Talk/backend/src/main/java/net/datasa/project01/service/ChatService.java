@@ -2,6 +2,7 @@ package net.datasa.project01.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.datasa.project01.domain.dto.GroupRoomCreateRequestDto;
 import net.datasa.project01.domain.dto.RoomDetailResponseDto;
 import net.datasa.project01.domain.dto.RoomListResponseDto;
 import net.datasa.project01.domain.entity.Room;
@@ -33,16 +34,20 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import net.datasa.project01.domain.entity.Room.RoomType;
 
@@ -76,31 +81,85 @@ public class ChatService {
 
         @Transactional
         public Room createGroupRoom(String loginId) {
-                // TODO: 방 이름 설정 기능 추가
-                // TODO: 비밀번호 보호 기능 추가
-                // TODO: 초대 전용 방 기능 추가
+                CreatedGroupRoom context = createGroupRoomInternal(loginId, new GroupRoomCreateRequestDto(null, List.of()));
+                return context.room();
+        }
+
+        @Transactional
+        public RoomDetailResponseDto createGroupRoom(String loginId, GroupRoomCreateRequestDto request) {
+                CreatedGroupRoom context = createGroupRoomInternal(loginId, request);
+                return RoomDetailResponseDto.fromEntity(context.room(), context.members());
+        }
+
+        private CreatedGroupRoom createGroupRoomInternal(String loginId, GroupRoomCreateRequestDto request) {
                 User creator = userRepository.findByLoginId(loginId)
                         .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-        // 2. 새로운 Room 엔티티를 생성하고 데이터베이스에 저장
-        Room newRoom = Room.builder()
-                .roomType(Room.RoomType.GROUP) // Enum 타입 직접 사용
-                .capacity(4) // 그룹방의 최대 인원은 4명으로 고정
-                .build();
-        roomRepository.save(newRoom);
+                List<Long> requestedMemberIds = request != null && request.memberUserPids() != null
+                        ? request.memberUserPids()
+                        : List.of();
 
-        // 3. 방을 만든 사람을 해당 방의 첫 멤버이자 방장(HOST)으로 추가
-        RoomMember newMember = RoomMember.builder()
-                .room(newRoom)
-                .user(creator)
-                .role("HOST") // DB 스키마에 정의된 enum 값
-                .build();
-        roomMemberRepository.save(newMember);
+                LinkedHashSet<Long> uniqueMemberIds = requestedMemberIds.stream()
+                        .filter(Objects::nonNull)
+                        .map(Long::longValue)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
 
-                // TODO: 방 생성 알림 전송
-                // TODO: 방 생성 로그 기록
-                return newRoom;
+                uniqueMemberIds.remove(creator.getUserPid());
+
+                if (uniqueMemberIds.size() > 3) {
+                        throw new IllegalArgumentException("그룹 채팅은 최대 4명까지 참여할 수 있습니다.");
+                }
+
+                List<User> invitedUsers = uniqueMemberIds.isEmpty()
+                        ? List.of()
+                        : StreamSupport.stream(userRepository.findAllById(uniqueMemberIds).spliterator(), false)
+                                .collect(Collectors.toList());
+
+                if (invitedUsers.size() != uniqueMemberIds.size()) {
+                        throw new IllegalArgumentException("초대 대상 중 존재하지 않는 사용자가 있습니다.");
+                }
+
+                Map<Long, User> invitedMap = invitedUsers.stream()
+                        .collect(Collectors.toMap(User::getUserPid, Function.identity()));
+
+                List<User> orderedInvitedUsers = uniqueMemberIds.stream()
+                        .map(invitedMap::get)
+                        .collect(Collectors.toList());
+
+                if (orderedInvitedUsers.stream().anyMatch(Objects::isNull)) {
+                        throw new IllegalArgumentException("초대 대상 중 존재하지 않는 사용자가 있습니다.");
+                }
+
+                Room newRoom = Room.builder()
+                        .roomType(Room.RoomType.GROUP)
+                        .capacity(Math.max(2, Math.min(4, 1 + orderedInvitedUsers.size())))
+                        .build();
+                roomRepository.save(newRoom);
+
+                List<RoomMember> members = new ArrayList<>();
+                RoomMember hostMember = RoomMember.builder()
+                        .room(newRoom)
+                        .user(creator)
+                        .role("HOST")
+                        .build();
+                members.add(hostMember);
+
+                for (User invited : orderedInvitedUsers) {
+                        RoomMember member = RoomMember.builder()
+                                .room(newRoom)
+                                .user(invited)
+                                .role("MEMBER")
+                                .invitedByUser(creator)
+                                .build();
+                        members.add(member);
+                }
+
+                roomMemberRepository.saveAll(members);
+
+                return new CreatedGroupRoom(newRoom, members);
         }
+
+        private record CreatedGroupRoom(Room room, List<RoomMember> members) {}
 
         @Transactional
         public ChatMessageResponseDto processMessage(ChatMessageRequestDto requestDto, String loginId) {
@@ -486,7 +545,7 @@ public class ChatService {
                 }
 
                 for (MatchRequest request : relatedRequests) {
-                        request.setStatus(MatchRequest.MatchStatus.ARCHIVED);
+                        request.setStatus(MatchRequest.MatchStatus.CANCELLED);
                         request.setRoom(null);
                         request.setHandshakeKey(null);
                         request.setHandshakeExpiresAt(null);
