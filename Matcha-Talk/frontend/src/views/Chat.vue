@@ -153,7 +153,7 @@
               }}
             </span>
           </v-btn>
-          <v-btn icon variant="text" :disabled="!callActive" @click="hangUpCall"><v-icon>mdi-phone-hangup</v-icon></v-btn>
+          <v-btn icon variant="text" :disabled="!canHangUp" @click="hangUpCall"><v-icon>mdi-phone-hangup</v-icon></v-btn>
         </div>
         <v-divider />
         <div class="chat-body d-flex flex-grow-1">
@@ -407,6 +407,7 @@ const draft = ref('')
 const isComposing = ref(false)
 const followings = ref([])
 const followers = ref([])
+const followRelationshipMap = ref(new Map())
 const createGroupDialog = ref(false)
 const groupCreationLoading = ref(false)
 const groupForm = reactive({ name: '', members: [] })
@@ -568,6 +569,7 @@ async function loadRooms(options = {}) {
     const excludePid = Number.isFinite(Number(myUserPid.value)) ? Number(myUserPid.value) : null
     followings.value = normalizeFollowList(followData?.following, excludePid)
     followers.value = normalizeFollowList(followData?.followers, excludePid)
+    followRelationshipMap.value = buildFollowRelationshipMap(followings.value, followers.value)
     const followEntries = buildFollowEntries(followRelationshipMap.value, directRooms)
 
     chats.value = [...directRooms, ...followEntries]
@@ -715,6 +717,7 @@ function buildFollowEntries(relationshipMap, directRooms) {
         last: subtitle,
         participants: [candidate.nickName],
         participantLogins: candidate.loginId ? [candidate.loginId] : [],
+        loginId: candidate.loginId || null,
         participantsDetail: [],
         type: 'DIRECT',
         virtual: true,
@@ -724,6 +727,91 @@ function buildFollowEntries(relationshipMap, directRooms) {
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+function normalizeIdentifier(value) {
+  if (value == null) return ''
+  return String(value).trim().toLowerCase()
+}
+
+function buildIdentifierSet(values) {
+  const set = new Set()
+  if (!Array.isArray(values)) {
+    values = [values]
+  }
+  values.forEach((value) => {
+    const normalized = normalizeIdentifier(value)
+    if (normalized) {
+      set.add(normalized)
+    }
+  })
+  return set
+}
+
+function findExistingDirectRoomForFollowShortcut(item) {
+  if (!item) return null
+
+  const candidateLogins = buildIdentifierSet([
+    ...(Array.isArray(item.participantLogins) ? item.participantLogins : []),
+    item.loginId,
+  ])
+  const candidateNames = buildIdentifierSet([
+    ...(Array.isArray(item.participants) ? item.participants : []),
+    item.name,
+  ])
+
+  const myLogin = normalizeIdentifier(resolveClientIdentity(auth))
+  if (myLogin) {
+    candidateLogins.delete(myLogin)
+  }
+  const myNickname = normalizeIdentifier(auth.user?.nickName || auth.user?.nickname)
+  if (myNickname) {
+    candidateNames.delete(myNickname)
+  }
+
+  if (!candidateLogins.size && !candidateNames.size) {
+    return null
+  }
+
+  const matchesRoom = (room) => {
+    if (!room || room.virtual || room.type === 'GROUP') {
+      return false
+    }
+
+    const roomLogins = buildIdentifierSet(room.participantLogins || [])
+    for (const login of roomLogins) {
+      if (candidateLogins.has(login)) {
+        return true
+      }
+    }
+
+    const detailEntries = Array.isArray(room.participantsDetail) ? room.participantsDetail : []
+    for (const participant of detailEntries) {
+      const login = normalizeIdentifier(participant?.loginId || participant?.login_id)
+      if (login && candidateLogins.has(login)) {
+        return true
+      }
+      const nickname = normalizeIdentifier(participant?.nickname || participant?.nickName)
+      if (nickname && candidateNames.has(nickname)) {
+        return true
+      }
+    }
+
+    const roomNames = buildIdentifierSet([
+      ...(Array.isArray(room.participants) ? room.participants : []),
+      room.name,
+    ])
+    for (const name of roomNames) {
+      if (candidateNames.has(name)) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  const directRooms = chats.value.filter((room) => room && !room.virtual && room.type !== 'GROUP')
+  return directRooms.find((room) => matchesRoom(room)) || null
 }
 
 function normalizeRoomListEntry(room, meNickname) {
@@ -736,7 +824,10 @@ function normalizeRoomListEntry(room, meNickname) {
   if (type === 'GROUP') {
     displayName = participants.join(', ')
   } else {
-    displayName = others[0] || participants[0] || `대화방 #${room.roomId}`
+    const fallbackName = Number.isFinite(Number(room.roomId)) && Number(room.roomId) > 0
+      ? `대화방 #${room.roomId}`
+      : '이름 없는 채팅방'
+    displayName = others[0] || participants[0] || fallbackName
   }
 
   return {
@@ -761,7 +852,10 @@ function normalizeRoomDetail(detail) {
   if (type === 'GROUP') {
     displayName = participants.join(', ')
   } else {
-    displayName = others[0] || participants[0] || `대화방 #${detail.roomId}`
+    const fallbackName = Number.isFinite(Number(detail.roomId)) && Number(detail.roomId) > 0
+      ? `대화방 #${detail.roomId}`
+      : '이름 없는 채팅방'
+    displayName = others[0] || participants[0] || fallbackName
   }
 
   return {
@@ -817,8 +911,6 @@ async function ensureActiveRoomFromRoute() {
   }
 }
 
-const followRelationshipMap = computed(() => buildFollowRelationshipMap(followings.value, followers.value))
-
 const groupMemberOptions = computed(() =>
   Array.from(followRelationshipMap.value.values())
     .map((entry) => ({
@@ -861,6 +953,9 @@ const filteredGroups = computed(() => {
 const isGroup = computed(() => current.value?.type === 'GROUP')
 const groupParticipants = computed(() => (current.value?.participants || []).join(', '))
 const messages = computed(() => conversations.value[current.value?.id] ?? [])
+const canHangUp = computed(
+  () => callActive.value || callReady.value || callRequestInFlight.value || callStartInProgress.value
+)
 
 async function openChat(item, options = {}) {
   if (!item) return
@@ -891,6 +986,13 @@ async function openChat(item, options = {}) {
 }
 
 async function openDirectFollowRoom(item, options = {}) {
+  const existingRoom = findExistingDirectRoomForFollowShortcut(item)
+  if (existingRoom) {
+    chats.value = chats.value.filter((chat) => chat.id !== item.id)
+    await openChat(existingRoom, options)
+    return
+  }
+
   try {
     const { data } = await api.post('/rooms/direct', { targetUserPid: item.targetUserPid })
     const entry = normalizeRoomDetail(data)
@@ -1088,9 +1190,12 @@ async function ensureRoomExists(roomId, fallbackName) {
     } catch (error) {
       console.warn(`[chat] Failed to fetch room ${roomId}, using fallback`, error)
       if (!room) {
+        const fallback = fallbackName || (Number.isFinite(Number(roomId)) && Number(roomId) > 0
+          ? `대화방 #${roomId}`
+          : '이름 없는 채팅방')
         room = addOrUpdateRoom({
           id: roomId,
-          name: fallbackName || `대화방 #${roomId}`,
+          name: fallback,
           last: '',
           participants: fallbackName ? [fallbackName] : [],
           participantLogins: [],
@@ -1102,9 +1207,12 @@ async function ensureRoomExists(roomId, fallbackName) {
   }
 
   if (!room) {
+    const fallback = fallbackName || (Number.isFinite(Number(roomId)) && Number(roomId) > 0
+      ? `대화방 #${roomId}`
+      : '이름 없는 채팅방')
     room = addOrUpdateRoom({
       id: roomId,
-      name: fallbackName || `대화방 #${roomId}`,
+      name: fallback,
       last: '',
       participants: fallbackName ? [fallbackName] : [],
       participantLogins: [],
