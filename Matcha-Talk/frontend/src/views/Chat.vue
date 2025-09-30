@@ -424,6 +424,7 @@ const callStartInProgress = ref(false)
 const callReady = ref(false)
 const remoteCallReady = ref(false)
 const historyLoadedRooms = ref(new Set())
+const previewLoadedRooms = ref(new Set())
 const isLoadingRooms = ref(false)
 
 const auth = useAuthStore()
@@ -574,6 +575,8 @@ async function loadRooms(options = {}) {
 
     chats.value = [...directRooms, ...followEntries]
     groups.value = groupRooms
+
+    void preloadRoomPreviews([...directRooms, ...groupRooms])
 
     const hasActiveRoom = Boolean(current.value?.id)
 
@@ -1160,22 +1163,54 @@ async function ensureMessageHistory(roomId, options = {}) {
     return
   }
 
-  const { force = false } = options
+  const {
+    force = false,
+    limit = 100,
+    cacheResult = true,
+  } = options
+
+  const sanitizedLimit = Math.max(1, Math.min(Number(limit) || 100, 200))
 
   if (!force && historyLoadedRooms.value.has(numericRoomId)) return
 
   try {
-    const { data } = await api.get(`/rooms/${numericRoomId}/messages`, { params: { limit: 100 } })
+    const { data } = await api.get(`/rooms/${numericRoomId}/messages`, { params: { limit: sanitizedLimit } })
     const normalized = Array.isArray(data)
       ? data
         .map((entry) => normalizeHistoryMessage(entry, numericRoomId))
         .filter(Boolean)
       : []
     mergeMessageHistory(numericRoomId, normalized)
-    historyLoadedRooms.value.add(numericRoomId)
-    scrollToBottom()
+    if (cacheResult) {
+      historyLoadedRooms.value.add(numericRoomId)
+      previewLoadedRooms.value.delete(numericRoomId)
+    }
+    if (Number(current.value?.id) === numericRoomId) {
+      scrollToBottom()
+    }
   } catch (error) {
     console.warn('[chat] Failed to load message history', error)
+  }
+}
+
+async function preloadRoomPreviews(roomEntries = []) {
+  const uniqueRoomIds = Array.from(new Set(
+    roomEntries
+      .filter((room) => room && !room.virtual && !room.temporary)
+      .map((room) => Number(room.id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  ))
+
+  for (const roomId of uniqueRoomIds) {
+    if (historyLoadedRooms.value.has(roomId) || previewLoadedRooms.value.has(roomId)) {
+      continue
+    }
+    try {
+      await ensureMessageHistory(roomId, { limit: 1, cacheResult: false })
+      previewLoadedRooms.value.add(roomId)
+    } catch (error) {
+      console.warn('[chat] Failed to preload history preview', error)
+    }
   }
 }
 
