@@ -59,10 +59,14 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
       payload.sender_login_id ??
       payload.senderLogin ??
       null
+    const messageId = payload.messageId ?? payload.message_id ?? null
     if (!senderLoginId) {
       console.warn('[chat] Received message without senderLoginId', payload)
     }
     const messagesForRoom = ensureConversation(roomKey)
+    if (messageId && messagesForRoom.some((existing) => existing?.id === messageId)) {
+      return
+    }
     const myLoginId = resolveClientIdentity(auth)
     const normalizedMyLogin = myLoginId ? String(myLoginId).toLowerCase() : null
     const normalizedSenderLogin = senderLoginId ? String(senderLoginId).toLowerCase() : null
@@ -70,7 +74,7 @@ export function createIncomingMessageHandler ({ auth, ensureConversation, ensure
     const displayName = senderNickname || senderLoginId || '상대방'
 
     const message = {
-      id: `${roomKey}-${Date.now()}-${messagesForRoom.length}`,
+      id: messageId || `${roomKey}-${Date.now()}-${messagesForRoom.length}`,
       text: content,
       time: timeFormatter(payload.sentAt),
       sender: displayName,

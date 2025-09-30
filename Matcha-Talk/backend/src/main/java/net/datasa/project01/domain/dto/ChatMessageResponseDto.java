@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 @Getter
 @Builder // <-- 이 어노테이션이 추가되어야 합니다.
 public class ChatMessageResponseDto {
+    private final Long messageId;
     private final Long roomId;
     private final String senderLoginId;
     private final String senderNickName;
