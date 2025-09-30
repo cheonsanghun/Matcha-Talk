@@ -1040,6 +1040,7 @@ function goBackToMatching() {
   .session-content {
     flex-direction: column;
     flex-wrap: nowrap;
+
   }
   .video-pane,
   .chat-pane {
