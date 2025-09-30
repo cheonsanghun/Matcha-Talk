@@ -20,27 +20,18 @@
               variant="tonal"
               class="text-caption font-weight-medium"
             >
-              {{ handshakeStatusLabel }}
+              {{ sessionChipLabel }}
             </v-chip>
             <v-spacer />
             <div class="d-flex ga-2 flex-wrap">
               <v-btn
-                color="pink"
-                variant="tonal"
-                :loading="followRequestLoading"
-                :disabled="!canRequestFollow"
-                @click="requestFollow"
+                :color="followButtonConfig.color"
+                :variant="followButtonConfig.variant"
+                :loading="followButtonConfig.loading"
+                :disabled="followButtonConfig.disabled"
+                @click="handleFollowButtonClick"
               >
-                팔로우 요청
-              </v-btn>
-              <v-btn
-                color="success"
-                variant="tonal"
-                :loading="followAcceptLoading"
-                :disabled="!canAcceptFollow"
-                @click="acceptFollowRequest"
-              >
-                팔로우 수락
+                {{ followButtonConfig.label }}
               </v-btn>
               <v-btn color="secondary" variant="outlined" @click="goBackToMatching">
                 새 매칭 찾기
@@ -48,7 +39,7 @@
             </div>
           </div>
           <div class="text-caption text-medium-emphasis mt-3">
-            {{ sessionStatus }}
+            {{ sessionStatusMessage }}
           </div>
         </v-card>
       </v-col>
@@ -245,8 +236,10 @@ const roomIdDisplay = computed(() => {
   return `#${roomId.value}`
 })
 
+const handshakeStatusUpper = computed(() => (handshakeStatus.value || '').toString().toUpperCase())
+
 const handshakeStatusLabel = computed(() => {
-  switch ((handshakeStatus.value || '').toUpperCase()) {
+  switch (handshakeStatusUpper.value) {
     case 'CONFIRMED':
       return '채팅 진행 중'
     case 'MATCHED':
@@ -280,6 +273,99 @@ const canRequestFollow = computed(() => {
 const canAcceptFollow = computed(() => {
   if (incomingStatusUpper.value !== 'PENDING') return false
   return Boolean(followState.incomingId || followState.relationId || pendingIncomingId.value)
+})
+
+const followInteractionStage = computed(() => {
+  if (hasMutualFollow.value) return 'COMPLETED'
+  if (incomingStatusUpper.value === 'PENDING') return 'INCOMING'
+  if (outgoingStatusUpper.value === 'PENDING') return 'OUTGOING'
+  if (
+    (handshakeStatusUpper.value === 'CONFIRMED' || Boolean(matchStore.bootstrap?.chatReady)) &&
+    canRequestFollow.value
+  ) {
+    return 'READY'
+  }
+  return null
+})
+
+const sessionChipLabel = computed(() => {
+  switch (followInteractionStage.value) {
+    case 'COMPLETED':
+      return '서로 팔로우 완료'
+    case 'INCOMING':
+      return '팔로우 요청 수신'
+    case 'OUTGOING':
+      return '팔로우 요청 보냄'
+    case 'READY':
+      return '팔로우 요청 전'
+    default:
+      return handshakeStatusLabel.value
+  }
+})
+
+const sessionStatusMessage = computed(() => {
+  switch (followInteractionStage.value) {
+    case 'COMPLETED':
+      return '서로 팔로우 되었습니다! 대화를 이어가보세요.'
+    case 'INCOMING':
+      return '상대방이 팔로우 요청을 보냈습니다. 수락해보세요.'
+    case 'OUTGOING':
+      return '팔로우 응답을 기다리고 있습니다.'
+    case 'READY':
+      return '서로를 팔로우하여 대화를 이어가보세요.'
+    default:
+      return sessionStatus.value
+  }
+})
+
+const followButtonConfig = computed(() => {
+  switch (followInteractionStage.value) {
+    case 'COMPLETED':
+      return {
+        color: 'success',
+        variant: 'tonal',
+        label: '팔로우 되었습니다',
+        disabled: true,
+        loading: false,
+        handler: null,
+      }
+    case 'INCOMING':
+      return {
+        color: 'success',
+        variant: 'tonal',
+        label: '팔로우 요청 수락',
+        disabled: followAcceptLoading.value,
+        loading: followAcceptLoading.value,
+        handler: acceptFollowRequest,
+      }
+    case 'OUTGOING':
+      return {
+        color: 'pink',
+        variant: 'tonal',
+        label: '팔로우 요청 보냄',
+        disabled: true,
+        loading: followRequestLoading.value,
+        handler: null,
+      }
+    case 'READY':
+      return {
+        color: 'pink',
+        variant: 'tonal',
+        label: '팔로우 요청',
+        disabled: followRequestLoading.value || !canRequestFollow.value,
+        loading: followRequestLoading.value,
+        handler: requestFollow,
+      }
+    default:
+      return {
+        color: 'pink',
+        variant: 'tonal',
+        label: '팔로우 요청',
+        disabled: true,
+        loading: false,
+        handler: null,
+      }
+  }
 })
 
 const isTemporaryRoom = computed(() => {
@@ -745,7 +831,7 @@ async function requestFollow() {
       outgoingFollowId: followState.outgoingId,
       outgoingFollowStatus: followState.outgoingStatus,
     })
-    sessionStatus.value = '팔로우 요청을 전송했습니다.'
+    sessionStatus.value = '팔로우 응답을 기다리고 있습니다.'
   } catch (error) {
     console.error('Failed to send follow request', error)
     alert('팔로우 요청에 실패했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
@@ -779,13 +865,21 @@ async function acceptFollowRequest() {
       incomingFollowStatus: followState.incomingStatus,
       mutualFollow: followState.mutual,
     })
-    sessionStatus.value = '서로 팔로우 상태입니다.'
+    sessionStatus.value = '서로 팔로우 되었습니다! 대화를 이어가보세요.'
   } catch (error) {
     console.error('Failed to accept follow request', error)
     alert('팔로우 수락에 실패했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
   } finally {
     followAcceptLoading.value = false
   }
+}
+
+function handleFollowButtonClick() {
+  const config = followButtonConfig.value
+  if (!config || typeof config.handler !== 'function' || config.disabled) {
+    return
+  }
+  config.handler()
 }
 
 async function cleanupTemporaryRoom(reason = 'navigation') {
