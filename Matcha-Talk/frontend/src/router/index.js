@@ -45,7 +45,7 @@ router.beforeEach((to, from, next) => {
     return next({ name: 'login', replace: true, query: { redirect: to.fullPath } })
   }
 
-  if (to.meta?.requiresAdmin && !auth.isAdmin()) {
+  if (to.meta?.requiresAdmin && !auth.isAdmin) {
     return next({ name: 'home', replace: true })
   }
 
