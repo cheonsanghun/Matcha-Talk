@@ -7,7 +7,7 @@
           <div class="text-h6 font-weight-medium">채팅</div>
           <v-spacer />
           <v-btn icon variant="text"><v-icon>mdi-message-plus-outline</v-icon></v-btn>
-          <v-btn icon variant="text"><v-icon>mdi-account-multiple-plus</v-icon></v-btn>
+          <v-btn icon variant="text" @click="openGroupDialog"><v-icon>mdi-account-multiple-plus</v-icon></v-btn>
           <v-btn icon variant="text"><v-icon>mdi-cog-outline</v-icon></v-btn>
           <v-btn icon variant="text"><v-icon>mdi-dots-vertical</v-icon></v-btn>
         </div>
@@ -67,7 +67,7 @@
 
             <template v-if="filteredFollowShortcuts.length">
               <v-list-subheader class="text-caption text-medium-emphasis">
-                서로 팔로우한 친구
+                팔로워 · 팔로잉 친구
               </v-list-subheader>
               <v-list-item
                 v-for="item in filteredFollowShortcuts"
@@ -181,7 +181,13 @@
                         <div v-if="m.fileName" class="text-caption mt-1">{{ m.fileName }}</div>
                       </template>
                       <template v-else-if="m.contentType === 'FILE' && m.fileUrl">
-                        <a :href="m.fileUrl" target="_blank" rel="noopener" class="file-link">
+                        <a
+                          :href="m.fileUrl"
+                          target="_blank"
+                          rel="noopener"
+                          class="file-link"
+                          @click.prevent="downloadAttachment(m)"
+                        >
                           <v-icon size="18" class="mr-1">mdi-paperclip</v-icon>
                           {{ m.fileName || m.text || '파일 다운로드' }}
                         </a>
@@ -217,7 +223,13 @@
                         <div v-if="m.fileName" class="text-caption mt-1">{{ m.fileName }}</div>
                       </template>
                       <template v-else-if="m.contentType === 'FILE' && m.fileUrl">
-                        <a :href="m.fileUrl" target="_blank" rel="noopener" class="file-link text-white">
+                        <a
+                          :href="m.fileUrl"
+                          target="_blank"
+                          rel="noopener"
+                          class="file-link text-white"
+                          @click.prevent="downloadAttachment(m)"
+                        >
                           <v-icon size="18" class="mr-1">mdi-paperclip</v-icon>
                           {{ m.fileName || m.text || '파일 다운로드' }}
                         </a>
@@ -260,7 +272,7 @@
             :disabled="!current.id"
             @click="triggerFilePicker"
           >
-            <v-icon size="22">mdi-plus</v-icon>
+            <v-icon size="22">mdi-file-outline</v-icon>
           </v-btn>
           <v-text-field
             v-model="draft"
@@ -288,10 +300,71 @@
       </v-col>
     </v-row>
   </v-container>
+
+  <v-dialog v-model="createGroupDialog" max-width="480">
+    <v-card>
+      <v-card-title class="text-h6">새 그룹 채팅 만들기</v-card-title>
+      <v-card-text class="d-flex flex-column ga-4">
+        <v-text-field
+          v-model="groupForm.name"
+          label="그룹 이름"
+          placeholder="그룹 이름을 입력하세요 (선택)"
+          variant="outlined"
+          clearable
+        />
+        <v-autocomplete
+          v-model="groupForm.members"
+          :items="groupMemberOptions"
+          label="초대할 친구 선택"
+          item-title="label"
+          item-value="userPid"
+          multiple
+          chips
+          closable-chips
+          variant="outlined"
+          :counter="maxAdditionalGroupMembers"
+          :disabled="groupMemberOptions.length === 0"
+          :hint="groupMemberOptions.length ? `최대 ${maxAdditionalGroupMembers}명까지 선택할 수 있습니다.` : '초대할 수 있는 친구가 없습니다.'"
+          persistent-hint
+          :no-data-text="'초대할 수 있는 친구가 없습니다.'"
+        >
+          <template #chip="{ props, item }">
+            <v-chip
+              v-bind="props"
+              :prepend-avatar="item.raw.avatarUrl || undefined"
+              class="text-truncate"
+            >
+              {{ item.raw.label }}
+            </v-chip>
+          </template>
+          <template #item="{ props, item }">
+            <v-list-item
+              v-bind="props"
+              :prepend-avatar="item.raw.avatarUrl || undefined"
+              :title="item.raw.label"
+              :subtitle="item.raw.description"
+            />
+          </template>
+        </v-autocomplete>
+      </v-card-text>
+      <v-card-actions class="justify-end">
+        <v-btn variant="text" @click="closeGroupDialog">취소</v-btn>
+        <v-btn
+          color="primary"
+          variant="flat"
+          :loading="groupCreationLoading"
+          :disabled="groupMemberOptions.length === 0 || groupForm.members.length === 0 || groupCreationLoading"
+          @click="submitGroupCreation"
+        >
+          생성
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../services/api'
@@ -303,6 +376,7 @@ import followService from '../services/follow'
 import {
   createFileSelectHandler,
   createIncomingMessageHandler,
+  normalizeAttachmentUrl,
   useRealtimeChatClient,
 } from '../composables/useChatClient'
 
@@ -315,6 +389,10 @@ const current = ref({})
 const draft = ref('')
 const followings = ref([])
 const followers = ref([])
+const createGroupDialog = ref(false)
+const groupCreationLoading = ref(false)
+const groupForm = reactive({ name: '', members: [] })
+const maxAdditionalGroupMembers = 3
 
 
 const chatMessagesContainer = ref(null)
@@ -327,6 +405,7 @@ const auth = useAuthStore()
 const vocabularyStore = useVocabularyStore()
 const route = useRoute()
 const router = useRouter()
+const myUserPid = computed(() => auth.user?.userPid ?? auth.user?.user_pid ?? null)
 
 function resolveCurrentRoomId () {
   return current.value?.id
@@ -399,6 +478,28 @@ watch(
   }
 )
 
+watch(
+  () => groupForm.members,
+  (members) => {
+    if (!Array.isArray(members)) return
+    const unique = Array.from(new Set(members.map((value) => Number(value))))
+      .filter((value) => Number.isFinite(value))
+    if (unique.length > maxAdditionalGroupMembers) {
+      unique.splice(maxAdditionalGroupMembers)
+    }
+    if (unique.length !== members.length || !members.every((value, index) => value === unique[index])) {
+      groupForm.members = unique
+    }
+  },
+  { deep: true }
+)
+
+watch(createGroupDialog, (open) => {
+  if (!open) {
+    resetGroupForm()
+  }
+})
+
 onUnmounted(() => {
   setManualDisconnect(true)
   disconnectRealtime()
@@ -432,9 +533,10 @@ async function loadRooms(options = {}) {
       }
     })
 
-    followings.value = Array.isArray(followData?.following) ? followData.following : []
-    followers.value = Array.isArray(followData?.followers) ? followData.followers : []
-    const followEntries = buildFollowEntries(followings.value, followers.value, directRooms)
+    const excludePid = Number.isFinite(Number(myUserPid.value)) ? Number(myUserPid.value) : null
+    followings.value = normalizeFollowList(followData?.following, excludePid)
+    followers.value = normalizeFollowList(followData?.followers, excludePid)
+    const followEntries = buildFollowEntries(followRelationshipMap.value, directRooms)
 
     chats.value = [...directRooms, ...followEntries]
     groups.value = groupRooms
@@ -477,74 +579,119 @@ async function fetchFollowLists() {
   }
 }
 
-function buildFollowEntries(followingList, followerList, directRooms) {
-  const hasFollowing = Array.isArray(followingList) && followingList.length
-  const hasFollowers = Array.isArray(followerList) && followerList.length
-  if (!hasFollowing && !hasFollowers) {
+function normalizeFollowUser(entry) {
+  const userPid = Number(entry?.userPid ?? entry?.user_pid)
+  if (!Number.isFinite(userPid)) {
+    return null
+  }
+  const loginId = entry?.loginId || entry?.login_id || null
+  const nickName = entry?.nickName || entry?.nickname || loginId || `사용자 ${userPid}`
+  return {
+    userPid,
+    loginId,
+    nickName,
+    avatarUrl: entry?.avatarUrl || entry?.avatar_url || null,
+    email: entry?.email || entry?.emailAddress || null,
+  }
+}
 
+function normalizeFollowList(list, excludePid) {
+  if (!Array.isArray(list)) {
+    return []
+  }
+
+  return list
+    .map(normalizeFollowUser)
+    .filter((entry) => entry && (excludePid == null || entry.userPid !== excludePid))
+    .sort((a, b) => a.nickName.localeCompare(b.nickName, 'ko'))
+}
+
+function buildFollowRelationshipMap(followingList, followerList) {
+  const map = new Map()
+
+  const register = (list, role) => {
+    if (!Array.isArray(list)) return
+    list.forEach((entry) => {
+      if (!entry) return
+      const existing = map.get(entry.userPid) || {
+        userPid: entry.userPid,
+        loginId: entry.loginId,
+        nickName: entry.nickName,
+        avatarUrl: entry.avatarUrl,
+        email: entry.email || null,
+        following: false,
+        follower: false,
+      }
+      if (!existing.loginId && entry.loginId) existing.loginId = entry.loginId
+      if (!existing.avatarUrl && entry.avatarUrl) existing.avatarUrl = entry.avatarUrl
+      if (!existing.nickName && entry.nickName) existing.nickName = entry.nickName
+      existing[role] = true
+      map.set(entry.userPid, existing)
+    })
+  }
+
+  register(followingList, 'following')
+  register(followerList, 'follower')
+
+  return map
+}
+
+function buildFollowEntries(relationshipMap, directRooms) {
+  if (!relationshipMap || relationshipMap.size === 0) {
     return []
   }
 
   const existingLogins = new Set()
+  const existingUserPids = new Set()
+
   directRooms.forEach((room) => {
     (room.participantLogins || []).forEach((login) => {
       if (login) {
         existingLogins.add(String(login).toLowerCase())
       }
     })
+    (room.participantsDetail || []).forEach((participant) => {
+      const pid = participant?.userPid ?? participant?.user_pid ?? null
+      if (pid != null) {
+        existingUserPids.add(Number(pid))
+      }
+    })
   })
 
-  const candidates = new Map()
-
-  const register = (list, role) => {
-    list.forEach((entry) => {
-      const loginId = entry?.loginId || entry?.login_id || null
-      const userPid = entry?.userPid ?? entry?.user_pid ?? null
-      if (!loginId || userPid == null) {
-        return
-      }
-      const key = String(userPid)
-      const record = candidates.get(key) || {
-        userPid,
-        loginId,
-        name: entry?.nickName || entry?.nickname || loginId,
-        avatarUrl: entry?.avatarUrl || null,
-        following: false,
-        follower: false,
-      }
-      record[role] = true
-      candidates.set(key, record)
-    })
-  }
-
-  if (hasFollowing) {
-    register(followingList, 'following')
-  }
-  if (hasFollowers) {
-    register(followerList, 'follower')
-  }
-
-  return Array.from(candidates.values())
+  return Array.from(relationshipMap.values())
     .filter((candidate) => {
-      if (!candidate.following || !candidate.follower) {
+      if (!candidate) return false
+      if (existingUserPids.has(candidate.userPid)) return false
+      if (candidate.loginId && existingLogins.has(String(candidate.loginId).toLowerCase())) {
         return false
       }
-      return !existingLogins.has(String(candidate.loginId).toLowerCase())
+      return true
     })
-    .map((candidate) => ({
-      id: `follow-${candidate.userPid}`,
-      name: candidate.name,
-      last: '서로 팔로우했습니다. 클릭하여 채팅을 시작하세요.',
-      participants: [candidate.name],
-      participantLogins: [candidate.loginId],
-      participantsDetail: [],
-      type: 'DIRECT',
-      virtual: true,
-      targetUserPid: candidate.userPid,
-      avatarUrl: candidate.avatarUrl,
-      mutual: true,
-    }))
+    .map((candidate) => {
+      const mutual = candidate.following && candidate.follower
+      let subtitle = '대화를 시작해보세요.'
+      if (mutual) {
+        subtitle = '서로 팔로우 중입니다. 클릭하여 채팅을 시작하세요.'
+      } else if (candidate.following) {
+        subtitle = '내가 팔로우한 친구입니다. 대화를 시작해보세요.'
+      } else if (candidate.follower) {
+        subtitle = '나를 팔로우한 친구입니다. 대화를 시작해보세요.'
+      }
 
+      return {
+        id: `follow-${candidate.userPid}`,
+        name: candidate.nickName,
+        last: subtitle,
+        participants: [candidate.nickName],
+        participantLogins: candidate.loginId ? [candidate.loginId] : [],
+        participantsDetail: [],
+        type: 'DIRECT',
+        virtual: true,
+        targetUserPid: candidate.userPid,
+        avatarUrl: candidate.avatarUrl,
+        mutual,
+      }
+    })
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
@@ -638,6 +785,22 @@ async function ensureActiveRoomFromRoute() {
     }
   }
 }
+
+const followRelationshipMap = computed(() => buildFollowRelationshipMap(followings.value, followers.value))
+
+const groupMemberOptions = computed(() =>
+  Array.from(followRelationshipMap.value.values())
+    .map((entry) => ({
+      ...entry,
+      label: entry.nickName,
+      description: entry.following && entry.follower
+        ? '서로 팔로우 중'
+        : entry.following
+          ? '팔로잉 중'
+          : '팔로워',
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ko'))
+)
 
 const filteredChats = computed(() => {
   const keyword = query.value.trim().toLowerCase()
@@ -848,6 +1011,88 @@ async function send() {
 function triggerFilePicker() {
   if (!current.value?.id) return
   fileInput.value?.click()
+}
+
+async function downloadAttachment(message) {
+  if (!message?.fileUrl) return
+  const normalizedUrl = normalizeAttachmentUrl(message.fileUrl)
+  if (!normalizedUrl) {
+    alert('다운로드할 파일 경로를 확인할 수 없습니다.')
+    return
+  }
+
+  try {
+    const response = await api.get(normalizedUrl, {
+      responseType: 'blob',
+      skipSnakifyParams: true,
+    })
+    const blobUrl = window.URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = message.fileName || 'attachment'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(blobUrl)
+  } catch (error) {
+    console.error('[chat] Failed to download attachment', error)
+    alert('파일을 다운로드하지 못했습니다. 잠시 후 다시 시도하세요.')
+  }
+}
+
+function openGroupDialog() {
+  resetGroupForm()
+  createGroupDialog.value = true
+}
+
+function closeGroupDialog() {
+  createGroupDialog.value = false
+}
+
+function resetGroupForm() {
+  groupForm.name = ''
+  groupForm.members = []
+}
+
+async function submitGroupCreation() {
+  if (groupCreationLoading.value) return
+
+  const members = Array.from(new Set(groupForm.members.map((value) => Number(value))))
+    .filter((value) => Number.isFinite(value))
+
+  if (groupForm.members.length !== members.length || !groupForm.members.every((value, index) => Number(value) === members[index])) {
+    groupForm.members = members
+  }
+
+  if (!members.length) {
+    alert('초대할 친구를 선택해주세요.')
+    return
+  }
+
+  if (members.length > maxAdditionalGroupMembers) {
+    alert(`그룹 채팅은 최대 ${maxAdditionalGroupMembers + 1}명까지 참여할 수 있습니다.`)
+    groupForm.members = members.slice(0, maxAdditionalGroupMembers)
+    return
+  }
+
+  groupCreationLoading.value = true
+  try {
+    const payload = {
+      name: groupForm.name?.trim() || undefined,
+      memberUserPids: members,
+    }
+    const { data } = await api.post('/rooms/group', payload)
+    const entry = normalizeRoomDetail(data)
+    const persisted = addOrUpdateRoom(entry)
+    groups.value = [persisted, ...groups.value.filter((room) => room.id !== persisted.id)]
+    await openChat(persisted)
+    createGroupDialog.value = false
+  } catch (error) {
+    console.error('[chat] Failed to create group room', error)
+    alert('그룹 채팅방을 생성하지 못했습니다: ' + (error?.response?.data?.message || error?.message || '알 수 없는 오류'))
+  } finally {
+    groupCreationLoading.value = false
+  }
 }
 
 function inviteParticipant() {
