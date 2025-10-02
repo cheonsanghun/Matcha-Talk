@@ -32,7 +32,7 @@ public interface MatchRequestRepository extends JpaRepository<MatchRequest, Long
 
     List<MatchRequest> findAllByRoomAndStatusIn(Room room, Collection<MatchRequest.MatchStatus> statuses);
 
-    // [수정됨] '나의 조건'에 맞는 잠재적 매칭 상대를 찾는 더 간단한 쿼리
+    // '나의 조건'에 맞는 잠재적 매칭 상대를 찾는 더 간단한 쿼리
     @Query("SELECT mr FROM MatchRequest mr JOIN FETCH mr.user u " +
            "WHERE mr.status = :status " +
            "AND u.userPid <> :myPid " +

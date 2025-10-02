@@ -14,7 +14,7 @@ export default defineConfig({
     open: true,
     allowedHosts: [
       '.ngrok-free.app', // ngrok 도메인 허용
-      '192.168.0.165',   // ✅ 추가: 서버 IP 허용
+      '192.168.0.105',   // ✅ 추가: 서버 IP 허용
       '192.168.*',        // ✅ 추가: 같은 네트워크 대역 허용
       //'192.0.0.2',       // ✅ 추가: 핫스팟 서버 IP 허용
       //'192.0.0.*'        // ✅ 추가: 같은 핫스팟 네트워크 대역 허용
@@ -22,7 +22,7 @@ export default defineConfig({
     proxy: {
       // /api로 시작하는 요청을 백엔드로 프록시
       '/api': {
-        target: 'https://192.168.0.165:8080', // ✅ 수정: 실제 서버 IP로 변경
+        target: 'https://192.168.0.105:8080', // ✅ 수정: 실제 서버 IP로 변경
         //target: 'http://192.0.0.2:8080', // ✅ 수정: 실제 핫스팟 서버 IP로 변경
         changeOrigin: true,
         // 필요하다면 secure: false 추가

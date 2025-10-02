@@ -83,6 +83,7 @@ public class SecurityConfig {
                 "https://localhost:*",
                 "https://127.0.0.1:*",
                 "https://192.168.*:*",
+                "https://192.168.0.105:*",
                 "https://*.ngrok-free.app"
         ));
         c.setAllowedMethods(List.of("GET","POST","PUT","DELETE","PATCH","OPTIONS"));
