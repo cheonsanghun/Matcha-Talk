@@ -55,6 +55,74 @@ npm run dev
 
 ## 문제 해결
 - 포트 충돌이 발생하면 백엔드의 `server.port`, 프론트엔드의 Vite 설정을 변경하세요.
+
+
+# Matcha Talk 実行ガイド
+
+## 概要
+Matcha Talkは、Spring Bootを基盤としたバックエンドと、Vue 3 + Viteを使用したフロントエンドで構成されたリアルタイムコミュニケーションサービスです。  
+本書では、リポジトリをクローンしてローカル環境でプロジェクトを実行する手順を説明します。
+
+## プロジェクト構成
+```
+Matcha-Talk/
+├─ backend/      # Spring Boot サーバー (Gradle)
+├─ frontend/     # Vue 3 + Vite クライアント
+└─ dev-server.crt
+```
+
+## 事前準備
+- **Git**
+- **Java 17**（Gradle Wrapperが含まれているため、別途Gradleのインストールは不要です）
+- **Node.js 18以上** および **npm**
+- **MySQL 8.x**（実際のDBプロファイルを使用する場合）
+
+## リポジトリのクローン
+```bash
+git clone <リポジトリURL>
+cd Matcha-Talk/Matcha-Talk
+```
+
+## バックエンドの設定と実行
+1. **DBプロファイルを使用する場合の準備**
+   - MySQLで `match_talk_db` データベースを作成します。  
+   - `backend` フォルダ内の `First_sql.sql` を使用してテーブルを作成します。  
+   - `backend/src/main/resources/application-db.properties` ファイルで、  
+     `spring.datasource.username` や `spring.datasource.password` などをローカル環境に合わせて修正するか、`.env` ファイルで上書きすることができます。  
+   - Papago APIキーやメールアカウントなどの機密情報は、`.env` ファイルに `PAPAGO_CLIENT_ID`、`PAPAGO_CLIENT_SECRET` などの環境変数を定義して管理します（`backend` ディレクトリ基準）。
+
+3. **サーバーの起動**
+```bash
+cd backend
+./gradlew bootRun
+```
+   - Windows環境では `gradlew.bat bootRun` を使用してください。  
+   - デフォルトでは HTTPS（ポート8080）でサービスが起動します。ブラウザで警告が表示される場合は、ローカルの信頼ストアに `dev-server.crt` を登録してください。  
+   - 現在のHTTPS設定は、フロントエンドの `vite.config.js` ファイルを参照してください。  
+   - ネットワーク環境が異なる場合は、ローカルの信頼ストア内の `dev-server.crt` に現在のネットワークIPを追加する必要があります。
+
+## フロントエンドの設定と実行
+```bash
+cd frontend
+npm install
+npm run dev
+```
+- デフォルトでは開発サーバーは `http://localhost:5173` で実行され、バックエンドAPIは `https://localhost:8080` を参照します。  
+- 他のポートまたはホストを使用する場合は、`vite.config.js` または環境変数を調整してください。
+
+## 動作確認
+1. バックエンド（Spring Boot）サーバーが正常に起動しているかログを確認します。  
+2. フロントエンドの開発サーバーにアクセスし、ログインやチャットなどの主要機能が動作するかを確認します。
+
+## トラブルシューティング
+- ポートの競合が発生した場合は、バックエンドの `server.port` またはフロントエンドの Vite 設定を変更してください。  
+- SSL関連の警告が気になる場合は、バックエンドをHTTPで実行するように設定を変更するか、ブラウザに開発用証明書を信頼登録してください。  
+- 依存関係のインストールエラーが発生した場合は、Node.js、npm、Javaのバージョンを再確認してください。
+
+## 追加の参考情報
+- テストおよびデプロイ環境では、機密情報を `.env` ファイルまたは安全な秘密管理ツールで保管してください。  
+- ビルド成果物は `backend/build` および `frontend/dist` に生成されます。
+
 - SSL 관련 경고가 거슬릴 경우 백엔드를 HTTP로 실행하도록 인증서 설정을 수정하거나, 브라우저에 개발용 인증서를 신뢰하도록 등록하세요.
 - 의존성 설치 오류가 발생하면 Node.js, npm, Java 버전을 다시 확인하세요.
 
